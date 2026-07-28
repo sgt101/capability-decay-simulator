@@ -1,0 +1,17 @@
+{
+  "mode": "grid",
+  "replicates": 5,
+  "horizon": 1000,
+  "recordAt": [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
+  "seed": 1,
+  "pairWithBaseline": true,
+  "fixed": {
+    "N": 2000,
+    "M": 50
+  },
+  "params": {
+    "aiAtrophyMultiplier": { "range": [0, 4], "steps": 5 },
+    "aiLevelFraction": { "range": [0.1, 0.9], "steps": 10 },
+    "turnoverRate": { "range": [0.005, 0.03], "steps": 3 }
+  }
+}

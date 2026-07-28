@@ -1,0 +1,25 @@
+{
+  "mode": "random",
+  "runs": 400,
+  "replicates": 2,
+  "horizon": 500,
+  "recordAt": [500],
+  "seed": 7,
+  "fixed": {
+    "N": 400,
+    "M": 30,
+    "aiEnabled": true
+  },
+  "params": {
+    "aiResponseMode": { "values": ["floor", "flat", "linear", "amplified", "exponential"] },
+    "aiLevelFraction": { "range": [0.3, 0.95] },
+    "aiGain": { "range": [0, 2] },
+    "aiDampeningBelow": { "range": [0, 1] },
+    "aiDampeningAbove": { "range": [0, 2] },
+    "transferRate": { "range": [0.005, 0.06] },
+    "decayRate": { "range": [0.002, 0.04] },
+    "competitionAversion": { "range": [0, 1] },
+    "prestigeWeight": { "range": [0, 1] },
+    "mobilityMode": { "values": ["unconstrained", "edge_constrained", "hybrid"] }
+  }
+}

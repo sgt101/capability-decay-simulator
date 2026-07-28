@@ -1,0 +1,1343 @@
+<title>Experiment Report — Capability Decay Simulator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #eef0ee;
+    --panel: #ffffff;
+    --panel-2: #f4f5f3;
+    --ink: #14181a;
+    --ink-muted: #5c6360;
+    --ink-faint: #8b918d;
+    --rule: #d7dad6;
+    --accent: #a8502c;
+    --accent-soft: #f3e2da;
+    --accent2: #35636b;
+    --accent2-soft: #dfe9ea;
+    --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
+    --diverge-zero: #e4e2dc;
+    --diverge-pos-mid: #a8502c;
+    --diverge-pos-end: #5c2712;
+    --diverge-neg-mid: #2a78d6;
+    --diverge-neg-end: #0d366b;
+    --ref-line: #cc3333;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101314;
+      --panel: #171b1d;
+      --panel-2: #1d2224;
+      --ink: #e8eae6;
+      --ink-muted: #93a09c;
+      --ink-faint: #656e6b;
+      --rule: #2b3234;
+      --accent: #dd8259;
+      --accent-soft: #35271f;
+      --accent2: #7fb0b7;
+      --accent2-soft: #1c2b2d;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      --diverge-zero: #2c3335;
+      --diverge-pos-mid: #dd8259;
+      --diverge-pos-end: #ffb38c;
+      --diverge-neg-mid: #3987e5;
+      --diverge-neg-end: #9ec5f4;
+      --ref-line: #ff6b66;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101314;
+    --panel: #171b1d;
+    --panel-2: #1d2224;
+    --ink: #e8eae6;
+    --ink-muted: #93a09c;
+    --ink-faint: #656e6b;
+    --rule: #2b3234;
+    --accent: #dd8259;
+    --accent-soft: #35271f;
+    --accent2: #7fb0b7;
+    --accent2-soft: #1c2b2d;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --diverge-zero: #2c3335;
+    --diverge-pos-mid: #dd8259;
+    --diverge-pos-end: #ffb38c;
+    --diverge-neg-mid: #3987e5;
+    --diverge-neg-end: #9ec5f4;
+    --ref-line: #ff6b66;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef0ee;
+    --panel: #ffffff;
+    --panel-2: #f4f5f3;
+    --ink: #14181a;
+    --ink-muted: #5c6360;
+    --ink-faint: #8b918d;
+    --rule: #d7dad6;
+    --accent: #a8502c;
+    --accent-soft: #f3e2da;
+    --accent2: #35636b;
+    --accent2-soft: #dfe9ea;
+    --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
+    --diverge-zero: #e4e2dc;
+    --diverge-pos-mid: #a8502c;
+    --diverge-pos-end: #5c2712;
+    --diverge-neg-mid: #2a78d6;
+    --diverge-neg-end: #0d366b;
+    --ref-line: #cc3333;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family:
+      ui-sans-serif,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    font-size: 14.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-family: ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+  }
+  code,
+  .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    padding: 0.7rem 1.1rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--rule);
+  }
+  .topbar h1 {
+    font-size: 1.1rem;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .topbar .meta {
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    font-family: ui-monospace, monospace;
+  }
+  .spacer {
+    flex: 1;
+  }
+  select {
+    font: inherit;
+    background: var(--panel-2);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.35rem 0.5rem;
+  }
+  .field-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+  }
+  .field-inline input[type="range"] {
+    width: 160px;
+    accent-color: var(--accent2);
+  }
+  .btn {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: var(--panel-2);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .btn.active {
+    background: var(--accent2);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 270px 1fr;
+    flex: 1;
+    min-height: 0;
+  }
+  @media (max-width: 860px) {
+    .layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--rule);
+    overflow-y: auto;
+    max-height: calc(100vh - 57px);
+  }
+  .exp-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .exp-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    color: var(--ink);
+  }
+  .exp-item:hover {
+    background: var(--panel-2);
+  }
+  .exp-item.selected {
+    background: var(--accent2-soft);
+    border-color: var(--accent2);
+  }
+  .exp-item .n {
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+    color: var(--ink-faint);
+  }
+  .exp-item .pair {
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+  .exp-item .pair .sym {
+    color: var(--accent2);
+    font-family: ui-monospace, monospace;
+    font-weight: 500;
+  }
+  .exp-item .missing {
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+
+  .sidebar-section {
+    padding: 0.7rem 0.9rem;
+    border-top: 1px solid var(--rule);
+  }
+  .sidebar-section h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-bottom: 0.5rem;
+  }
+  .fixed-kv {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    padding: 0.18rem 0;
+  }
+  .fixed-kv .sym {
+    color: var(--accent2);
+    font-family: ui-monospace, monospace;
+    margin-right: 0.4rem;
+  }
+  .fixed-kv b {
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+  }
+
+  .main {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    min-width: 0;
+    overflow: auto;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    padding: 1rem;
+  }
+  .heatmap-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.7rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .heatmap-head h2 {
+    font-size: 1.05rem;
+  }
+  .heatmap-head .sub {
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+  }
+
+  .heatmap-wrap {
+    position: relative;
+  }
+  #heatmapCanvas {
+    width: 100%;
+    height: 480px;
+    display: block;
+    cursor: crosshair;
+  }
+
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 0.8rem;
+    font-size: 0.74rem;
+    color: var(--ink-muted);
+    font-family: ui-monospace, monospace;
+  }
+  .legend-ramp {
+    flex: 1;
+    height: 12px;
+    border-radius: 3px;
+    position: relative;
+  }
+
+  .figure-caption {
+    margin-top: 0.8rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.72rem;
+    line-height: 1.55;
+  }
+  .figure-caption .axis-line {
+    color: var(--ink-muted);
+    margin-bottom: 0.25rem;
+  }
+  .figure-caption .axis-line .sym {
+    color: var(--accent2);
+    font-family: ui-monospace, monospace;
+    margin-right: 0.3rem;
+  }
+  .figure-caption .axis-line b {
+    font-weight: 600;
+  }
+  .figure-caption .fixed-line {
+    color: var(--ink-faint);
+    margin-top: 0.35rem;
+  }
+  .figure-caption .fixed-line .kv {
+    font-family: ui-monospace, monospace;
+  }
+  .legend-ramp .zero-tick {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: var(--ink);
+    opacity: 0.6;
+  }
+
+  .chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--bg);
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    border-radius: 4px;
+    padding: 0.45rem 0.65rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .chart-tooltip .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  table.data-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.82rem;
+  }
+  table.data-table th,
+  table.data-table td {
+    border: 1px solid var(--rule);
+    padding: 0.35rem 0.55rem;
+    text-align: right;
+    font-family: ui-monospace, monospace;
+  }
+  table.data-table th:first-child,
+  table.data-table td:first-child {
+    text-align: left;
+  }
+  table.data-table th {
+    background: var(--panel-2);
+    font-weight: 600;
+  }
+  .table-scroll {
+    overflow: auto;
+    max-height: 480px;
+  }
+
+  .empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--ink-faint);
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.3rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 2px;
+  }
+  .tabs .btn {
+    border: none;
+    background: none;
+    border-radius: 3px;
+  }
+  .tabs .btn.active {
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .traj-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .traj-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 780px) {
+    .traj-panels {
+      grid-template-columns: 1fr;
+    }
+  }
+  .traj-panel-head {
+    font-size: 0.82rem;
+    color: var(--ink-muted);
+    margin-bottom: 0.4rem;
+  }
+  .traj-panel-head b {
+    color: var(--ink);
+    font-family: ui-monospace, monospace;
+  }
+  .traj-canvas-wrap {
+    position: relative;
+  }
+  .traj-canvas-wrap canvas {
+    width: 100%;
+    height: 320px;
+    display: block;
+    cursor: crosshair;
+  }
+  .traj-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+    font-size: 0.74rem;
+    color: var(--ink-muted);
+    font-family: ui-monospace, monospace;
+  }
+  .traj-legend .ramp {
+    flex: 1;
+    height: 10px;
+    border-radius: 3px;
+    max-width: 320px;
+  }
+  .traj-legend .avg-swatch {
+    display: inline-block;
+    width: 22px;
+    border-top: 3px dashed var(--ink);
+    vertical-align: middle;
+  }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <h1>Experiment Report</h1>
+    <span class="meta" id="metaLine"></span>
+    <div class="spacer"></div>
+    <div class="field-inline">
+      <span>metric</span>
+      <select id="metricSelect"></select>
+    </div>
+    <div class="field-inline" id="tickField">
+      <span>t = <b class="tabular" id="tickLabel">–</b></span>
+      <input type="range" id="tickRange" min="0" max="0" value="0" step="1" />
+    </div>
+    <button
+      class="btn"
+      id="axesFlipBtn"
+      title="Swap which parameter is shown on the horizontal vs vertical axis, across the heatmap, table, and trajectories"
+    >
+      ⇄ flip axes
+    </button>
+    <div class="tabs" id="viewTabs">
+      <button class="btn active" id="tabHeatmap" data-view="heatmap">
+        heatmap
+      </button>
+      <button class="btn" id="tabTable" data-view="table">table</button>
+      <button class="btn" id="tabTrajectories" data-view="trajectories">
+        trajectories
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <ul class="exp-list" id="expList"></ul>
+      <div class="sidebar-section">
+        <h3>Held fixed in this view</h3>
+        <div id="fixedPanel"></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="panel" id="heatmapPanel">
+        <div class="heatmap-head">
+          <h2 id="heatmapTitle">—</h2>
+          <span class="sub" id="heatmapSub"></span>
+        </div>
+        <div class="heatmap-wrap" id="heatmapWrap">
+          <canvas id="heatmapCanvas"></canvas>
+          <div class="table-scroll" id="tableWrap" style="display: none"></div>
+        </div>
+        <div class="legend-row">
+          <span id="legendMin" class="tabular">–</span>
+          <div class="legend-ramp" id="legendRamp">
+            <div class="zero-tick" id="legendZero"></div>
+          </div>
+          <span id="legendMax" class="tabular">–</span>
+        </div>
+        <div class="figure-caption" id="heatmapCaption"></div>
+      </section>
+
+      <section class="panel" id="trajectoryPanel" style="display: none">
+        <div class="heatmap-head">
+          <h2 id="trajTitle">—</h2>
+          <span class="sub" id="trajSub">
+            Compare the behavior of populations when one of the parameter values
+            varied in the experiment is pinned.</span
+          >
+        </div>
+        <div class="traj-controls">
+          <div class="field-inline">
+            <span>hold fixed</span>
+            <select id="trajFixAxisSelect"></select>
+          </div>
+          <div class="field-inline">
+            <span>panel A at</span>
+            <select id="trajValueASelect"></select>
+          </div>
+          <div class="field-inline">
+            <span>panel B at</span>
+            <select id="trajValueBSelect"></select>
+          </div>
+        </div>
+        <div class="traj-panels">
+          <div>
+            <div class="traj-panel-head" id="trajHeadA">—</div>
+            <div class="traj-canvas-wrap" id="trajWrapA">
+              <canvas id="trajCanvasA"></canvas>
+            </div>
+          </div>
+          <div>
+            <div class="traj-panel-head" id="trajHeadB">—</div>
+            <div class="traj-canvas-wrap" id="trajWrapB">
+              <canvas id="trajCanvasB"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="traj-legend">
+          <span id="trajLegendMin" class="tabular">–</span>
+          <div class="ramp" id="trajLegendRamp"></div>
+          <span id="trajLegendMax" class="tabular">–</span>
+          <span id="trajLegendLabel" style="margin-left: 0.4rem"></span>
+          <span class="avg-swatch" style="margin-left: 0.8rem"></span>
+          <span>average across lines</span>
+        </div>
+        <div class="figure-caption" id="trajCaption"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+  const DATA = /*__REPORT_DATA__*/;
+
+  const PRETTY = {
+    turnoverRate: "turnover rate", learningRateSpread: "learning-rate spread",
+    transferRate: "transfer rate", decayRate: "decay rate",
+    aiDampeningBelow: "AI dampening (below)", aiDampeningAbove: "AI dampening (above)",
+    aiAtrophyMultiplier: "AI atrophy multiplier", aiLevelFraction: "AI level fraction",
+    expertiseMean: "expertise mean (start)", entrantExpertiseMean: "entrant expertise mean",
+    aiGain: "AI gain",
+  };
+  const SYMBOL = {
+    turnoverRate: "r", learningRateSpread: "σ_L", transferRate: "β", decayRate: "δ",
+    aiDampeningBelow: "γ_below", aiDampeningAbove: "γ_above",
+    aiAtrophyMultiplier: "μ_atr", aiLevelFraction: "λ",
+    expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
+    aiGain: "κ",
+  };
+  // These two are stored (in every config/CSV) as a raw multiplier on the learning
+  // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
+  // formula (delta *= value) but the wrong shape for a human to read, since 0 reads
+  // backwards from what "dampening" suggests. DISPLAY-ONLY, shifted by -1 so it reads
+  // on a natural -1..+1 scale (-1 = max dampening, 0 = neutral, +1 = max amplification)
+  // wherever a human sees a value; every underlying array/select/comparison still uses
+  // the raw 0..2 number so it stays consistent with the stored data.
+  const DIRECTION_HINT = {
+    aiDampeningBelow: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
+    aiDampeningAbove: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
+  };
+  const DIRECTION_HINT_SHORT = {
+    aiDampeningBelow: "(−1=max dampening, 0=neutral, +1=max amplified)",
+    aiDampeningAbove: "(−1=max dampening, 0=neutral, +1=max amplified)",
+  };
+  const DAMPENING_KEYS = new Set(["aiDampeningBelow", "aiDampeningAbove"]);
+  function pretty(key) { return PRETTY[key] || key.replace(/([A-Z])/g, " $1").toLowerCase(); }
+  function sym(key) { return SYMBOL[key] || ""; }
+  function prettyWithHint(key) { return pretty(key) + (DIRECTION_HINT_SHORT[key] ? " " + DIRECTION_HINT_SHORT[key] : ""); }
+  function fmtNum(v) {
+    if (v == null) return "—";
+    const a = Math.abs(v);
+    if (a !== 0 && a < 0.001) return v.toExponential(1);
+    if (a < 1) return v.toFixed(a < 0.01 ? 4 : 3).replace(/0+$/, "").replace(/\.$/, "");
+    return v.toFixed(2);
+  }
+  // fmtAxis: use wherever a raw parameter value (not a metric) is displayed to a human.
+  // Shifts aiDampeningBelow/Above by -1 for display and adds an explicit "+" so the
+  // sign is never ambiguous; every other parameter is unaffected (passes straight to fmtNum).
+  function fmtAxis(key, v) {
+    if (!DAMPENING_KEYS.has(key) || v == null) return fmtNum(v);
+    const d = v - 1;
+    const s = fmtNum(d);
+    return d > 1e-9 ? "+" + s : s;
+  }
+  // Some held-fixed values are categorical (mobilityMode, aiResponseMode), not numeric
+  // — fmtAxis/fmtNum assume a number, so route non-numbers straight through as text.
+  function fmtAny(key, v) { return typeof v === "number" ? fmtAxis(key, v) : String(v); }
+
+  // Plain, descriptive one-line explanations for each of the eleven study parameters —
+  // what the number controls, not what it's good for. Used only in the per-figure
+  // caption below each chart; kept deliberately neutral, not persuasive.
+  const PARAM_EXPLAIN = {
+    turnoverRate: "the fraction of the population replaced with new entrants each simulated tick.",
+    learningRateSpread: "how much individual humans differ from one another in how quickly they learn from peers.",
+    transferRate: "how quickly a human's expertise moves toward their institution's average, for humans below that average.",
+    decayRate: "how quickly a human's expertise moves toward their institution's average, for humans at or above that average.",
+    aiDampeningBelow: "how much AI use reduces learning, for humans below the AI's reference level.",
+    aiDampeningAbove: "how much AI use reduces learning, for humans at or above the AI's reference level.",
+    aiAtrophyMultiplier: "how much faster expertise is lost, for humans below the AI's reference level, when AI use is active.",
+    aiLevelFraction: "the AI's reference level, expressed as a fraction of the starting population's median expertise.",
+    expertiseMean: "the average starting expertise of the population at the beginning of the simulation.",
+    entrantExpertiseMean: "the average starting expertise of new entrants who replace departing humans during the simulation.",
+    aiGain: "the strength of the boost applied to observed, not real, capability when AI is enabled.",
+  };
+
+  function buildFigureCaptions() {
+    const exp = currentExperiment();
+    const dxKey = axisKey(exp, "x"), dyKey = axisKey(exp, "y");
+    const axisLines =
+      '<div class="axis-line"><span class="sym">' + sym(dxKey) + "</span><b>" + pretty(dxKey) + "</b> — " + (PARAM_EXPLAIN[dxKey] || "") + "</div>" +
+      '<div class="axis-line"><span class="sym">' + sym(dyKey) + "</span><b>" + pretty(dyKey) + "</b> — " + (PARAM_EXPLAIN[dyKey] || "") + "</div>";
+    const otherKeys = Object.keys(exp.fixed).filter((k) => k !== exp.xKey && k !== exp.yKey);
+    const kvList = otherKeys.map((k) => sym(k) + " " + pretty(k) + "=" + fmtAny(k, exp.fixed[k])).join(", ");
+    const fixedLine = '<div class="fixed-line">All other parameters were held fixed at: <span class="kv">' + kvList + "</span>.</div>";
+    const html = axisLines + fixedLine;
+    const heatmapCaption = document.getElementById("heatmapCaption");
+    const trajCaption = document.getElementById("trajCaption");
+    if (heatmapCaption) heatmapCaption.innerHTML = html;
+    if (trajCaption) trajCaption.innerHTML = html;
+  }
+
+  const app = {
+    expIndex: 0,
+    metricKey: DATA.metrics[0].key,
+    tickIndex: 0,
+    viewMode: "heatmap", // "heatmap" | "table" | "trajectories"
+    trajFixAxis: "x", // which DISPLAY axis is held fixed per panel; the OTHER becomes the colored line fan
+    trajValueA: null,
+    trajValueB: null,
+    // Swaps which of the experiment's two real parameters is shown as the DISPLAY x
+    // vs y axis, across heatmap, table, and trajectories at once. A global view
+    // preference, not per-experiment — deliberately not reset in onExperimentChange,
+    // unlike trajValueA/B (which are specific values that may not exist in the next
+    // experiment's axis).
+    axesFlipped: false,
+  };
+
+  function currentExperiment() { return DATA.experiments[app.expIndex]; }
+
+  /* ---------- sidebar ---------- */
+  function buildExpList() {
+    const ul = document.getElementById("expList");
+    ul.innerHTML = "";
+    DATA.experiments.forEach((exp, i) => {
+      const li = document.createElement("li");
+      li.className = "exp-item" + (i === app.expIndex ? " selected" : "");
+      li.innerHTML =
+        '<span class="n">EXPERIMENT ' + exp.n + "</span>" +
+        '<span class="pair"><span class="sym">' + sym(exp.xKey) + "</span>" + pretty(exp.xKey) +
+        ' <span style="color:var(--ink-faint)">×</span> ' +
+        '<span class="sym">' + sym(exp.yKey) + "</span>" + pretty(exp.yKey) + "</span>";
+      li.addEventListener("click", () => { app.expIndex = i; app.tickIndex = currentExperiment().ticks.length - 1; onExperimentChange(); });
+      ul.appendChild(li);
+    });
+  }
+
+  function buildFixedPanel() {
+    const exp = currentExperiment();
+    const el = document.getElementById("fixedPanel");
+    const studyKeys = [...new Set(DATA.experiments.flatMap((e) => [e.xKey, e.yKey]))];
+    const held = studyKeys.filter((k) => k !== exp.xKey && k !== exp.yKey);
+    el.innerHTML = held.map((k) =>
+      '<div class="fixed-kv"' + (DIRECTION_HINT[k] ? ' title="' + DIRECTION_HINT[k] + '"' : "") + '><span><span class="sym">' + sym(k) + "</span>" + pretty(k) + (DIRECTION_HINT[k] ? ' <span style="text-decoration:underline dotted;">ⓘ</span>' : "") + "</span><b>" + fmtAxis(k, exp.fixed[k]) + "</b></div>"
+    ).join("") +
+      '<div class="fixed-kv"><span>N / M</span><b>' + exp.fixed.N + " / " + exp.fixed.M + "</b></div>" +
+      '<div class="fixed-kv"><span>replicates</span><b>' + DATA.replicates + "</b></div>";
+  }
+
+  /* ---------- controls ---------- */
+  function buildMetricSelect() {
+    const sel = document.getElementById("metricSelect");
+    sel.innerHTML = DATA.metrics.map((m) => '<option value="' + m.key + '">' + m.label + "</option>").join("");
+    sel.value = app.metricKey;
+    sel.addEventListener("change", () => { app.metricKey = sel.value; render(); });
+  }
+
+  function buildTickRange() {
+    const range = document.getElementById("tickRange");
+    const exp = currentExperiment();
+    range.max = exp.ticks.length - 1;
+    range.value = app.tickIndex;
+    range.oninput = () => { app.tickIndex = parseInt(range.value, 10); render(); };
+  }
+
+  const VIEW_TABS = [
+    { id: "tabHeatmap", mode: "heatmap" },
+    { id: "tabTable", mode: "table" },
+    { id: "tabTrajectories", mode: "trajectories" },
+  ];
+  VIEW_TABS.forEach(({ id, mode }) => {
+    const btn = document.getElementById(id);
+    btn.addEventListener("click", () => {
+      app.viewMode = mode;
+      VIEW_TABS.forEach((t) => document.getElementById(t.id).classList.toggle("active", t.mode === mode));
+      document.getElementById("tickField").style.display = mode === "trajectories" ? "none" : "flex";
+      if (mode === "trajectories") ensureTrajDefaults();
+      render();
+    });
+  });
+
+  // Swaps which of the experiment's two parameters is shown on the horizontal vs
+  // vertical axis — heatmap, table, and both trajectory panels all read this via
+  // axisKey/axisValues/cellField, so one toggle updates every view. trajValueA/B are
+  // specific numeric values that belonged to whichever real axis was previously
+  // "fixed"; forcing them to null (same pattern as onExperimentChange) makes
+  // ensureTrajDefaults() re-derive valid ones for the newly-swapped axis instead of
+  // silently keeping a stale value.
+  const axesFlipBtn = document.getElementById("axesFlipBtn");
+  axesFlipBtn.addEventListener("click", () => {
+    app.axesFlipped = !app.axesFlipped;
+    axesFlipBtn.classList.toggle("active", app.axesFlipped);
+    app.trajValueA = null;
+    app.trajValueB = null;
+    buildFigureCaptions();
+    render();
+  });
+
+  /* ---------- color ---------- */
+  function hexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function lerpRgb(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+  function rgbStr(c) { return "rgb(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + ")"; }
+
+  function divergingColor(v, domain) {
+    const zero = hexToRgb(cssVar("--diverge-zero"));
+    if (v == null) return "transparent";
+    const [min, max] = domain;
+    if (v >= 0) {
+      const mid = hexToRgb(cssVar("--diverge-pos-mid")), end = hexToRgb(cssVar("--diverge-pos-end"));
+      const t = max > 0 ? clip01(v / max) : 0;
+      return rgbStr(t < 0.5 ? lerpRgb(zero, mid, t * 2) : lerpRgb(mid, end, (t - 0.5) * 2));
+    }
+    const mid = hexToRgb(cssVar("--diverge-neg-mid")), end = hexToRgb(cssVar("--diverge-neg-end"));
+    const t = min < 0 ? clip01(v / min) : 0;
+    return rgbStr(t < 0.5 ? lerpRgb(zero, mid, t * 2) : lerpRgb(mid, end, (t - 0.5) * 2));
+  }
+  function clip01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function currentTheme() {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t === "dark" || t === "light") return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function renderLegend() {
+    const domain = DATA.domains[app.metricKey];
+    const [min, max] = domain;
+    document.getElementById("legendMin").textContent = fmtNum(min);
+    document.getElementById("legendMax").textContent = fmtNum(max);
+    const stops = [];
+    const N = 20;
+    for (let i = 0; i <= N; i++) {
+      const v = min + (max - min) * (i / N);
+      stops.push(divergingColor(v, domain) + " " + ((i / N) * 100) + "%");
+    }
+    document.getElementById("legendRamp").style.background = "linear-gradient(90deg," + stops.join(",") + ")";
+    const zeroPct = max > min ? clip01((0 - min) / (max - min)) * 100 : 50;
+    document.getElementById("legendZero").style.left = zeroPct + "%";
+  }
+
+  /* ---------- heatmap ---------- */
+  let hoverCell = null;
+  let tooltipEl = null;
+  function ensureTooltip() {
+    if (tooltipEl) return tooltipEl;
+    tooltipEl = document.createElement("div");
+    tooltipEl.className = "chart-tooltip";
+    tooltipEl.hidden = true;
+    document.getElementById("heatmapWrap").appendChild(tooltipEl);
+    return tooltipEl;
+  }
+
+  // xi/yi are DISPLAY grid indices (0..nx-1 / 0..ny-1 along whatever's currently
+  // shown horizontal/vertical) — resolved to the real x/y via axisValues/cellField so
+  // this works the same whether or not axes are flipped.
+  function cellAt(exp, xi, yi, t) {
+    const dx = axisValues(exp, "x")[xi], dy = axisValues(exp, "y")[yi];
+    return exp.cells.find((c) => Math.abs(cellField(c, "x") - dx) < 1e-9 && Math.abs(cellField(c, "y") - dy) < 1e-9 && Math.abs(c.t - t) < 1e-9) || null;
+  }
+
+  function drawHeatmap() {
+    const exp = currentExperiment();
+    const canvas = document.getElementById("heatmapCanvas");
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width, h = rect.height;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const t = exp.ticks[app.tickIndex];
+    const pad = { l: 90, r: 16, t: 10, b: 46 };
+    const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+    const dispXValues = axisValues(exp, "x"), dispYValues = axisValues(exp, "y");
+    const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
+    const nx = dispXValues.length, ny = dispYValues.length;
+    const cw = plotW / nx, ch = plotH / ny;
+    const domain = DATA.domains[app.metricKey];
+
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+
+    // A grid can be anywhere from 5x5 to 21x21 depending on the experiment — per-cell
+    // numeric labels read fine at the former and turn to illegible noise at the
+    // latter, so they're dropped once there's not roughly enough room for them
+    // (hover still gives the exact value either way).
+    const showCellLabels = cw >= 30 && ch >= 18;
+
+    for (let xi = 0; xi < nx; xi++) {
+      for (let yi = 0; yi < ny; yi++) {
+        const cell = cellAt(exp, xi, yi, t);
+        const cx = pad.l + xi * cw, cy = pad.t + (ny - 1 - yi) * ch; // y grows upward
+        const v = cell ? cell[app.metricKey] : null;
+        ctx.fillStyle = divergingColor(v, domain);
+        const gap = Math.min(2, cw * 0.08, ch * 0.08);
+        roundRect(ctx, cx + gap / 2, cy + gap / 2, cw - gap, ch - gap, Math.min(3, cw / 4));
+        ctx.fill();
+        if (hoverCell && hoverCell.xi === xi && hoverCell.yi === yi) {
+          ctx.strokeStyle = cssVar("--ink"); ctx.lineWidth = 1.5;
+          roundRect(ctx, cx + gap / 2, cy + gap / 2, cw - gap, ch - gap, Math.min(3, cw / 4));
+          ctx.stroke();
+        }
+        if (showCellLabels && v != null) {
+          ctx.fillStyle = readableTextOn(v, domain);
+          ctx.fillText(fmtNum(v), cx + cw / 2, cy + ch / 2);
+        }
+      }
+    }
+
+    // axis tick labels — thin out to roughly a dozen when the grid is fine-grained,
+    // so labels never overlap; the last tick is always kept so the range end is visible.
+    ctx.fillStyle = cssVar("--ink-muted");
+    ctx.font = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const xStride = Math.max(1, Math.ceil(nx / 12));
+    const yStride = Math.max(1, Math.ceil(ny / 12));
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    dispXValues.forEach((v, xi) => {
+      if (xi % xStride !== 0 && xi !== nx - 1) return;
+      ctx.fillText(fmtAxis(dispXKey, v), pad.l + xi * cw + cw / 2, pad.t + plotH + 8);
+    });
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    dispYValues.forEach((v, yi) => {
+      if (yi % yStride !== 0 && yi !== ny - 1) return;
+      ctx.fillText(fmtAxis(dispYKey, v), pad.l - 10, pad.t + (ny - 1 - yi) * ch + ch / 2);
+    });
+
+    ctx.fillStyle = cssVar("--ink-faint");
+    ctx.font = "10px ui-sans-serif, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(prettyWithHint(dispXKey) + " →", pad.l + plotW / 2, pad.t + plotH + 24);
+    ctx.save();
+    ctx.translate(16, pad.t + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(prettyWithHint(dispYKey) + " →", 0, 0);
+    ctx.restore();
+
+    canvas._hit = { pad, cw, ch, nx, ny, exp, t };
+  }
+
+  function readableTextOn(v, domain) {
+    if (v == null) return "transparent";
+    const [min, max] = domain;
+    const mag = v >= 0 ? (max > 0 ? Math.abs(v / max) : 0) : (min < 0 ? Math.abs(v / min) : 0);
+    return mag > 0.55 ? "rgba(255,255,255,0.92)" : cssVar("--ink");
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function hitTest(canvas, evt) {
+    const hit = canvas._hit;
+    if (!hit) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
+    const xi = Math.floor((x - hit.pad.l) / hit.cw);
+    const yiFromTop = Math.floor((y - hit.pad.t) / hit.ch);
+    const yi = hit.ny - 1 - yiFromTop;
+    if (xi < 0 || xi >= hit.nx || yi < 0 || yi >= hit.ny) return null;
+    return { xi, yi };
+  }
+
+  const heatmapCanvas = document.getElementById("heatmapCanvas");
+  heatmapCanvas.addEventListener("mousemove", (evt) => {
+    const hit = hitTest(heatmapCanvas, evt);
+    hoverCell = hit;
+    const tt = ensureTooltip();
+    if (!hit) { tt.hidden = true; drawHeatmap(); return; }
+    const exp = currentExperiment();
+    const cell = cellAt(exp, hit.xi, hit.yi, exp.ticks[app.tickIndex]);
+    if (!cell) { tt.hidden = true; drawHeatmap(); return; }
+    const rows = DATA.metrics.map((m) =>
+      '<div class="row"><span>' + m.label + "</span><span>" + fmtNum(cell[m.key]) + "</span></div>"
+    ).join("");
+    tt.innerHTML =
+      '<div class="row"><b>' + pretty(axisKey(exp, "x")) + "</b><span>" + fmtAxis(axisKey(exp, "x"), cellField(cell, "x")) + "</span></div>" +
+      '<div class="row"><b>' + pretty(axisKey(exp, "y")) + "</b><span>" + fmtAxis(axisKey(exp, "y"), cellField(cell, "y")) + "</span></div>" +
+      '<div class="row"><span>replicates</span><span>' + cell.n + "</span></div>" + rows;
+    tt.hidden = false;
+    const wrapRect = document.getElementById("heatmapWrap").getBoundingClientRect();
+    let left = evt.clientX - wrapRect.left + 14, top = evt.clientY - wrapRect.top - 10;
+    tt.style.left = left + "px"; tt.style.top = Math.max(0, top) + "px";
+    drawHeatmap();
+  });
+  heatmapCanvas.addEventListener("mouseleave", () => { hoverCell = null; if (tooltipEl) tooltipEl.hidden = true; drawHeatmap(); });
+
+  /* ---------- table view ---------- */
+  function renderTable() {
+    const exp = currentExperiment();
+    const t = exp.ticks[app.tickIndex];
+    const wrap = document.getElementById("tableWrap");
+    const dispXValues = axisValues(exp, "x"), dispYValues = axisValues(exp, "y");
+    const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
+    let html = '<table class="data-table"><thead><tr><th>' + pretty(dispYKey) + " \\ " + pretty(dispXKey) + "</th>";
+    dispXValues.forEach((x) => { html += "<th>" + fmtAxis(dispXKey, x) + "</th>"; });
+    html += "</tr></thead><tbody>";
+    [...dispYValues].reverse().forEach((y) => {
+      html += "<tr><th>" + fmtAxis(dispYKey, y) + "</th>";
+      dispXValues.forEach((x) => {
+        const cell = exp.cells.find((c) => Math.abs(cellField(c, "x") - x) < 1e-9 && Math.abs(cellField(c, "y") - y) < 1e-9 && Math.abs(c.t - t) < 1e-9);
+        html += "<td>" + (cell ? fmtNum(cell[app.metricKey]) : "—") + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+  }
+
+  /* ---------- axis resolution (shared by heatmap, table, and trajectories) ---------- */
+  // "x"/"y" below always mean the DISPLAY axis (what's currently drawn horizontal vs
+  // vertical); realAxisOf maps that to the experiment's actual xKey/yKey identity,
+  // swapping when app.axesFlipped is on. Every place that used to read exp.xKey/
+  // exp.yKey/exp.xValues/exp.yValues directly goes through these instead, so the flip
+  // toggle only has to be implemented once.
+  function otherAxis(axis) { return axis === "x" ? "y" : "x"; }
+  function realAxisOf(axis) { return app.axesFlipped ? otherAxis(axis) : axis; }
+  function axisKey(exp, axis) { return realAxisOf(axis) === "x" ? exp.xKey : exp.yKey; }
+  function axisValues(exp, axis) { return realAxisOf(axis) === "x" ? exp.xValues : exp.yValues; }
+  // Reads a cell's coordinate along a DISPLAY axis (cells are always stored keyed by
+  // the real x/y, regardless of flip).
+  function cellField(c, axis) { return realAxisOf(axis) === "x" ? c.x : c.y; }
+
+  function ensureTrajDefaults() {
+    const exp = currentExperiment();
+    const vals = axisValues(exp, app.trajFixAxis);
+    if (app.trajValueA == null || !vals.some((v) => Math.abs(v - app.trajValueA) < 1e-9)) app.trajValueA = vals[0];
+    if (app.trajValueB == null || !vals.some((v) => Math.abs(v - app.trajValueB) < 1e-9)) app.trajValueB = vals[Math.floor(vals.length / 2)];
+    buildTrajControls();
+  }
+
+  function buildTrajControls() {
+    const exp = currentExperiment();
+    const fixSel = document.getElementById("trajFixAxisSelect");
+    fixSel.innerHTML =
+      '<option value="x">' + sym(axisKey(exp, "x")) + " " + pretty(axisKey(exp, "x")) + "</option>" +
+      '<option value="y">' + sym(axisKey(exp, "y")) + " " + pretty(axisKey(exp, "y")) + "</option>";
+    fixSel.value = app.trajFixAxis;
+    fixSel.onchange = () => {
+      app.trajFixAxis = fixSel.value;
+      const vals = axisValues(exp, app.trajFixAxis);
+      app.trajValueA = vals[0];
+      app.trajValueB = vals[Math.floor(vals.length / 2)];
+      buildTrajControls();
+      render();
+    };
+
+    const vals = axisValues(exp, app.trajFixAxis);
+    const fixKeyForOptions = axisKey(exp, app.trajFixAxis);
+    const optsHtml = vals.map((v) => '<option value="' + v + '">' + fmtAxis(fixKeyForOptions, v) + "</option>").join("");
+    const selA = document.getElementById("trajValueASelect"), selB = document.getElementById("trajValueBSelect");
+    selA.innerHTML = optsHtml; selA.value = app.trajValueA;
+    selB.innerHTML = optsHtml; selB.value = app.trajValueB;
+    selA.onchange = () => { app.trajValueA = parseFloat(selA.value); render(); };
+    selB.onchange = () => { app.trajValueB = parseFloat(selB.value); render(); };
+  }
+
+  function trajSeries(exp, fixAxis, fixedValue, metricKey) {
+    const vAxis = otherAxis(fixAxis);
+    const vValues = axisValues(exp, vAxis);
+    const byVarying = new Map();
+    vValues.forEach((v) => byVarying.set(v, []));
+    exp.cells.forEach((c) => {
+      const fv = cellField(c, fixAxis);
+      if (Math.abs(fv - fixedValue) > 1e-9) return;
+      const vv = cellField(c, vAxis);
+      const arr = byVarying.get(vv);
+      if (arr) arr.push({ t: c.t, v: c[metricKey] });
+    });
+    byVarying.forEach((arr) => arr.sort((a, b) => a.t - b.t));
+    return { varyingKey: axisKey(exp, vAxis), varyingValues: vValues, series: byVarying };
+  }
+
+  function trajDomain(exp, fixAxis, valueA, valueB, metricKey) {
+    let min = Infinity, max = -Infinity;
+    exp.cells.forEach((c) => {
+      const fv = cellField(c, fixAxis);
+      if (Math.abs(fv - valueA) > 1e-9 && Math.abs(fv - valueB) > 1e-9) return;
+      const v = c[metricKey];
+      if (v == null) return;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    });
+    if (!isFinite(min)) { min = 0; max = 1; }
+    if (max - min < 1e-9) max = min + 1e-9;
+    return [min, max];
+  }
+
+  function seqRamp(t, isDark) {
+    const lightRamp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+    const darkRamp = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"];
+    const ramp = isDark ? darkRamp : lightRamp;
+    const idx = clip01(t) * (ramp.length - 1);
+    const lo = Math.floor(idx), hi = Math.min(ramp.length - 1, lo + 1), frac = idx - lo;
+    const c1 = hexToRgb(ramp[lo]), c2 = hexToRgb(ramp[hi]);
+    return rgbStr(lerpRgb(c1, c2, frac));
+  }
+
+  const trajHover = { A: null, B: null };
+  function drawTrajPanel(canvasId, exp, fixAxis, fixedValue, metricKey, yDomain, hoverKey) {
+    const canvas = document.getElementById(canvasId);
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width, h = rect.height;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const { varyingValues, series } = trajSeries(exp, fixAxis, fixedValue, metricKey);
+    const pad = { l: 58, r: 10, t: 10, b: 26 };
+    const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+    const ticks = exp.ticks;
+    const t0 = ticks[0], t1 = ticks[ticks.length - 1];
+    const [yMin, yMax] = yDomain;
+    const toX = (t) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * plotW;
+    const toY = (v) => (pad.t + plotH) - ((v - yMin) / (yMax - yMin)) * plotH;
+    const isDark = currentTheme() === "dark";
+
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+    ctx.fillStyle = cssVar("--ink-faint"); ctx.font = "10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    [yMin, (yMin + yMax) / 2, yMax].forEach((v) => {
+      const y = toY(v);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillText(fmtNum(v), pad.l - 6, y);
+    });
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    [t0, Math.round((t0 + t1) / 2), t1].forEach((t) => ctx.fillText(String(t), toX(t), pad.t + plotH + 6));
+
+    // y-axis title, rotated — first character of the string ends up at the bottom of
+    // the axis, last character at the top, so tailing it with -/+ reads as a sign cue
+    // (bottom = negative = below starting state, top = positive = above it)
+    ctx.font = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.save();
+    ctx.translate(14, pad.t + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("+ Amount of reduction in expertise in system vs. starting state -", 0, 0);
+    ctx.restore();
+
+    // zero-reference line for shortfall metrics — deliberately loud (solid, thicker,
+    // reserved red) since it marks the line between "AI hurt" and "AI helped", not just
+    // another gridline
+    if (yMin < 0 && yMax > 0) {
+      ctx.strokeStyle = cssVar("--ref-line");
+      ctx.lineWidth = 1.75;
+      ctx.beginPath(); ctx.moveTo(pad.l, toY(0)); ctx.lineTo(w - pad.r, toY(0)); ctx.stroke();
+      ctx.fillStyle = cssVar("--ref-line");
+      ctx.font = "bold 10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+      ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillText("0", w - pad.r - 12, toY(0) - 3);
+    }
+
+    const n = varyingValues.length;
+    varyingValues.forEach((vv, i) => {
+      const pts = series.get(vv) || [];
+      if (!pts.length) return;
+      const isHover = hoverKey != null && Math.abs(vv - hoverKey) < 1e-9;
+      ctx.strokeStyle = seqRamp(n > 1 ? i / (n - 1) : 0.5, isDark);
+      ctx.lineWidth = isHover ? 3 : 1.4;
+      ctx.globalAlpha = isHover || hoverKey == null ? 1 : 0.35;
+      ctx.beginPath();
+      pts.forEach((p, pi) => { const x = toX(p.t), y = toY(p.v); if (pi === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+
+    // average across every varying-axis line, for this fixed value — drawn last (on
+    // top), dashed, in the theme's ink color so it never gets mistaken for one of the
+    // sequential-colored data lines
+    const avgPts = ticks.map((t, ti) => {
+      let sum = 0, count = 0;
+      varyingValues.forEach((vv) => {
+        const pts = series.get(vv);
+        const p = pts && pts[ti];
+        if (p && p.v != null) { sum += p.v; count++; }
+      });
+      return { t, v: count ? sum / count : null };
+    }).filter((p) => p.v != null);
+    if (avgPts.length) {
+      ctx.strokeStyle = cssVar("--ink");
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 5]);
+      ctx.beginPath();
+      avgPts.forEach((p, pi) => { const x = toX(p.t), y = toY(p.v); if (pi === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    canvas._hit = { pad, plotW, plotH, t0, t1, toX, varyingValues, series };
+  }
+
+  function hitTestTraj(canvas, evt) {
+    const hit = canvas._hit;
+    if (!hit) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const t = hit.t0 + ((x - hit.pad.l) / hit.plotW) * (hit.t1 - hit.t0);
+    if (x < hit.pad.l || x > hit.pad.l + hit.plotW) return null;
+    // nearest line by y-distance at this t
+    const y = evt.clientY - rect.top;
+    let best = null, bestPoint = null, bestDist = Infinity;
+    hit.varyingValues.forEach((vv) => {
+      const pts = hit.series.get(vv) || [];
+      if (!pts.length) return;
+      let nearest = pts[0];
+      pts.forEach((p) => { if (Math.abs(p.t - t) < Math.abs(nearest.t - t)) nearest = p; });
+      if (nearest.v == null) return;
+      const py = hit.pad.t + hit.plotH - ((nearest.v - hit._yMin) / (hit._yMax - hit._yMin)) * hit.plotH;
+      const d = Math.abs(py - y);
+      if (d < bestDist) { bestDist = d; best = vv; bestPoint = nearest; }
+    });
+    return { varyingValue: best, point: bestPoint };
+  }
+
+  const trajTooltips = {};
+  function ensureTrajTooltip(panelKey) {
+    if (trajTooltips[panelKey]) return trajTooltips[panelKey];
+    const el = document.createElement("div");
+    el.className = "chart-tooltip";
+    el.hidden = true;
+    document.getElementById("trajWrap" + panelKey).appendChild(el);
+    trajTooltips[panelKey] = el;
+    return el;
+  }
+
+  function wireTrajHover(canvasId, panelKey) {
+    const canvas = document.getElementById(canvasId);
+    canvas.addEventListener("mousemove", (evt) => {
+      const hit = canvas._hit;
+      if (hit) { hit._yMin = trajCurrentDomain[0]; hit._yMax = trajCurrentDomain[1]; }
+      const res = hitTestTraj(canvas, evt);
+      trajHover[panelKey] = res ? res.varyingValue : null;
+      renderTrajectories(true);
+
+      const tt = ensureTrajTooltip(panelKey);
+      if (!res || !res.point) { tt.hidden = true; return; }
+      const exp = currentExperiment();
+      const varyKey = axisKey(exp, otherAxis(app.trajFixAxis));
+      const metricLabel = DATA.metrics.find((m) => m.key === app.metricKey).label;
+      tt.innerHTML =
+        '<div class="row"><b>' + sym(varyKey) + " " + pretty(varyKey) + '</b><span>' + fmtAxis(varyKey, res.varyingValue) + "</span></div>" +
+        '<div class="row"><span>t</span><span>' + res.point.t + "</span></div>" +
+        '<div class="row"><span>' + metricLabel + '</span><span>' + fmtNum(res.point.v) + "</span></div>";
+      tt.hidden = false;
+      const wrapRect = document.getElementById("trajWrap" + panelKey).getBoundingClientRect();
+      let left = evt.clientX - wrapRect.left + 14, top = evt.clientY - wrapRect.top - 10;
+      tt.style.left = left + "px"; tt.style.top = Math.max(0, top) + "px";
+    });
+    canvas.addEventListener("mouseleave", () => {
+      trajHover[panelKey] = null;
+      const tt = trajTooltips[panelKey];
+      if (tt) tt.hidden = true;
+      renderTrajectories(true);
+    });
+  }
+
+  let trajCurrentDomain = [0, 1];
+  function renderTrajectories(fromHover) {
+    const exp = currentExperiment();
+    if (app.trajValueA == null || app.trajValueB == null || !axisValues(exp, app.trajFixAxis).length) ensureTrajDefaults();
+
+    const domain = fromHover ? trajCurrentDomain : trajDomain(exp, app.trajFixAxis, app.trajValueA, app.trajValueB, app.metricKey);
+    trajCurrentDomain = domain;
+    drawTrajPanel("trajCanvasA", exp, app.trajFixAxis, app.trajValueA, app.metricKey, domain, trajHover.A);
+    drawTrajPanel("trajCanvasB", exp, app.trajFixAxis, app.trajValueB, app.metricKey, domain, trajHover.B);
+
+    if (fromHover) return; // labels/controls/legend are unchanged by a hover-only redraw
+
+    buildTrajControls();
+
+    const fixKey = axisKey(exp, app.trajFixAxis);
+    const varyKey = axisKey(exp, otherAxis(app.trajFixAxis));
+    const metricLabel = DATA.metrics.find((m) => m.key === app.metricKey).label;
+
+    document.getElementById("trajTitle").innerHTML =
+      metricLabel + " over time, sliced by <span class=\"mono\" style=\"color:var(--accent2)\">" + sym(fixKey) + "</span> " + pretty(fixKey);
+    document.getElementById("trajHeadA").innerHTML = sym(fixKey) + " " + pretty(fixKey) + " held at <b>" + fmtAxis(fixKey, app.trajValueA) + "</b>";
+    document.getElementById("trajHeadB").innerHTML = sym(fixKey) + " " + pretty(fixKey) + " held at <b>" + fmtAxis(fixKey, app.trajValueB) + "</b>";
+
+    const varyValues = axisValues(exp, otherAxis(app.trajFixAxis));
+    const isDark = currentTheme() === "dark";
+    const stops = [];
+    const N = 20;
+    for (let i = 0; i <= N; i++) stops.push(seqRamp(i / N, isDark) + " " + ((i / N) * 100) + "%");
+    document.getElementById("trajLegendRamp").style.background = "linear-gradient(90deg," + stops.join(",") + ")";
+    document.getElementById("trajLegendMin").textContent = fmtAxis(varyKey, varyValues[0]);
+    document.getElementById("trajLegendMax").textContent = fmtAxis(varyKey, varyValues[varyValues.length - 1]);
+    document.getElementById("trajLegendLabel").textContent = "line color = " + sym(varyKey) + " " + pretty(varyKey);
+  }
+  wireTrajHover("trajCanvasA", "A");
+  wireTrajHover("trajCanvasB", "B");
+
+  /* ---------- top-level render ---------- */
+  function render() {
+    const exp = currentExperiment();
+    document.getElementById("tickLabel").textContent = exp.ticks[app.tickIndex];
+
+    const heatmapOn = app.viewMode !== "trajectories";
+    document.getElementById("heatmapPanel").style.display = heatmapOn ? "block" : "none";
+    document.getElementById("trajectoryPanel").style.display = heatmapOn ? "none" : "block";
+
+    if (heatmapOn) {
+      document.getElementById("heatmapTitle").innerHTML =
+        '<span class="mono" style="color:var(--accent2)">' + sym(axisKey(exp, "x")) + "</span> " + pretty(axisKey(exp, "x")) +
+        ' <span style="color:var(--ink-faint)">×</span> ' +
+        '<span class="mono" style="color:var(--accent2)">' + sym(axisKey(exp, "y")) + "</span> " + pretty(axisKey(exp, "y"));
+      document.getElementById("heatmapSub").textContent =
+        DATA.metrics.find((m) => m.key === app.metricKey).label + " — " + exp.runs + " runs, " + DATA.replicates + " replicates/cell";
+      const isTable = app.viewMode === "table";
+      document.getElementById("heatmapCanvas").style.display = isTable ? "none" : "block";
+      document.getElementById("tableWrap").style.display = isTable ? "block" : "none";
+      if (isTable) renderTable(); else drawHeatmap();
+      renderLegend();
+    } else {
+      renderTrajectories();
+    }
+  }
+
+  function onExperimentChange() {
+    buildExpList();
+    buildFixedPanel();
+    buildFigureCaptions();
+    buildTickRange();
+    // trajValueA/B belong to the previous experiment's axis values and won't generally
+    // exist in the new one's — force ensureTrajDefaults() to re-derive them instead of
+    // silently rendering a stale, off-list value.
+    app.trajValueA = null;
+    app.trajValueB = null;
+    render();
+  }
+
+  document.getElementById("metaLine").textContent = "generated " + DATA.generatedAt + " · horizon t=" + DATA.horizon;
+  buildMetricSelect();
+  onExperimentChange();
+  window.addEventListener("resize", render);
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+</script>

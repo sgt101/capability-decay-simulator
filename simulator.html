@@ -1,0 +1,1035 @@
+<title>Capability Decay Simulator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #eef0ee;
+    --panel: #ffffff;
+    --panel-2: #f4f5f3;
+    --ink: #14181a;
+    --ink-muted: #5c6360;
+    --ink-faint: #8b918d;
+    --rule: #d7dad6;
+    --accent: #a8502c;
+    --accent-soft: #f3e2da;
+    --accent2: #35636b;
+    --accent2-soft: #dfe9ea;
+    --shadow: 0 1px 2px rgba(20,24,26,0.07);
+    --chart-surface: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101314; --panel: #171b1d; --panel-2: #1d2224;
+      --ink: #e8eae6; --ink-muted: #93a09c; --ink-faint: #656e6b;
+      --rule: #2b3234; --accent: #dd8259; --accent-soft: #35271f;
+      --accent2: #7fb0b7; --accent2-soft: #1c2b2d;
+      --shadow: 0 1px 3px rgba(0,0,0,0.5); --chart-surface: #171b1d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101314; --panel: #171b1d; --panel-2: #1d2224;
+    --ink: #e8eae6; --ink-muted: #93a09c; --ink-faint: #656e6b;
+    --rule: #2b3234; --accent: #dd8259; --accent-soft: #35271f;
+    --accent2: #7fb0b7; --accent2-soft: #1c2b2d;
+    --shadow: 0 1px 3px rgba(0,0,0,0.5); --chart-surface: #171b1d;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef0ee; --panel: #ffffff; --panel-2: #f4f5f3;
+    --ink: #14181a; --ink-muted: #5c6360; --ink-faint: #8b918d;
+    --rule: #d7dad6; --accent: #a8502c; --accent-soft: #f3e2da;
+    --accent2: #35636b; --accent2-soft: #dfe9ea;
+    --shadow: 0 1px 2px rgba(20,24,26,0.07); --chart-surface: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 { margin: 0; font-family: ui-serif, Charter, "Iowan Old Style", Georgia, serif; font-weight: 600; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ---- Topbar ---- */
+  .topbar {
+    display: flex; align-items: center; gap: 1.2rem;
+    padding: 0.7rem 1.1rem; background: var(--panel);
+    border-bottom: 1px solid var(--rule); flex-wrap: wrap;
+  }
+  .topbar h1 { font-size: 1.15rem; letter-spacing: -0.01em; white-space: nowrap; }
+  .stat-group { display: flex; gap: 0.9rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.78rem; color: var(--ink-muted); }
+  .stat-group b { color: var(--ink); font-weight: 600; }
+  .ai-chip {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.74rem; letter-spacing: 0.03em; padding: 0.28rem 0.6rem;
+    border-radius: 999px; background: var(--panel-2); color: var(--ink-muted);
+    border: 1px solid var(--rule); white-space: nowrap;
+  }
+  .ai-chip.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .spacer { flex: 1; }
+  .transport { display: flex; align-items: center; gap: 0.5rem; }
+  .btn {
+    font-size: 0.8rem; padding: 0.4rem 0.7rem; border-radius: 4px;
+    border: 1px solid var(--rule); background: var(--panel-2); color: var(--ink);
+    cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--ink-faint); }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--accent2); color: #fff; border-color: transparent; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-icon { width: 2.1rem; padding: 0.4rem 0; text-align: center; }
+  .speed-field { display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--ink-muted); }
+  .speed-field input[type="range"] { width: 90px; }
+
+  input[type="range"] { accent-color: var(--accent2); }
+  input[type="checkbox"] { accent-color: var(--accent2); }
+  select, input[type="number"] {
+    font: inherit; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 0.3rem 0.4rem;
+  }
+
+  /* ---- Scrub bar ---- */
+  .scrubbar { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 1.1rem; background: var(--panel-2); border-bottom: 1px solid var(--rule); font-size: 0.76rem; color: var(--ink-muted); }
+  .scrubbar input[type="range"] { flex: 1; }
+  .scrubbar .live-btn { font-family: ui-monospace, monospace; }
+  .scrubbar .live-btn.is-live { color: var(--accent2); border-color: var(--accent2); }
+
+  /* ---- Layout ---- */
+  .layout { display: grid; grid-template-columns: 280px 1fr 260px; flex: 1; min-height: 0; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+  .sidebar, .inspector { background: var(--panel); overflow-y: auto; max-height: calc(100vh - 96px); }
+  .sidebar { border-right: 1px solid var(--rule); }
+  .inspector { border-left: 1px solid var(--rule); padding: 1rem; }
+
+  .group summary {
+    cursor: pointer; list-style: none; padding: 0.65rem 1rem;
+    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-muted); border-bottom: 1px solid var(--rule);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .group summary::-webkit-details-marker { display: none; }
+  .group summary::after { content: "+"; font-family: ui-monospace, monospace; color: var(--ink-faint); }
+  .group[open] summary::after { content: "\2212"; }
+  .group .body { padding: 0.7rem 1rem 0.9rem; display: flex; flex-direction: column; gap: 0.65rem; }
+  .group + .group summary { border-top: none; }
+
+  .field label { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.28rem; }
+  .field label .sym { color: var(--accent2); font-family: ui-monospace, monospace; margin-right: 0.3rem; }
+  .field label output { font-family: ui-monospace, monospace; color: var(--ink-muted); }
+  .field input[type="range"] { width: 100%; }
+  .field select, .field input[type="number"] { width: 100%; }
+  .field .hint { font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; }
+  .seed-row { display: flex; gap: 0.4rem; }
+  .seed-row input { flex: 1; }
+
+  .switch-row { display: flex; align-items: center; justify-content: space-between; }
+  .switch-row .field-label { font-size: 0.85rem; }
+  .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track { position: absolute; inset: 0; background: var(--rule); border-radius: 999px; transition: background 0.15s; }
+  .switch .track::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform 0.15s; box-shadow: var(--shadow); }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::before { transform: translateX(16px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent2); outline-offset: 2px; }
+
+  .reset-note { font-size: 0.72rem; color: var(--ink-faint); padding: 0.7rem 1rem; border-top: 1px solid var(--rule); }
+  .reset-note b { color: var(--ink-muted); }
+
+  /* ---- Main panels ---- */
+  .main { padding: 0.9rem; display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; box-shadow: var(--shadow); display: flex; flex-direction: column; min-width: 0; }
+  .panel .panel-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0.6rem 0.85rem 0.4rem; }
+  .panel .panel-head h2 { font-size: 0.92rem; font-family: ui-sans-serif, sans-serif; font-weight: 700; }
+  .panel .panel-head .sub { font-size: 0.72rem; color: var(--ink-faint); }
+  .network-panel { flex: 1 1 340px; min-height: 340px; position: relative; }
+  .network-panel canvas { flex: 1; width: 100%; height: 100%; cursor: pointer; }
+  .network-legend { position: absolute; right: 0.85rem; bottom: 0.7rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.7rem; color: var(--ink-muted); box-shadow: var(--shadow); }
+  .network-legend .ramp { width: 90px; height: 8px; border-radius: 3px; margin: 0.3rem 0; background: linear-gradient(90deg, #cde2fb, #0d366b); }
+  .row { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.9rem; }
+  @media (max-width: 780px) { .row { grid-template-columns: 1fr; } }
+  .dist-panel canvas, .mini-chart canvas { width: 100%; height: 150px; display: block; }
+  .timeline-panel .mini-chart { padding: 0 0.85rem 0.6rem; }
+  .timeline-panel .mini-chart h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; margin-bottom: 0.2rem; }
+  .chart-tooltip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-family: ui-monospace, monospace; font-size: 0.7rem; line-height: 1.5; border-radius: 4px; padding: 0.4rem 0.6rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); white-space: nowrap; z-index: 5; }
+
+  .inspector h2 { font-size: 0.85rem; margin-bottom: 0.6rem; }
+  .inspector .placeholder { font-size: 0.82rem; color: var(--ink-faint); line-height: 1.5; }
+  .inspector .kv { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
+  .inspector .kv b { font-family: ui-monospace, monospace; font-weight: 600; }
+  .inspector canvas { width: 100%; height: 90px; margin-top: 0.6rem; }
+  .inspector .inst-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.4rem; }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <h1>Capability Decay Simulator</h1>
+    <div class="stat-group">
+      <span>t = <b class="tabular" id="statT">0</b></span>
+      <span>N = <b class="tabular" id="statN">–</b></span>
+      <span>M = <b class="tabular" id="statM">–</b></span>
+    </div>
+    <span class="ai-chip" id="aiChip">AI off</span>
+    <div class="spacer"></div>
+    <div class="transport">
+      <button class="btn btn-icon" id="btnStep" title="Step one tick">⏭</button>
+      <button class="btn btn-primary btn-icon" id="btnPlay" title="Play / pause">▶</button>
+      <div class="speed-field">
+        <span>speed</span>
+        <input type="range" id="speedRange" min="1" max="30" value="6" step="1" />
+        <output id="speedOut" class="tabular">6/s</output>
+      </div>
+      <button class="btn" id="btnRebuild" title="Rebuild with current N / M / m / seed">Rebuild</button>
+    </div>
+  </header>
+
+  <div class="scrubbar">
+    <span>scrub</span>
+    <input type="range" id="scrubRange" min="0" max="0" value="0" />
+    <span class="tabular" id="scrubLabel">t = 0</span>
+    <button class="btn live-btn is-live" id="btnLive">live</button>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main">
+      <section class="panel network-panel">
+        <div class="panel-head">
+          <h2>Institution network</h2>
+          <span class="sub">size = population · color = avg. latent expertise (Ē)</span>
+        </div>
+        <canvas id="networkCanvas"></canvas>
+        <div class="network-legend">
+          <div>low Ē <span style="float:right">high Ē</span></div>
+          <div class="ramp"></div>
+          <div style="margin-top:0.35rem;">click a node to inspect it</div>
+        </div>
+      </section>
+
+      <div class="row">
+        <section class="panel dist-panel">
+          <div class="panel-head">
+            <h2>Expertise distribution</h2>
+            <span class="sub">bars = E · line = C (when AI on)</span>
+          </div>
+          <canvas id="distCanvas"></canvas>
+        </section>
+
+        <section class="panel timeline-panel">
+          <div class="panel-head">
+            <h2>Timeline</h2>
+            <span class="sub">dashed = AI toggled</span>
+          </div>
+          <div class="mini-chart">
+            <h3>Share of population that is expert (E ≥ 0.7)</h3>
+            <canvas id="expertCanvas"></canvas>
+          </div>
+          <div class="mini-chart">
+            <h3>Center–periphery divergence (var of Ē across institutions)</h3>
+            <canvas id="divCanvas"></canvas>
+          </div>
+          <div class="mini-chart">
+            <h3>Illusion gap (mean C − mean E — how much AI inflates apparent output)</h3>
+            <canvas id="gapCanvas"></canvas>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <aside class="inspector" id="inspector">
+      <h2>Institution inspector</h2>
+      <p class="placeholder">Click a node in the network panel to see its population, average expertise, and history.</p>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ============================== ENGINE ============================== */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randNormal(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function clip01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+function sampleSkewNormalClipped(rng, mu, omega, alpha) {
+  const x0 = randNormal(rng), x1 = randNormal(rng);
+  const delta = alpha / Math.sqrt(1 + alpha * alpha);
+  const u1 = delta * x0 + Math.sqrt(1 - delta * delta) * x1;
+  const z = x0 >= 0 ? u1 : -u1;
+  return clip01(mu + omega * z);
+}
+function sampleLognormal(rng, sigma) { return Math.exp(randNormal(rng) * sigma); }
+
+function generateBAGraph(M, mAttach, rng) {
+  const m = Math.max(1, Math.min(mAttach, M - 1));
+  const neighbors = Array.from({ length: M }, () => new Set());
+  const degree = new Uint32Array(M);
+  const m0 = m + 1;
+  for (let a = 0; a < m0; a++) for (let b = a + 1; b < m0; b++) { neighbors[a].add(b); neighbors[b].add(a); degree[a]++; degree[b]++; }
+  const repeated = [];
+  for (let a = 0; a < m0; a++) for (let k = 0; k < degree[a]; k++) repeated.push(a);
+  for (let i = m0; i < M; i++) {
+    const targets = new Set();
+    let tries = 0;
+    while (targets.size < m && tries < 200) {
+      tries++;
+      const cand = repeated.length ? repeated[Math.floor(rng() * repeated.length)] : Math.floor(rng() * i);
+      if (cand !== i && !targets.has(cand)) targets.add(cand);
+    }
+    while (targets.size < m) { const cand = Math.floor(rng() * i); if (cand !== i) targets.add(cand); }
+    targets.forEach((t) => { neighbors[i].add(t); neighbors[t].add(i); degree[i]++; degree[t]++; repeated.push(i, t); });
+  }
+  let maxDeg = 1;
+  for (let i = 0; i < M; i++) if (degree[i] > maxDeg) maxDeg = degree[i];
+  const prestige = new Float32Array(M);
+  for (let i = 0; i < M; i++) prestige[i] = degree[i] / maxDeg;
+  return { M, neighbors, degree, prestige };
+}
+
+const AI_MODES = {
+  floor: (e, a) => Math.max(0, a - e),
+  flat: (e, a) => a,
+  linear: (e, a) => a * e,
+  amplified: (e, a) => a * e * e,
+  exponential: (e, a) => e * (Math.exp(a * e) - 1),
+};
+
+const DEFAULT_PARAMS = {
+  N: 500, M: 40,
+  expertiseMean: 0.28, expertiseSpread: 0.30, expertiseSkew: 3,
+  entrantExpertiseMean: 0.05, entrantExpertiseSpread: 0.05, entrantExpertiseSkew: 0,
+  graphAttachment: 2,
+  transferRate: 0.5, decayRate: 0.01, learningRateSpread: 0.4,
+  // Ambient growth: humans at/above their institution's founding average don't just
+  // decay — being embedded among strong peers is itself a source of gradual
+  // improvement, scaled by how strong the institution was at t=0 (state.startEbar,
+  // fixed at init — using the LIVE average instead creates runaway positive feedback
+  // that saturates the whole population to E=1). Not AI-gated: applies identically in
+  // both arms, so it shifts the shared floor, not the AI/no-AI contrast.
+  ambientGrowthRate: 0.001,
+  mobilityMode: "hybrid", jumpProbability: 0.10,
+  competitionAversion: 0.5, prestigeWeight: 0.3, baseMoveProb: 0.05,
+  turnoverRate: 0.01,
+  aiEnabled: false, aiResponseMode: "floor",
+  aiLevelFraction: 0.70, aiGain: 1.0,
+  aiDampeningBelow: 0.30, aiDampeningAbove: 0.80,
+  aiAtrophyMultiplier: 1.5,
+  seed: 1,
+};
+const MOVE_TEMPERATURE = 0.12;
+const UNCONSTRAINED_CANDIDATE_CAP = 25;
+const REPULSION_SAMPLE = 60;
+const SNAPSHOT_CAP = 4000, SNAPSHOT_EVICT = 800;
+// See engine.js's DEFAULT_PARAMS-adjacent comment / README.md's "Expert threshold"
+// section for why this is 0.585, not the original undocumented 0.7.
+const EXPERT_THRESHOLD = 0.585;
+
+function initSim(userParams) {
+  const params = Object.assign({}, DEFAULT_PARAMS, userParams || {});
+  const rng = mulberry32(params.seed >>> 0 || 1);
+  const graph = generateBAGraph(params.M, params.graphAttachment, rng);
+  const N = params.N;
+  const E = new Float32Array(N), C = new Float32Array(N), L = new Float32Array(N), inst = new Int32Array(N);
+  for (let i = 0; i < N; i++) {
+    E[i] = sampleSkewNormalClipped(rng, params.expertiseMean, params.expertiseSpread, params.expertiseSkew);
+    L[i] = sampleLognormal(rng, params.learningRateSpread);
+    inst[i] = Math.floor(rng() * params.M);
+    C[i] = E[i];
+  }
+  // Fixed for the whole run: the single highest E in the t=0 population — "the
+  // greatest human expert at the start" — not the current/live top performer.
+  let startTopE = 0;
+  for (let i = 0; i < N; i++) if (E[i] > startTopE) startTopE = E[i];
+  // Each institution's own founding average, fixed at init — the anchor for ambient
+  // growth. Not recomputed per tick (see ambientGrowthRate above).
+  const startEbar = new Float32Array(params.M), startCount = new Int32Array(params.M);
+  for (let i = 0; i < N; i++) { startEbar[inst[i]] += E[i]; startCount[inst[i]]++; }
+  for (let j = 0; j < params.M; j++) startEbar[j] = startCount[j] > 0 ? startEbar[j] / startCount[j] : 0;
+  return {
+    params, rng, graph, N, M: params.M, E, C, L, inst, startTopE, startEbar,
+    t: 0, history: [], snapshots: [], instHistory: Array.from({ length: params.M }, () => []),
+    lastAiLevel: null, aiToggleEvents: [],
+  };
+}
+
+function institutionStats(state) {
+  const { M, inst, E } = state;
+  const sumE = new Float64Array(M), count = new Int32Array(M);
+  for (let i = 0; i < state.N; i++) { sumE[inst[i]] += E[i]; count[inst[i]]++; }
+  const Ebar = new Float32Array(M);
+  for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
+  return { Ebar, count };
+}
+
+function candidateInstitutions(state, humanIdx, rng) {
+  const mode = state.params.mobilityMode;
+  const current = state.inst[humanIdx];
+  const neighbors = state.graph.neighbors[current];
+  const useFull = mode === "unconstrained" || (mode === "hybrid" && rng() < state.params.jumpProbability);
+  if (useFull) {
+    if (state.M <= UNCONSTRAINED_CANDIDATE_CAP) { const all = []; for (let j = 0; j < state.M; j++) all.push(j); return all; }
+    const set = new Set([current]);
+    while (set.size < UNCONSTRAINED_CANDIDATE_CAP) set.add(Math.floor(rng() * state.M));
+    return Array.from(set);
+  }
+  const arr = Array.from(neighbors); arr.push(current); return arr;
+}
+
+function softmaxPick(rng, ids, utilities, temperature) {
+  let maxU = -Infinity;
+  for (const u of utilities) if (u > maxU) maxU = u;
+  const weights = utilities.map((u) => Math.exp((u - maxU) / temperature));
+  const sum = weights.reduce((a, b) => a + b, 0);
+  let r = rng() * sum;
+  for (let k = 0; k < ids.length; k++) { r -= weights[k]; if (r <= 0) return ids[k]; }
+  return ids[ids.length - 1];
+}
+
+function tick(state) {
+  const p = state.params;
+  const { N, M, E, C, L, inst, rng, graph } = state;
+  const { Ebar, count } = institutionStats(state);
+
+  let topE = 0;
+  for (let i = 0; i < N; i++) if (E[i] > topE) topE = E[i];
+  // aiLevel is a fraction of the fixed t=0 top performer (state.startTopE), not of
+  // the live one above. topE is still tracked/reported as its own metric.
+  const aiLevel = p.aiEnabled ? p.aiLevelFraction * state.startTopE : null;
+  state.lastAiLevel = aiLevel;
+  const boostFn = AI_MODES[p.aiResponseMode] || AI_MODES.floor;
+
+  for (let i = 0; i < N; i++) {
+    const j = inst[i];
+    const gap = Ebar[j] - E[i];
+    const below = p.aiEnabled && E[i] < aiLevel;
+    let delta;
+    if (gap > 0) {
+      delta = p.transferRate * gap * L[i];
+      if (p.aiEnabled) delta *= below ? p.aiDampeningBelow : p.aiDampeningAbove;
+    } else {
+      let decay = p.decayRate * gap * L[i];
+      if (below) decay *= p.aiAtrophyMultiplier;
+      const ambient = p.ambientGrowthRate * state.startEbar[j] * L[i] * (1 - E[i]);
+      delta = decay + ambient;
+    }
+    const newE = clip01(E[i] + delta);
+    E[i] = newE;
+    C[i] = p.aiEnabled ? clip01(newE + p.aiGain * boostFn(newE, aiLevel)) : newE;
+  }
+
+  for (let i = 0; i < N; i++) {
+    if (rng() >= p.baseMoveProb * L[i]) continue;
+    const candidates = candidateInstitutions(state, i, rng);
+    const utilities = candidates.map((j) => {
+      const growth = Math.max(0, Ebar[j] - E[i]);
+      const status = E[i] - Ebar[j];
+      return (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
+    });
+    inst[i] = softmaxPick(rng, candidates, utilities, MOVE_TEMPERATURE);
+  }
+
+  let removed = 0;
+  for (let i = 0; i < N; i++) {
+    if (rng() < p.turnoverRate) {
+      E[i] = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, p.entrantExpertiseSkew);
+      L[i] = sampleLognormal(rng, p.learningRateSpread);
+      inst[i] = Math.floor(rng() * M);
+      C[i] = E[i];
+      removed++;
+    }
+  }
+
+  state.t++;
+  for (let j = 0; j < M; j++) { state.instHistory[j].push(Ebar[j]); }
+
+  let sumE = 0, sumC = 0, belowCount = 0, expertCount = 0;
+  for (let i = 0; i < N; i++) {
+    sumE += E[i]; sumC += C[i];
+    if (p.aiEnabled && E[i] < aiLevel) belowCount++;
+    if (E[i] >= EXPERT_THRESHOLD) expertCount++;
+  }
+  const meanE = sumE / N, meanC = sumC / N;
+
+  let activeCount = 0, sumEbar = 0;
+  for (let j = 0; j < M; j++) if (count[j] > 0) { activeCount++; sumEbar += Ebar[j]; }
+  const meanEbar = activeCount ? sumEbar / activeCount : 0;
+  let varEbar = 0;
+  for (let j = 0; j < M; j++) if (count[j] > 0) varEbar += (Ebar[j] - meanEbar) ** 2;
+  varEbar = activeCount ? varEbar / activeCount : 0;
+
+  const entry = { t: state.t, meanE, meanC, gap: meanC - meanE, divergence: varEbar, topE, aiLevel, shareBelowAI: p.aiEnabled ? belowCount / N : null, shareExpert: expertCount / N };
+  state.history.push(entry);
+
+  state.snapshots.push({ t: state.t, E: E.slice(), C: C.slice(), inst: inst.slice(), Ebar, count });
+  if (state.snapshots.length > SNAPSHOT_CAP) state.snapshots.splice(0, SNAPSHOT_EVICT);
+
+  return entry;
+}
+
+/* ============================== APP ============================== */
+const app = {
+  sim: null,
+  playing: false,
+  ticksPerSec: 6,
+  following: true,
+  viewT: 0,
+  selectedInst: null,
+  lastFrameTime: null,
+  tickAccumulator: 0,
+  layout: null, // { x, y, vx, vy } per institution, persists across rebuilds of dynamics but not structure
+};
+
+const PARAM_FIELDS = [
+  { key: "expertiseMean", group: "init", label: "expertise_mean", sym: "μ_E", min: 0, max: 0.8, step: 0.01, hint: "t=0 population only — an already-running system's starting mix" },
+  { key: "expertiseSpread", group: "init", label: "expertise_spread", sym: "ω_E", min: 0.05, max: 0.6, step: 0.01 },
+  { key: "expertiseSkew", group: "init", label: "expertise_skew", sym: "α_E", min: -6, max: 6, step: 0.5 },
+  { key: "entrantExpertiseMean", group: "init", label: "entrant_expertise_mean", sym: "μ_ent", min: 0, max: 0.5, step: 0.01, hint: "every turnover replacement (mid-run), not t=0 — novices who must earn expertise via peer transfer" },
+  { key: "entrantExpertiseSpread", group: "init", label: "entrant_expertise_spread", sym: "ω_ent", min: 0.01, max: 0.3, step: 0.01 },
+  { key: "entrantExpertiseSkew", group: "init", label: "entrant_expertise_skew", sym: "α_ent", min: -6, max: 6, step: 0.5 },
+  { key: "learningRateSpread", group: "learn", label: "learning_rate_spread", sym: "σ_L", min: 0, max: 1, step: 0.02 },
+  { key: "transferRate", group: "learn", label: "transfer_rate", sym: "β", min: 0, max: 0.08, step: 0.001 },
+  { key: "decayRate", group: "learn", label: "decay_rate", sym: "δ", min: 0, max: 0.08, step: 0.001 },
+  { key: "ambientGrowthRate", group: "learn", label: "ambient_growth_rate", sym: "μ_amb", min: 0, max: 0.02, step: 0.0005, hint: "growth for humans already at/above their institution's founding average — scales with how strong that institution was at t=0, tapers to 0 near the ceiling. Checked past this range it saturates the whole population to E=1 well within typical run lengths." },
+  { key: "competitionAversion", group: "mobility", label: "competition_aversion", sym: "ρ", min: 0, max: 1, step: 0.02 },
+  { key: "prestigeWeight", group: "mobility", label: "prestige_weight", sym: "η", min: 0, max: 1, step: 0.02 },
+  { key: "baseMoveProb", group: "mobility", label: "base_move_prob", sym: "p_move", min: 0, max: 0.3, step: 0.01 },
+  { key: "jumpProbability", group: "mobility", label: "jump_probability", sym: "ε", min: 0, max: 1, step: 0.02 },
+  { key: "turnoverRate", group: "turnover", label: "turnover_rate", sym: "r", min: 0, max: 0.05, step: 0.001 },
+  { key: "aiLevelFraction", group: "ai", label: "ai_level_fraction", sym: "λ", min: 0.01, max: 1, step: 0.02, hint: "fraction of the t=0 population's single greatest human expert, not of the current top performer" },
+  { key: "aiGain", group: "ai", label: "ai_gain", sym: "κ", min: 0, max: 2, step: 0.05 },
+  { key: "aiDampeningBelow", group: "ai", label: "ai_dampening_below", sym: "γ_below", min: 0, max: 2, step: 0.05, display: (v) => v - 1, hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
+  { key: "aiDampeningAbove", group: "ai", label: "ai_dampening_above", sym: "γ_above", min: 0, max: 2, step: 0.05, display: (v) => v - 1, hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
+  { key: "aiAtrophyMultiplier", group: "ai", label: "ai_atrophy_multiplier", sym: "μ_atr", min: 1, max: 5, step: 0.1 },
+];
+
+function fmt(v) { return Math.abs(v) < 1 ? v.toFixed(v === 0 ? 0 : 3).replace(/0+$/, "").replace(/\.$/, "") : v.toFixed(2); }
+// Some fields (currently just the AI dampening pair) are stored/fed to the engine as a
+// raw 0..2 multiplier but shown to a human on a -1..+1 scale instead — f.display converts
+// for display only; the slider's own min/max/step/value and app.sim.params stay raw 0..2.
+function fmtField(f, v) {
+  if (!f.display) return fmt(v);
+  const d = f.display(v);
+  const s = fmt(d);
+  return d > 1e-9 ? "+" + s : s;
+}
+
+function buildSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  sidebar.innerHTML = "";
+
+  function fieldHTML(f) {
+    return `<div class="field" data-key="${f.key}">
+      <label>&nbsp;<span><span class="sym">${f.sym}</span>${f.label}</span><output>${fmtField(f, app.sim.params[f.key])}</output></label>
+      <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${app.sim.params[f.key]}" />
+      ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}
+    </div>`;
+  }
+  function group(id, title, bodyHTML, open) {
+    return `<details class="group" ${open ? "open" : ""}><summary>${title}</summary><div class="body">${bodyHTML}</div></details>`;
+  }
+
+  const structuralHTML = `
+    <div class="field"><label>&nbsp;<span><span class="sym">N</span>humans</span></label>
+      <input type="number" id="fieldN" min="20" max="4000" step="10" value="${app.sim.params.N}" /></div>
+    <div class="field"><label>&nbsp;<span><span class="sym">M</span>institutions</span></label>
+      <input type="number" id="fieldM" min="4" max="400" step="1" value="${app.sim.params.M}" /></div>
+    <div class="field"><label>&nbsp;<span><span class="sym">m</span>graph_attachment</span></label>
+      <input type="number" id="fieldAttach" min="1" max="6" step="1" value="${app.sim.params.graphAttachment}" /></div>
+    <div class="field seed-row"><label style="width:100%">&nbsp;<span><span class="sym">—</span>seed</span></label></div>
+    <div class="seed-row"><input type="number" id="fieldSeed" value="${app.sim.params.seed}" /><button class="btn" id="btnRandSeed">⟳</button></div>
+    <div class="hint">changes here need <b>Rebuild</b> (top right) to take effect</div>
+  `;
+
+  const initHTML = PARAM_FIELDS.filter((f) => f.group === "init").map(fieldHTML).join("");
+  const learnHTML = PARAM_FIELDS.filter((f) => f.group === "learn").map(fieldHTML).join("");
+  const mobilityHTML = `
+    <div class="field">
+      <label>&nbsp;<span>mobility_mode</span></label>
+      <select id="fieldMobilityMode">
+        <option value="unconstrained">unconstrained</option>
+        <option value="edge_constrained">edge_constrained</option>
+        <option value="hybrid">hybrid</option>
+      </select>
+    </div>` + PARAM_FIELDS.filter((f) => f.group === "mobility").map(fieldHTML).join("");
+  const turnoverHTML = PARAM_FIELDS.filter((f) => f.group === "turnover").map(fieldHTML).join("");
+  const aiHTML = `
+    <div class="switch-row">
+      <span class="field-label">ai_enabled</span>
+      <label class="switch"><input type="checkbox" id="fieldAiEnabled" /><span class="track"></span></label>
+    </div>
+    <div class="field">
+      <label>&nbsp;<span>ai_response_mode</span></label>
+      <select id="fieldAiMode">
+        <option value="floor">floor</option>
+        <option value="flat">flat</option>
+        <option value="linear">linear</option>
+        <option value="amplified">amplified</option>
+        <option value="exponential">exponential</option>
+      </select>
+    </div>` + PARAM_FIELDS.filter((f) => f.group === "ai").map(fieldHTML).join("");
+
+  sidebar.innerHTML =
+    group("structural", "Scale &amp; graph", structuralHTML, true) +
+    group("init", "Initial & entrant expertise", initHTML, false) +
+    group("learn", "Learning dynamics", learnHTML, true) +
+    group("mobility", "Mobility", mobilityHTML, false) +
+    group("turnover", "Turnover", turnoverHTML, false) +
+    group("ai", "AI", aiHTML, true) +
+    `<div class="reset-note"><b>Live</b> parameters apply on the next tick. <b>Scale &amp; graph</b> parameters need Rebuild.</div>`;
+
+  PARAM_FIELDS.forEach((f) => {
+    const root = sidebar.querySelector(`.field[data-key="${f.key}"]`);
+    const input = root.querySelector("input");
+    const out = root.querySelector("output");
+    input.addEventListener("input", () => {
+      const v = parseFloat(input.value);
+      app.sim.params[f.key] = v;
+      out.textContent = fmtField(f, v);
+    });
+  });
+  document.getElementById("fieldMobilityMode").value = app.sim.params.mobilityMode;
+  document.getElementById("fieldMobilityMode").addEventListener("change", (e) => { app.sim.params.mobilityMode = e.target.value; });
+  document.getElementById("fieldAiEnabled").checked = app.sim.params.aiEnabled;
+  document.getElementById("fieldAiEnabled").addEventListener("change", (e) => {
+    app.sim.params.aiEnabled = e.target.checked;
+    app.sim.aiToggleEvents.push({ t: app.sim.t, enabled: e.target.checked });
+    updateAiChip();
+  });
+  document.getElementById("fieldAiMode").value = app.sim.params.aiResponseMode;
+  document.getElementById("fieldAiMode").addEventListener("change", (e) => { app.sim.params.aiResponseMode = e.target.value; updateAiChip(); });
+
+  document.getElementById("btnRandSeed").addEventListener("click", () => {
+    document.getElementById("fieldSeed").value = Math.floor(Math.random() * 1e9);
+  });
+}
+
+function updateAiChip() {
+  const chip = document.getElementById("aiChip");
+  if (app.sim.params.aiEnabled) { chip.textContent = "AI on · " + app.sim.params.aiResponseMode; chip.classList.add("on"); }
+  else { chip.textContent = "AI off"; chip.classList.remove("on"); }
+}
+
+function readStructuralFields() {
+  // Guarded: on the very first call the sidebar hasn't been built yet (buildSidebar()
+  // runs later in rebuild()), so these fields don't exist in the DOM. Fall back to defaults.
+  const val = (id, fallback) => { const el = document.getElementById(id); return el ? parseInt(el.value, 10) || fallback : fallback; };
+  return {
+    N: val("fieldN", DEFAULT_PARAMS.N),
+    M: val("fieldM", DEFAULT_PARAMS.M),
+    graphAttachment: val("fieldAttach", DEFAULT_PARAMS.graphAttachment),
+    seed: val("fieldSeed", DEFAULT_PARAMS.seed),
+  };
+}
+
+function rebuild(preserveLive) {
+  const structural = readStructuralFields();
+  const liveParams = preserveLive && app.sim ? Object.assign({}, app.sim.params) : {};
+  const params = Object.assign({}, liveParams, structural);
+  app.sim = initSim(params);
+  app.following = true;
+  app.viewT = 0;
+  app.selectedInst = null;
+  app.layout = null;
+  buildSidebar();
+  updateAiChip();
+  renderInspectorPlaceholder();
+  refreshAll();
+}
+
+/* ---- transport ---- */
+function setPlaying(v) {
+  app.playing = v;
+  document.getElementById("btnPlay").textContent = v ? "⏸" : "▶";
+  app.lastFrameTime = null;
+}
+document.getElementById("btnPlay").addEventListener("click", () => setPlaying(!app.playing));
+document.getElementById("btnStep").addEventListener("click", () => { setPlaying(false); doTick(); });
+document.getElementById("btnRebuild").addEventListener("click", () => rebuild(true));
+document.getElementById("speedRange").addEventListener("input", (e) => {
+  app.ticksPerSec = parseInt(e.target.value, 10);
+  document.getElementById("speedOut").textContent = app.ticksPerSec + "/s";
+});
+
+const scrubRange = document.getElementById("scrubRange");
+const scrubLabel = document.getElementById("scrubLabel");
+const btnLive = document.getElementById("btnLive");
+scrubRange.addEventListener("input", () => {
+  app.following = false;
+  app.viewT = parseInt(scrubRange.value, 10);
+  btnLive.classList.remove("is-live");
+  scrubLabel.textContent = "t = " + app.viewT + " (history)";
+  renderSnapshotViews();
+});
+btnLive.addEventListener("click", () => {
+  app.following = true;
+  btnLive.classList.add("is-live");
+  app.viewT = app.sim.t;
+  scrubLabel.textContent = "t = " + app.viewT;
+  refreshAll();
+});
+
+function doTick() {
+  tick(app.sim);
+  if (app.following) app.viewT = app.sim.t;
+  scrubRange.max = app.sim.t;
+  if (app.following) scrubRange.value = app.sim.t;
+  refreshAll();
+}
+
+/* ---- main loop ---- */
+function frame(ts) {
+  if (app.lastFrameTime == null) app.lastFrameTime = ts;
+  const dt = ts - app.lastFrameTime;
+  app.lastFrameTime = ts;
+
+  if (app.playing) {
+    app.tickAccumulator += dt;
+    const interval = 1000 / app.ticksPerSec;
+    let guard = 0;
+    while (app.tickAccumulator >= interval && guard < 10) {
+      doTick();
+      app.tickAccumulator -= interval;
+      guard++;
+    }
+  }
+  relaxLayout();
+  drawNetwork();
+  requestAnimationFrame(frame);
+}
+
+/* ============================== NETWORK LAYOUT + RENDER ============================== */
+function ensureLayout() {
+  if (app.layout) return app.layout;
+  const M = app.sim.M;
+  const layout = [];
+  for (let j = 0; j < M; j++) {
+    const a = (j / M) * Math.PI * 2;
+    layout.push({ x: Math.cos(a) * 120, y: Math.sin(a) * 120, vx: 0, vy: 0 });
+  }
+  app.layout = layout;
+  return layout;
+}
+
+function relaxLayout() {
+  if (!app.sim) return;
+  const layout = ensureLayout();
+  const M = app.sim.M;
+  const graph = app.sim.graph;
+  const k = 60 * Math.sqrt(40 / Math.max(M, 1));
+  for (let i = 0; i < M; i++) {
+    let fx = 0, fy = 0;
+    const sampleN = Math.min(M - 1, REPULSION_SAMPLE);
+    for (let s = 0; s < sampleN; s++) {
+      const j = Math.floor(Math.random() * M);
+      if (j === i) continue;
+      let dx = layout[i].x - layout[j].x, dy = layout[i].y - layout[j].y;
+      let d2 = dx * dx + dy * dy + 0.01;
+      const d = Math.sqrt(d2);
+      const force = (k * k) / d2;
+      fx += (dx / d) * force; fy += (dy / d) * force;
+    }
+    fx *= (M - 1) / sampleN;
+    fy *= (M - 1) / sampleN;
+    graph.neighbors[i].forEach((j) => {
+      const dx = layout[j].x - layout[i].x, dy = layout[j].y - layout[i].y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const force = (d * d) / k / 8;
+      fx += (dx / d) * force; fy += (dy / d) * force;
+    });
+    fx += -layout[i].x * 0.01; fy += -layout[i].y * 0.01;
+    layout[i].vx = (layout[i].vx + fx * 0.02) * 0.82;
+    layout[i].vy = (layout[i].vy + fy * 0.02) * 0.82;
+  }
+  for (let i = 0; i < M; i++) { layout[i].x += layout[i].vx; layout[i].y += layout[i].vy; }
+}
+
+function seqColor(t, isDark) {
+  const ramp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  const tt = isDark ? 1 - clip01(t) : clip01(t);
+  const idx = tt * (ramp.length - 1);
+  const lo = Math.floor(idx), hi = Math.min(ramp.length - 1, lo + 1), frac = idx - lo;
+  const c1 = hexToRgb(ramp[lo]), c2 = hexToRgb(ramp[hi]);
+  const r = Math.round(c1[0] + (c2[0] - c1[0]) * frac);
+  const g = Math.round(c1[1] + (c2[1] - c1[1]) * frac);
+  const b = Math.round(c1[2] + (c2[2] - c1[2]) * frac);
+  return `rgb(${r},${g},${b})`;
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function currentTheme() {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark" || t === "light") return t;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function currentSnapshot() {
+  if (!app.sim) return null;
+  if (app.following || !app.sim.snapshots.length) {
+    return { t: app.sim.t, E: app.sim.E, C: app.sim.C, inst: app.sim.inst, Ebar: null, count: null, live: true };
+  }
+  const snaps = app.sim.snapshots;
+  const earliest = snaps[0].t;
+  const target = Math.max(app.viewT, earliest);
+  let lo = 0, hi = snaps.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (snaps[mid].t < target) lo = mid + 1; else hi = mid; }
+  return snaps[lo];
+}
+
+function instStatsFromSnapshot(snap) {
+  if (snap.Ebar) return { Ebar: snap.Ebar, count: snap.count };
+  const M = app.sim.M, sumE = new Float64Array(M), count = new Int32Array(M);
+  for (let i = 0; i < snap.inst.length; i++) { sumE[snap.inst[i]] += snap.E[i]; count[snap.inst[i]]++; }
+  const Ebar = new Float32Array(M);
+  for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
+  return { Ebar, count };
+}
+
+let hoveredInst = null;
+function setupCanvasDPR(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(rect.width, 10), h = Math.max(rect.height, 10);
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+function drawNetwork() {
+  if (!app.sim) return;
+  const canvas = document.getElementById("networkCanvas");
+  const { ctx, w, h } = setupCanvasDPR(canvas);
+  ctx.clearRect(0, 0, w, h);
+  const layout = ensureLayout();
+  const snap = currentSnapshot();
+  const { Ebar, count } = instStatsFromSnapshot(snap);
+  const theme = currentTheme();
+  const rule = cssVar("--rule"), ink2 = cssVar("--accent2");
+
+  let maxCount = 1;
+  for (let j = 0; j < app.sim.M; j++) if (count[j] > maxCount) maxCount = count[j];
+
+  const cx = w / 2, cy = h / 2, scale = Math.min(w, h) / 320;
+  const px = (x) => cx + x * scale, py = (y) => cy + y * scale;
+
+  ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+  for (let i = 0; i < app.sim.M; i++) {
+    app.sim.graph.neighbors[i].forEach((j) => {
+      if (j < i) return;
+      ctx.beginPath(); ctx.moveTo(px(layout[i].x), py(layout[i].y)); ctx.lineTo(px(layout[j].x), py(layout[j].y)); ctx.stroke();
+    });
+  }
+  ctx.globalAlpha = 1;
+
+  for (let j = 0; j < app.sim.M; j++) {
+    const r = 4 + 16 * Math.sqrt(count[j] / maxCount);
+    ctx.beginPath();
+    ctx.arc(px(layout[j].x), py(layout[j].y), r, 0, Math.PI * 2);
+    ctx.fillStyle = seqColor(Ebar[j], theme === "dark");
+    ctx.fill();
+    if (j === app.selectedInst) { ctx.lineWidth = 2; ctx.strokeStyle = ink2; ctx.stroke(); }
+    else if (j === hoveredInst) { ctx.lineWidth = 1.5; ctx.strokeStyle = ink2; ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1; }
+  }
+
+  canvas._hit = { layout, px, py, count, Ebar, maxCount };
+}
+
+function hitTestNetwork(canvas, evt) {
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
+  const hit = canvas._hit;
+  if (!hit) return null;
+  for (let j = 0; j < app.sim.M; j++) {
+    const nx = hit.px(hit.layout[j].x), ny = hit.py(hit.layout[j].y);
+    const r = 4 + 16 * Math.sqrt(hit.count[j] / hit.maxCount) + 3;
+    if ((x - nx) ** 2 + (y - ny) ** 2 <= r * r) return j;
+  }
+  return null;
+}
+
+const netCanvas = document.getElementById("networkCanvas");
+netCanvas.addEventListener("mousemove", (e) => { hoveredInst = hitTestNetwork(netCanvas, e); netCanvas.title = hoveredInst != null ? `institution ${hoveredInst}` : ""; });
+netCanvas.addEventListener("click", (e) => {
+  const j = hitTestNetwork(netCanvas, e);
+  if (j != null) { app.selectedInst = j; renderInspector(); }
+});
+
+/* ============================== DISTRIBUTION HISTOGRAM ============================== */
+function drawHistogram() {
+  if (!app.sim) return;
+  const canvas = document.getElementById("distCanvas");
+  const { ctx, w, h } = setupCanvasDPR(canvas);
+  ctx.clearRect(0, 0, w, h);
+  const snap = currentSnapshot();
+  const N = snap.E.length;
+  const bins = 20;
+  const eCounts = new Array(bins).fill(0), cCounts = new Array(bins).fill(0);
+  for (let i = 0; i < N; i++) {
+    eCounts[Math.min(bins - 1, Math.floor(snap.E[i] * bins))]++;
+    cCounts[Math.min(bins - 1, Math.floor(snap.C[i] * bins))]++;
+  }
+  const maxCount = Math.max(...eCounts, ...cCounts, 1);
+  const pad = { l: 30, r: 10, t: 10, b: 22 };
+  const bw = (w - pad.l - pad.r) / bins;
+  const seq = seqColor(0.55, currentTheme() === "dark");
+
+  ctx.fillStyle = cssVar("--ink-faint");
+  ctx.strokeStyle = cssVar("--rule");
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  [0, 0.5, 1].forEach((v) => { ctx.fillText(v.toFixed(1), pad.l + v * (w - pad.l - pad.r), h - 6); });
+
+  for (let b = 0; b < bins; b++) {
+    const bh = (eCounts[b] / maxCount) * (h - pad.t - pad.b);
+    ctx.fillStyle = seq;
+    ctx.fillRect(pad.l + b * bw + 1, h - pad.b - bh, bw - 2, bh);
+  }
+
+  if (app.sim.params.aiEnabled) {
+    ctx.strokeStyle = cssVar("--accent");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let b = 0; b < bins; b++) {
+      const x = pad.l + (b + 0.5) * bw;
+      const y = h - pad.b - (cCounts[b] / maxCount) * (h - pad.t - pad.b);
+      if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+/* ============================== TIMELINE ============================== */
+function drawMiniChart(canvasId, key, color, options) {
+  options = options || {};
+  const canvas = document.getElementById(canvasId);
+  const { ctx, w, h } = setupCanvasDPR(canvas);
+  ctx.clearRect(0, 0, w, h);
+  const hist = app.sim.history;
+  if (!hist.length) return;
+  const pad = { l: 34, r: 10, t: 8, b: 16 };
+  let minV = Infinity, maxV = -Infinity;
+  hist.forEach((e) => { const v = e[key]; if (v == null) return; if (v < minV) minV = v; if (v > maxV) maxV = v; });
+  if (!isFinite(minV)) { minV = 0; maxV = 1; }
+  if (options.zeroFloor) minV = Math.min(0, minV);
+  if (options.fixedMax != null) maxV = options.fixedMax;
+  if (maxV - minV < 1e-6) maxV = minV + 1e-6;
+  const t0 = hist[0].t, t1 = hist[hist.length - 1].t;
+  const toX = (t) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * (w - pad.l - pad.r);
+  const toY = (v) => (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad.b);
+
+  ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+  ctx.fillStyle = cssVar("--ink-faint"); ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "right";
+  [minV, (minV + maxV) / 2, maxV].forEach((v) => {
+    const y = toY(v);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillText(v.toFixed(v < 0.01 ? 4 : 2), pad.l - 4, y + 3);
+  });
+
+  ctx.strokeStyle = cssVar("--ink-faint");
+  ctx.setLineDash([1, 3]);
+  app.sim.aiToggleEvents.forEach((ev) => {
+    const x = toX(ev.t);
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+  hist.forEach((e, i) => { const v = e[key]; if (v == null) return; const x = toX(e.t), y = toY(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+  ctx.stroke();
+
+  if (!app.following) {
+    const x = toX(app.viewT);
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+  }
+}
+
+/* ============================== INSPECTOR ============================== */
+function renderInspectorPlaceholder() {
+  document.getElementById("inspector").innerHTML = `<h2>Institution inspector</h2><p class="placeholder">Click a node in the network panel to see its population, average expertise, and history.</p>`;
+}
+
+function renderInspector() {
+  if (app.selectedInst == null || !app.sim) return renderInspectorPlaceholder();
+  const j = app.selectedInst;
+  const snap = currentSnapshot();
+  const { Ebar, count } = instStatsFromSnapshot(snap);
+  const theme = currentTheme();
+  const dot = `<span class="inst-dot" style="background:${seqColor(Ebar[j], theme === "dark")}"></span>`;
+  const el = document.getElementById("inspector");
+  el.innerHTML = `
+    <h2>${dot}Institution ${j}</h2>
+    <div class="kv"><span>population</span><b>${count[j]}</b></div>
+    <div class="kv"><span>avg. latent expertise (Ē)</span><b>${Ebar[j].toFixed(3)}</b></div>
+    <div class="kv"><span>degree</span><b>${app.sim.graph.degree[j]}</b></div>
+    <div class="kv"><span>prestige</span><b>${app.sim.graph.prestige[j].toFixed(2)}</b></div>
+    <canvas id="instSparkline"></canvas>
+  `;
+  const sparkHist = app.sim.instHistory[j];
+  const canvas = document.getElementById("instSparkline");
+  const { ctx, w, h } = setupCanvasDPR(canvas);
+  ctx.clearRect(0, 0, w, h);
+  if (sparkHist.length > 1) {
+    let minV = Infinity, maxV = -Infinity;
+    sparkHist.forEach((v) => { if (v < minV) minV = v; if (v > maxV) maxV = v; });
+    if (maxV - minV < 1e-6) maxV = minV + 1e-6;
+    const pad = { l: 4, r: 4, t: 6, b: 6 };
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1.5; ctx.beginPath();
+    sparkHist.forEach((v, i) => {
+      const x = pad.l + (i / (sparkHist.length - 1)) * (w - pad.l - pad.r);
+      const y = (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad.b);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
+/* ============================== REFRESH ============================== */
+function refreshAll() {
+  document.getElementById("statT").textContent = app.sim.t;
+  document.getElementById("statN").textContent = app.sim.N;
+  document.getElementById("statM").textContent = app.sim.M;
+  if (app.following) scrubLabel.textContent = "t = " + app.sim.t;
+  drawHistogram();
+  drawMiniChart("expertCanvas", "shareExpert", seqColor(0.6, currentTheme() === "dark"), { zeroFloor: true, fixedMax: 1 });
+  drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
+  drawMiniChart("gapCanvas", "gap", cssVar("--accent"), { zeroFloor: true });
+  if (app.selectedInst != null) renderInspector();
+}
+function renderSnapshotViews() {
+  drawHistogram();
+  drawMiniChart("expertCanvas", "shareExpert", seqColor(0.6, currentTheme() === "dark"), { zeroFloor: true, fixedMax: 1 });
+  drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
+  drawMiniChart("gapCanvas", "gap", cssVar("--accent"), { zeroFloor: true });
+  if (app.selectedInst != null) renderInspector();
+}
+
+window.addEventListener("resize", () => { drawNetwork(); refreshAll(); });
+new MutationObserver(() => { drawNetwork(); refreshAll(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawNetwork(); refreshAll(); });
+
+rebuild(false);
+requestAnimationFrame(frame);
+</script>

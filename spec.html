@@ -1,0 +1,987 @@
+<title>Capability Decay Simulator — Specification</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #f1f3f2;
+    --surface: #ffffff;
+    --surface-tint: #e7eae7;
+    --ink: #1b201e;
+    --ink-muted: #5b6360;
+    --rule: #d6dad6;
+    --accent: #a8502c;      /* rust — decay / erosion */
+    --accent-soft: #f3e2da;
+    --accent2: #35636b;     /* slate-teal — institutions / graph */
+    --accent2-soft: #dfe9ea;
+    --code-bg: #e9ebe8;
+    --shadow: 0 1px 2px rgba(27,32,30,0.06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181a;
+      --surface: #1b2022;
+      --surface-tint: #212728;
+      --ink: #e7e9e6;
+      --ink-muted: #93a09c;
+      --rule: #2c3335;
+      --accent: #dd8259;
+      --accent-soft: #35271f;
+      --accent2: #7fb0b7;
+      --accent2-soft: #1e2f31;
+      --code-bg: #10191a;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181a; --surface: #1b2022; --surface-tint: #212728;
+    --ink: #e7e9e6; --ink-muted: #93a09c; --rule: #2c3335;
+    --accent: #dd8259; --accent-soft: #35271f;
+    --accent2: #7fb0b7; --accent2-soft: #1e2f31;
+    --code-bg: #10191a; --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="light"] {
+    --bg: #f1f3f2; --surface: #ffffff; --surface-tint: #e7eae7;
+    --ink: #1b201e; --ink-muted: #5b6360; --rule: #d6dad6;
+    --accent: #a8502c; --accent-soft: #f3e2da;
+    --accent2: #35636b; --accent2-soft: #dfe9ea;
+    --code-bg: #e9ebe8; --shadow: 0 1px 2px rgba(27,32,30,0.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 4.5rem 1.5rem 6rem;
+  }
+
+  header.doc-head {
+    margin-bottom: 3.5rem;
+  }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+    font-size: 2.3rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1rem;
+  }
+  .abstract {
+    font-size: 1.08rem;
+    color: var(--ink-muted);
+    max-width: 62ch;
+    margin: 0 0 1.6rem;
+  }
+  .meta-row {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+    border-top: 1px solid var(--rule);
+    padding-top: 0.9rem;
+  }
+  .meta-row span b { color: var(--ink); font-weight: 600; }
+
+  nav.toc {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.1rem 1.4rem;
+    margin: 2.2rem 0 0;
+    box-shadow: var(--shadow);
+  }
+  nav.toc p { margin: 0 0 0.6rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-muted); }
+  nav.toc ol { margin: 0; padding-left: 1.2rem; columns: 2; column-gap: 1.5rem; font-size: 0.92rem; }
+  nav.toc li { margin-bottom: 0.3rem; break-inside: avoid; }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  main { counter-reset: section; }
+  section.doc-section { counter-increment: section; margin-top: 3.4rem; scroll-margin-top: 2rem; }
+  h2 {
+    font-family: ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.42rem;
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 1.1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  h2::before {
+    content: counter(section, decimal-leading-zero);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  h3 {
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 700;
+    font-size: 1.02rem;
+    margin: 1.8rem 0 0.7rem;
+  }
+  p { margin: 0 0 1rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.3rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent2); }
+  strong { font-weight: 650; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    border-radius: 3px;
+    padding: 0.08em 0.35em;
+    font-size: 0.88em;
+  }
+  .sym { color: var(--accent); font-weight: 600; }
+
+  .callout {
+    background: var(--accent2-soft);
+    border-left: 3px solid var(--accent2);
+    border-radius: 0 4px 4px 0;
+    padding: 1rem 1.3rem;
+    margin: 1.3rem 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .callout-label {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.74rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 0.45rem;
+    font-weight: 600;
+  }
+  .callout.warn { background: var(--accent-soft); border-left-color: var(--accent); }
+  .callout.warn .callout-label { color: var(--accent); }
+
+  .table-wrap { overflow-x: auto; margin: 1.1rem 0 1.6rem; border: 1px solid var(--rule); border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 560px; }
+  caption { text-align: left; font-size: 0.8rem; color: var(--ink-muted); padding: 0.6rem 0.9rem 0; caption-side: top; }
+  th, td { text-align: left; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th { background: var(--surface-tint); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.symcol, th.symcol { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; color: var(--accent); font-weight: 600; }
+  td.numcol { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-muted); }
+  tbody tr:hover { background: var(--surface-tint); }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.1rem 1.3rem;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    margin: 1.1rem 0 1.6rem;
+  }
+  pre .c { color: var(--ink-muted); font-style: italic; }
+  pre .k { color: var(--accent2); }
+
+  .chart-block {
+    margin: 1.4rem 0 1.6rem;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.2rem 1rem;
+  }
+  .chart-head { margin-bottom: 0.6rem; }
+  .viz-root { position: relative; width: 100%; }
+  #modeCanvas { display: block; width: 100%; height: 260px; cursor: crosshair; }
+  .chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--bg);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.74rem;
+    line-height: 1.5;
+    border-radius: 4px;
+    padding: 0.5rem 0.65rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .chart-tooltip .row { display: flex; justify-content: space-between; gap: 0.9rem; }
+  .chart-tooltip .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 0.4rem; }
+  .chart-legend {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+    margin: 0.8rem 0 0;
+    padding: 0.7rem 0 0;
+    border-top: 1px solid var(--rule);
+    font-size: 0.82rem;
+    color: var(--ink-muted);
+  }
+  .chart-legend li { display: flex; align-items: center; gap: 0.45rem; margin: 0; }
+  .chart-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .chart-legend b { color: var(--ink); font-weight: 600; }
+
+  .divider { border: none; border-top: 1px solid var(--rule); margin: 3.4rem 0 0; }
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.2rem;
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+  }
+
+  @media (max-width: 600px) {
+    .page { padding: 2.8rem 1.1rem 4rem; }
+    h1 { font-size: 1.8rem; }
+    nav.toc ol { columns: 1; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="doc-head">
+    <p class="eyebrow">Simulation Specification · Draft v0.1</p>
+    <h1>Capability Decay Simulator</h1>
+    <p class="abstract">
+      A specification for a minimal agent-based model of how reliance on AI erodes the human expertise
+      that AI itself depends on — and how that erosion quietly narrows a system's ability to invent,
+      adapt, and teach.
+    </p>
+    <div class="meta-row">
+      <span>Author: <b>spec draft for review</b></span>
+      <span>Scope: <b>simulation engine + visualizer, design only</b></span>
+      <span>Status: <b>awaiting feedback</b></span>
+    </div>
+    <nav class="toc">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#thesis">Core thesis &amp; modeling insight</a></li>
+        <li><a href="#entities">Entities &amp; state</a></li>
+        <li><a href="#parameters">Parameters</a></li>
+        <li><a href="#init">Initialization</a></li>
+        <li><a href="#tick">Per-tick update algorithm</a></li>
+        <li><a href="#mobility">Institution graph &amp; mobility</a></li>
+        <li><a href="#entrants">Entrant renewal</a></li>
+        <li><a href="#ai">AI mechanism</a></li>
+        <li><a href="#metrics">Metrics &amp; logging</a></li>
+        <li><a href="#viz">Visualizer specification</a></li>
+        <li><a href="#decisions">Key design decisions</a></li>
+        <li><a href="#extensions">Out of scope / future extensions</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <main>
+
+    <section class="doc-section" id="thesis">
+      <h2>Core thesis &amp; modeling insight</h2>
+      <p>
+        The simulator tests a specific claim: capability in a system originally comes from humans
+        inventing and refining mechanisms under pressure. AI and agents encode the output of that
+        process, but not the process itself. When humans lean on AI instead of building expertise,
+        two things degrade at once — their own capacity to invent new responses when conditions
+        change, and the pool of expertise other humans could have learned from.
+      </p>
+      <div class="callout">
+        <div class="callout-label">Load-bearing distinction</div>
+        <p>
+          Every human carries two numbers, not one: <strong>latent expertise</strong>
+          (<code class="sym">E</code>) — what they actually know, earned through practice, which is
+          what decays, grows, and transfers peer-to-peer — and <strong>observed capability</strong>
+          (<code class="sym">C</code>) — what their output looks like to an institution, inflated by
+          AI assistance when it's switched on. Institutions judge performance by <code class="sym">C</code>.
+          Peer learning, institutional quality, and the model's brittleness are all driven by
+          <code class="sym">E</code>. Without this split, "AI raises expertise" and "reliance on AI causes
+          decay" would contradict each other inside the same variable. With it, the system can look
+          more capable while quietly becoming less able to adapt — which is the whole point of building this.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="entities">
+      <h2>Entities &amp; state</h2>
+
+      <h3>Humans</h3>
+      <ul>
+        <li><code class="sym">E<sub>i</sub>(t)</code> — latent expertise, <code>[0, 1]</code></li>
+        <li><code class="sym">C<sub>i</sub>(t)</code> — observed capability, <code>[0, 1]</code>, equals <code class="sym">E<sub>i</sub></code> when AI is off</li>
+        <li><code class="sym">L<sub>i</sub></code> — individual learning-rate multiplier, drawn once at entry, fixed for the human's tenure</li>
+        <li><code class="sym">j<sub>i</sub>(t)</code> — current institution</li>
+      </ul>
+
+      <h3>Institutions</h3>
+      <ul>
+        <li>a node in the institution graph, with a fixed structural <strong>prestige</strong> derived from its graph degree at creation</li>
+        <li><code class="sym">n<sub>j</sub>(t)</code> — current population (emergent, not a parameter)</li>
+        <li><code class="sym">Ē<sub>j</sub>(t)</code> — mean latent expertise of current members (emergent)</li>
+      </ul>
+
+      <h3>Graph</h3>
+      <p>
+        A sparse graph over institutions, generated once at <code>t=0</code> by preferential
+        attachment (Barabási–Albert). This is what produces the requested shape without a size
+        parameter: a few hub institutions accumulate most of the connections and, because prestige
+        in the mobility model is tied to degree, most of the top-tier humans — while the rest sit
+        on the periphery with thin connectivity and thin access to expertise.
+      </p>
+    </section>
+
+    <section class="doc-section" id="parameters">
+      <h2>Parameters</h2>
+      <p>
+        Grouped by concern. Eight are the ones worth changing between runs
+        (<code>N</code>, <code>M</code>, <code class="sym">β</code>, <code class="sym">δ</code>,
+        <code class="sym">ρ</code>, <code>ai_enabled</code>, <code>ai_response_mode</code>,
+        <code class="sym">λ</code>) — the rest have defaults that shouldn't need touching for a
+        first experiment.
+      </p>
+
+      <h3>Scale</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">N</td><td>humans</td><td>population size, held roughly constant by turnover</td><td class="numcol">500</td></tr>
+          <tr><td class="symcol">M</td><td>institutions</td><td>number of graph nodes</td><td class="numcol">40</td></tr>
+          <tr><td class="symcol">T</td><td>horizon</td><td>ticks to simulate</td><td class="numcol">500</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Initial expertise distribution (t=0 population only)</h3>
+      <p>
+        Latent expertise for the population the simulation <em>starts</em> with is drawn from a
+        skew-normal, clipped to <code>[0, 1]</code>, chosen so that the tails hold the extremes —
+        a thin sliver of true novices and a thin sliver of deep experts — while the skew keeps total
+        naivety rare rather than common. This distribution represents an <em>already-running</em>
+        system, not the ongoing supply of new people — see §7, "Entrant renewal," for that.
+      </p>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">μ<sub>E</sub></td><td>expertise_mean</td><td>location of the skew-normal</td><td class="numcol">0.28</td></tr>
+          <tr><td class="symcol">ω<sub>E</sub></td><td>expertise_spread</td><td>scale, pre-clip</td><td class="numcol">0.30</td></tr>
+          <tr><td class="symcol">α<sub>E</sub></td><td>expertise_skew</td><td>shape; positive thins the low tail</td><td class="numcol">3</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Institution graph</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">m</td><td>graph_attachment</td><td>edges per new node under BA growth — controls how sharply hubs form</td><td class="numcol">2</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Learning dynamics</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">β</td><td>transfer_rate</td><td>speed of upward pull toward a stronger institution's average — needs to comfortably outpace <code>turnover_rate</code>'s dilution or even a no-AI system fails to self-sustain; see §7</td><td class="numcol">0.5</td></tr>
+          <tr><td class="symcol">δ</td><td>decay_rate</td><td>speed of downward drift when a human is above their institution's average — partly offset by <code class="sym">μ<sub>amb</sub></code> below, not the sole force acting on this group anymore</td><td class="numcol">0.01</td></tr>
+          <tr><td class="symcol">μ<sub>amb</sub></td><td>ambient_growth_rate</td><td>gradual improvement for humans already at/above their institution's average — being embedded among strong peers, not gap-closing. Scales with the institution's <em>founding</em> average (fixed at t=0, not its current one — see §11 for why), tapering to 0 as a human nears the 1.0 ceiling</td><td class="numcol">0.001</td></tr>
+          <tr><td class="symcol">σ<sub>L</sub></td><td>learning_rate_spread</td><td>spread of each human's fixed <code class="sym">L<sub>i</sub></code> ~ Lognormal(0, σ<sub>L</sub>)</td><td class="numcol">0.4</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Mobility</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">—</td><td>mobility_mode</td><td><code>unconstrained</code> / <code>edge_constrained</code> / <code>hybrid</code> — see §6</td><td class="numcol">hybrid</td></tr>
+          <tr><td class="symcol">ε</td><td>jump_probability</td><td>hybrid only: chance a move considers the whole graph, not just neighbors</td><td class="numcol">0.10</td></tr>
+          <tr><td class="symcol">ρ</td><td>competition_aversion</td><td>weight on relative standing vs. growth potential, <code>[0,1]</code></td><td class="numcol">0.50</td></tr>
+          <tr><td class="symcol">η</td><td>prestige_weight</td><td>weight on an institution's structural prestige (its degree)</td><td class="numcol">0.30</td></tr>
+          <tr><td class="symcol">p<sub>move</sub></td><td>base_move_prob</td><td>base per-tick chance a human reconsiders at all, scaled by <code class="sym">L<sub>i</sub></code></td><td class="numcol">0.05</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Turnover</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">r</td><td>turnover_rate</td><td>fraction of population replaced per tick, entry = exit</td><td class="numcol">0.01</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>AI (toggle)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">—</td><td>ai_enabled</td><td>on/off switch for the whole mechanism</td><td class="numcol">false</td></tr>
+          <tr><td class="symcol">—</td><td>ai_response_mode</td><td>who benefits from AI, and how — <code>floor</code> / <code>flat</code> / <code>linear</code> / <code>amplified</code> / <code>exponential</code>; see §8</td><td class="numcol">floor</td></tr>
+          <tr><td class="symcol">λ</td><td>ai_level_fraction</td><td>AI's reference strength as a fraction of the <em>t=0 population's single greatest human expert</em> — fixed for the whole run, not the current/live top performer</td><td class="numcol">0.70</td></tr>
+          <tr><td class="symcol">κ</td><td>ai_gain</td><td>strength of the capability boost, <code>[0,2]</code> — <code>0</code> = AI has no visible effect in any mode; <code>1</code> = the mode's canonical shape</td><td class="numcol">1.00</td></tr>
+          <tr><td class="symcol">γ<sub>below</sub></td><td>ai_dampening_below</td><td>multiplier, <code>[0,2]</code>, on <em>learning</em> for humans below the AI level — how much growth is crowded out. Counterintuitively named: <strong>0 = maximum dampening</strong> (learning zeroed out), <strong>1 = no dampening at all</strong>, <code>&gt;1</code> = amplified. <code>simulator.html</code> and <code>report.html</code> both <em>display</em> this shifted by −1 (so it reads as −1/0/+1 instead of 0/1/2) — the stored/config/CSV value is always the raw 0–2 number; only the on-screen label is shifted</td><td class="numcol">0.30</td></tr>
+          <tr><td class="symcol">γ<sub>above</sub></td><td>ai_dampening_above</td><td>multiplier, <code>[0,2]</code>, on <em>learning</em> for humans at/above the AI level. Same direction as γ<sub>below</sub>, including the −1-shifted display</td><td class="numcol">0.80</td></tr>
+          <tr><td class="symcol">μ<sub>atr</sub></td><td>ai_atrophy_multiplier</td><td>multiplier, <code>[1,5]</code>, on <em>decay</em> for humans below the AI level — how much reliance actively erodes expertise already held</td><td class="numcol">1.5</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:0.9rem; color:var(--ink-muted);">
+        <code class="sym">ai_response_mode</code> and <code class="sym">κ</code> govern <em>visible capability</em> only
+        (§8) — they never touch <code class="sym">E</code>. <code class="sym">γ<sub>below</sub></code>/<code class="sym">γ<sub>above</sub></code>
+        and <code class="sym">μ<sub>atr</sub></code> are what actually move <code class="sym">E</code>, and they're
+        split deliberately: γ only ever <em>slows growth</em> (the learning a human would have had, but didn't);
+        μ<sub>atr</sub> only ever <em>speeds decay</em> (the expertise a human had, but is losing). Collapsing
+        these into one dampening factor — as an earlier version of this spec did — makes AI reliance merely
+        <em>slow</em> a human's trajectory in both directions at once, including protecting them from decay.
+        That reads as stagnation, not erosion. Keeping them separate is what lets μ<sub>atr</sub> alone answer
+        "how much does AI reliance obliterate expertise a human already has," independent of how much it
+        also suppresses further learning.
+      </p>
+    </section>
+
+    <section class="doc-section" id="init">
+      <h2>Initialization</h2>
+      <ol>
+        <li>Build the institution graph with Barabási–Albert(<code>M</code>, <code class="sym">m</code>). Each institution's <strong>prestige</strong> is fixed at creation as its normalized degree.</li>
+        <li>Create <code>N</code> humans. Assign each to an institution uniformly at random.</li>
+        <li>Draw each human's <code class="sym">E<sub>i</sub>(0)</code> from SkewNormal(<code class="sym">μ<sub>E</sub></code>, <code class="sym">ω<sub>E</sub></code>, <code class="sym">α<sub>E</sub></code>), clipped to <code>[0,1]</code>.</li>
+        <li>Draw each human's fixed <code class="sym">L<sub>i</sub></code> ~ Lognormal(0, <code class="sym">σ<sub>L</sub></code>).</li>
+        <li>Set <code class="sym">C<sub>i</sub>(0) = E<sub>i</sub>(0)</code> (AI mechanism applied from tick 1 onward if enabled).</li>
+        <li>Fix two benchmarks from this t=0 population, used for the whole run rather than recomputed live: <code class="sym">start_top_e</code> = max(<code class="sym">E<sub>i</sub></code>) across everyone (anchors <code class="sym">ai_level</code>, §8), and <code class="sym">start_ebar[j]</code> = mean(<code class="sym">E<sub>i</sub></code>) within each institution <code class="sym">j</code> (anchors <code class="sym">μ<sub>amb</sub></code> ambient growth, §11) — both fixed specifically so the thing they scale can't feed back into itself as the population evolves.</li>
+      </ol>
+    </section>
+
+    <section class="doc-section" id="tick">
+      <h2>Per-tick update algorithm</h2>
+      <p>Runs in this order every tick, so that mobility decisions use the same institution averages that the learning step just produced:</p>
+      <pre><span class="c"># 1. Institution stats (latent, not observed — see §8)</span>
+for j in institutions:
+    n[j]  = count(members(j))
+    Ē[j]  = mean(E[i] for i in members(j))
+
+<span class="c"># 2. AI level, if enabled — fixed at t=0, not recomputed from the current population</span>
+ai_level = λ * start_top_e   <span class="k">if</span> ai_enabled <span class="k">else</span> None
+<span class="c"># start_top_e = max(E[i] at t=0), set once during initialization</span>
+
+<span class="c"># 3. Learning / decay — growth and decay are dampened independently (see §8)</span>
+for i in humans:
+    j = institution(i)
+    gap   = Ē[j] - E[i]
+    below = ai_enabled <span class="k">and</span> E[i] < ai_level
+
+    <span class="k">if</span> gap > 0:                              <span class="c"># peers are stronger — learning</span>
+        delta = β * gap * L[i]
+        <span class="k">if</span> ai_enabled: delta *= γ_below <span class="k">if</span> below <span class="k">else</span> γ_above
+    <span class="k">else</span>:                                    <span class="c"># peers are weaker, or idle — decay, offset by ambient growth</span>
+        decay = δ * gap * L[i]
+        <span class="k">if</span> below: decay *= μ_atr          <span class="c"># AI reliance actively accelerates this</span>
+        ambient = μ_amb * start_ebar[j] * L[i] * (1 - E[i])  <span class="c"># NOT AI-gated — see §11</span>
+        delta = decay + ambient
+
+    E[i] = clip(E[i] + delta, 0, 1)
+    C[i] = clip(E[i] + κ * boost(E[i], ai_level, ai_response_mode), 0, 1) <span class="k">if</span> ai_enabled <span class="k">else</span> E[i]
+    <span class="c"># boost(...) — five interchangeable shapes, see §8</span>
+
+<span class="c"># 4. Mobility — see §6 for candidate-set rules per mode</span>
+for i in humans:
+    <span class="k">if</span> random() < p_move * L[i]:
+        candidates = candidate_institutions(i, mobility_mode)
+        i moves to argmax_j utility(i, j)   <span class="c"># softmax-sampled, not deterministic</span>
+
+<span class="c"># 5. Turnover</span>
+leaving = sample_uniform(humans, r * N)
+remove(leaving)
+add r * N new humans, initialized per §4, placed uniformly at random</pre>
+    </section>
+
+    <section class="doc-section" id="mobility">
+      <h2>Institution graph &amp; mobility</h2>
+      <p>
+        <code>mobility_mode</code> is a single categorical parameter — a run can use any of the three;
+        this is the knob for testing whether the graph is load-bearing or just cosmetic.
+      </p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Mode</th><th>Candidate set</th><th>What it's for</th></tr></thead>
+        <tbody>
+          <tr><td><code>unconstrained</code></td><td>every institution</td><td>isolates the pure attractiveness dynamic; graph only shapes prestige, not reachability</td></tr>
+          <tr><td><code>edge_constrained</code></td><td>graph neighbors of the current institution only</td><td>the graph is a literal career-pathway map; periphery institutions are genuinely hard to leave</td></tr>
+          <tr><td><code>hybrid</code></td><td>neighbors, with probability <code class="sym">ε</code> of considering the full set instead</td><td>mostly local mobility with occasional long jumps; default</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Utility function</h3>
+      <p>When human <code class="sym">i</code> evaluates institution <code class="sym">j</code>:</p>
+      <pre>growth(i,j)  = max(0, Ē[j] - E[i])              <span class="c"># room to learn there</span>
+status(i,j)  = E[i] - Ē[j]                       <span class="c"># relative standing if i moved there</span>
+prestige(j)  = normalized_degree(j)               <span class="c"># fixed, structural</span>
+
+U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
+      <p>
+        This is what produces the requested split without extra machinery: mid-expertise humans
+        chase <code>growth</code> toward stronger institutions; once someone is above most
+        institutions' averages, <code>growth</code> drops out and <code>status</code> pulls them
+        toward smaller, lower-competition institutions where they stand out — <em>except</em> at the
+        very top, where <code>prestige</code> keeps the highest performers anchored to the hub
+        institutions even though every other institution would offer more relative standing.
+      </p>
+    </section>
+
+    <section class="doc-section" id="entrants">
+      <h2>Entrant renewal</h2>
+      <p>
+        The initial-expertise distribution in §3 describes the population the simulation
+        <em>starts</em> with — already a mix of skill levels, as an established system would be.
+        It says nothing about who shows up <em>afterward</em>. Every turnover replacement (§3,
+        "Turnover") draws from a separate, much lower distribution instead: entrants are genuine
+        novices, not miniature copies of the existing population.
+      </p>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
+        <tbody>
+          <tr><td class="symcol">μ<sub>ent</sub></td><td>entrant_expertise_mean</td><td>location of the entrant skew-normal — deliberately low</td><td class="numcol">0.05</td></tr>
+          <tr><td class="symcol">ω<sub>ent</sub></td><td>entrant_expertise_spread</td><td>scale, pre-clip</td><td class="numcol">0.05</td></tr>
+          <tr><td class="symcol">α<sub>ent</sub></td><td>entrant_expertise_skew</td><td>shape — unskewed by default; entrants aren't expected to already have a tail of high performers</td><td class="numcol">0</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        This is what makes AI-driven decline <em>compounding</em> rather than a one-time step down
+        to a lower plateau. An entrant only becomes expert by learning from stronger peers — that's
+        the whole point of <code class="sym">β</code> (transfer_rate). If AI dampens that transfer
+        (§8, γ<sub>below</sub>), entrants stay stuck near zero instead of climbing. And because
+        <code class="sym">Ē<sub>j</sub></code> is a plain average over an institution's current
+        members, every stuck entrant also drags that institution's average down for everyone else
+        — including existing experts, whose own gap (<code class="sym">Ē<sub>j</sub> − E<sub>i</sub></code>)
+        turns more negative as a result, accelerating <em>their</em> decay too. Under sustained AI
+        reliance the system doesn't just fail to produce new experts; it actively erodes the ones
+        it already has, because the peer pool everyone measures their own gap against is shrinking
+        in quality from both directions at once.
+      </p>
+      <div class="callout warn">
+        <div class="callout-label">This required retuning transfer_rate, not just adding a parameter</div>
+        <p>
+          With entrants starting near zero, <code class="sym">β</code>'s old default (0.02) turned
+          out to be too weak to keep even a <em>no-AI</em> system healthy — turnover injects fresh
+          novices faster than that rate can raise them, so the baseline collapsed right alongside
+          the AI-on case, which defeats the entire comparison. <code class="sym">β</code>'s default
+          moved to <strong>0.5</strong> specifically so the no-AI counterfactual demonstrates what
+          it's supposed to: a system that <em>can</em> sustain real expertise through peer transfer,
+          against which AI's failure to do the same is the actual finding. At the old default, both
+          arms failed for a reason that had nothing to do with AI — a turnover/transfer mismatch,
+          not a signal. (This also means <code class="sym">turnover_rate</code>'s useful range
+          shifted — see the note on the batch tooling's experiment set, which is being recalibrated
+          against this mechanism.)
+        </p>
+      </div>
+      <p>
+        Verified, not assumed: with the new default, a no-AI run reaches and holds roughly 95% of
+        the population above the expert threshold within a couple hundred ticks and stays there for
+        thousands more. Under AI (default γ<sub>below</sub>=0.3), the expert share collapses to
+        zero within roughly 200 ticks and never recovers — not a lower plateau, a fully cut-off
+        pipeline — while <code class="sym">meanE</code> keeps sliding for as long as it's been
+        tested (several thousand ticks), rather than settling.
+      </p>
+    </section>
+
+    <section class="doc-section" id="ai">
+      <h2>AI mechanism</h2>
+      <p>
+        Toggling <code>ai_enabled</code> activates <code class="sym">ai_level = λ · start_top_e</code>, where
+        <code class="sym">start_top_e</code> is the <em>single highest</em> <code class="sym">E</code> in the
+        population at <code>t=0</code> — "the greatest human expert at the start." It's set once, during
+        initialization, and stays fixed for the entire run; it does not track whoever currently happens to be
+        the top performer, which would make it a moving target that chases the population's own best outcomes
+        rather than a stable benchmark. (Two earlier versions of this spec anchored it differently — first to
+        the <em>live</em> top human, then to the t=0 population's <em>median</em> — see the design-decisions
+        callout in §11 for why each changed.) That level feeds two <em>independent</em> effects: how much AI
+        actively erodes real expertise (below, and the primary thing this model is for), and how much visible
+        boost each human gets (further down — a separate, secondary question about the illusion of capability,
+        not the substance of it).
+      </p>
+
+      <h3>How AI erodes real expertise</h3>
+      <p>
+        A human below <code class="sym">ai_level</code> is, by definition, one AI is substituting for.
+        That reliance does two things to their trajectory, and the spec keeps them as two separate dials
+        on purpose (see §3, AI table):
+      </p>
+      <ul>
+        <li><strong>Growth is crowded out.</strong> When a stronger institution would have taught them
+          something, <code class="sym">γ<sub>below</sub></code> dampens how much of that they actually
+          absorb — the learning that doesn't happen because AI did the task instead.</li>
+        <li><strong>Decay is accelerated.</strong> When they're not being taught — idle relative to their
+          institution, or in a weak one — <code class="sym">μ<sub>atr</sub></code> (<code>ai_atrophy_multiplier</code>)
+          speeds up how fast what they already knew erodes. This is the "used it or lost it" half, and
+          before this parameter existed the model had no way to represent it at all: dampening a single
+          signed delta merely slowed decay too, which reads as protection from erosion, not erosion.
+        </li>
+      </ul>
+      <p>
+        The number to look at is <code class="sym">shareExpert(t)</code> — the fraction of the population
+        with <code class="sym">E ≥ 0.585</code> (<code>expert_threshold</code>, §11) — compared against a same-seed run with <code>ai_enabled: false</code>.
+        A single AI-on run's <code class="sym">meanE</code> means little on its own; the shortfall against
+        that no-AI counterfactual is the actual claim being tested. <code>batch_run.js</code>'s
+        <code>pairWithBaseline</code> mode runs both arms with a matched seed automatically — see its README.
+      </p>
+
+      <div class="callout warn">
+        <div class="callout-label">What obliteration looks like here</div>
+        <p>
+          It's a widening shortfall, not a cliff. With the defaults (<code class="sym">μ<sub>atr</sub>=1.5</code>),
+          a paired baseline/AI comparison at <code>N=600</code> shows the population's real expertise
+          shortfall grow from roughly 0.047 at <code class="sym">t=100</code> to 0.076 at <code class="sym">t=600</code> —
+          and the share of the population still reaching expert level (<code class="sym">E≥0.7</code>) drops
+          from about 7.7% in the no-AI counterfactual to 5.0% under AI, over the same window. Raising
+          <code class="sym">μ<sub>atr</sub></code> widens both numbers further; it's the one dial most
+          directly answering "how much does reliance on AI obliterate expertise."
+        </p>
+      </div>
+
+      <h3>Who benefits from the visible boost, and how (secondary)</h3>
+      <p>
+        This part is about <code class="sym">C</code>, not <code class="sym">E</code> — it never feeds back
+        into anything real. It answers a different, narrower question: given that AI makes output <em>look</em>
+        better, whose output benefits most? Useful for studying the illusion; not where the erosion story
+        lives.
+      </p>
+      <p>
+        The obvious default — an equalizing floor, where the least expert gain the most because
+        everyone is lifted to the same line — is only one hypothesis. The more commonly claimed
+        effect is the opposite: expertise and AI benefit <em>compound</em>, because a stronger human
+        knows what to ask for and how to judge the answer. <code class="sym">ai_response_mode</code> makes
+        that a variable instead of an assumption, and <code class="sym">κ</code> (<code>ai_gain</code>)
+        is one shared dial for how strongly whichever shape is selected applies — <code class="sym">κ=0</code>
+        always means "AI enabled but invisible," in every mode.
+      </p>
+      <p>Each mode is a <code>boost(E)</code> added to expertise: <code class="sym">C = clip(E + κ · boost(E), 0, 1)</code>.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Mode</th><th><code>boost(E)</code></th><th>Who benefits</th></tr></thead>
+        <tbody>
+          <tr><td><code>floor</code></td><td class="numcol">max(0, ai_level − E)</td><td>only humans below <code class="sym">ai_level</code> — a ceiling, not a multiplier. At <code class="sym">κ=1</code> this is <code>C = max(E, ai_level)</code>, the model's original default.</td></tr>
+          <tr><td><code>flat</code></td><td class="numcol">ai_level</td><td>everyone, by the same absolute amount — the least expert gain the most in <em>relative</em> terms even though the boost itself doesn't look at <code class="sym">E</code>.</td></tr>
+          <tr><td><code>linear</code></td><td class="numcol">ai_level · E</td><td>proportional to expertise — an expert's absolute gain grows in a straight line with how much they already know.</td></tr>
+          <tr><td><code>amplified</code></td><td class="numcol">ai_level · E²</td><td>superlinear — the multiplier on expertise itself grows with <code class="sym">E</code>, so gains accelerate for the already-strong.</td></tr>
+          <tr><td><code>exponential</code></td><td class="numcol">E · (e<sup>ai_level·E</sup> − 1)</td><td>compounding — the sharpest "rich get richer" shape; at high <code class="sym">κ</code>, expert output saturates at the 1.0 ceiling fastest of all five.</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="chart-block">
+        <div class="chart-head">
+          <h4 style="margin:0 0 0.15rem; font-size:0.95rem;">C(E) at ai_level = 0.70, κ = 1</h4>
+          <p style="margin:0; font-size:0.83rem; color:var(--ink-muted);">the canonical shape of each mode — hover to read values</p>
+        </div>
+        <div class="viz-root" id="modeChartRoot">
+          <canvas id="modeCanvas" role="img" aria-label="Line chart comparing five AI capability boost modes as a function of human expertise, at ai_level 0.7 and gain 1"></canvas>
+        </div>
+        <ul class="chart-legend" id="chartLegend"></ul>
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">What this does to the brittleness gap</div>
+        <p>
+          Under <code>floor</code>, only humans below <code class="sym">ai_level</code> carry a
+          <code class="sym">C − E</code> gap — the top performers show no boost at all, so the brittleness
+          gap concentrates entirely at the bottom. Under <code>linear</code>, <code>amplified</code>, or
+          <code>exponential</code>, the gap opens <em>everywhere</em>, and opens widest exactly where the
+          real experts are — meaning the humans whose judgment the rest of the system implicitly trusts
+          most are also the ones whose observed output is least representative of what they'd produce
+          unassisted. That reversal is the interesting comparison this parameter is for.
+        </p>
+      </div>
+
+      <div class="callout warn">
+        <div class="callout-label">Why institution quality uses E, not C</div>
+        <p>
+          <code class="sym">Ē<sub>j</sub></code> — the number that drives peer learning and institutional
+          attractiveness — is computed from latent expertise only, in every mode. If it used observed
+          capability instead, AI would make every institution look expert-staffed, the transfer/decay rule
+          would stop discriminating between real and assisted institutions, and the entire brittleness
+          mechanic would disappear. Keeping the two metrics separate is what lets the simulator show a
+          system that looks fine on <code class="sym">C</code> while its <code class="sym">E</code> — the thing that
+          actually generates new responses when conditions change — quietly flattens.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="metrics">
+      <h2>Metrics &amp; logging</h2>
+      <p>Recorded every tick, at both levels, to drive the visualizer without re-deriving anything from raw state:</p>
+      <ul>
+        <li><strong>Per institution:</strong> <code class="sym">n<sub>j</sub></code>, <code class="sym">Ē<sub>j</sub></code>, mean <code class="sym">C<sub>j</sub></code>, prestige</li>
+        <li><strong>Population:</strong> mean / median / 10th &amp; 90th percentile of <code class="sym">E</code> and of <code class="sym">C</code></li>
+        <li><strong>Share expert:</strong> fraction of the population with <code class="sym">E ≥ 0.585</code> (<code>expert_threshold</code>, §11) — the headline series; compare against a same-seed AI-off run to see how much AI reliance has obliterated</li>
+        <li><strong>Center–periphery divergence:</strong> variance (or Gini) of <code class="sym">Ē<sub>j</sub></code> across institutions, weighted by degree vs. unweighted</li>
+        <li><strong>Illusion gap</strong> (secondary): mean(<code class="sym">C</code>) − mean(<code class="sym">E</code>) — near zero with AI off, opens up with AI on; measures the appearance of capability, not its erosion</li>
+        <li><strong>Share of humans below <code class="sym">ai_level</code></strong>, when AI is enabled</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="viz">
+      <h2>Visualizer specification</h2>
+      <p>A simple, single-run visualizer — not a dashboard — built around one idea: let the viewer watch real expertise erode while the network looks unchanged.</p>
+      <h3>Views</h3>
+      <ul>
+        <li><strong>Network panel</strong> — force-directed layout of the institution graph. Node size = <code class="sym">n<sub>j</sub></code>, node color = <code class="sym">Ē<sub>j</sub></code> on a low→high scale. Redraws each tick; hub institutions should visibly hold their position.</li>
+        <li><strong>Distribution panel</strong> — animated histogram of <code class="sym">E</code> across the population, with a thin overlay line for <code class="sym">C</code> when AI is on, so the gap between "real" and "observed" is visible directly, not just as a summary number.</li>
+        <li><strong>Timeline panel</strong> — share-expert and center–periphery divergence plotted over <code class="sym">t</code> (the illusion gap is available too, but secondary), with a marker at the tick AI was toggled.</li>
+        <li><strong>Institution inspector</strong> — click a node to see that institution's member expertise histogram and its history of <code class="sym">Ē<sub>j</sub></code>.</li>
+      </ul>
+      <h3>Controls</h3>
+      <ul>
+        <li>Play / pause / step / scrub across <code class="sym">t</code></li>
+        <li>Parameter panel for every knob in §3, with the seven headline parameters surfaced first</li>
+        <li>AI on/off toggle that re-runs from <code class="sym">t=0</code> with an identical random seed, so paired runs are comparable</li>
+      </ul>
+      <p class="abstract" style="margin-top:1rem;">
+        This section specifies behavior, not implementation. A self-contained single-page build
+        (canvas or SVG force layout, no external network calls) is the natural fit once this spec
+        is approved — not part of this deliverable.
+      </p>
+    </section>
+
+    <section class="doc-section" id="decisions">
+      <h2>Key design decisions</h2>
+      <p>Flagged because they're interpretive choices made to keep the model coherent and minimal, not things explicitly dictated in the request — worth pushback if any read wrong.</p>
+      <ul>
+        <li><strong>Latent vs. observed split (§1).</strong> Necessary for "AI raises expertise" and "reliance on AI causes decay" to both be true without contradiction.</li>
+        <li><strong>Barabási–Albert graph.</strong> Chosen specifically because it produces emergent hubs from one parameter (<code class="sym">m</code>) — matching "largest and most successful institutions" without a separate size input.</li>
+        <li><strong>Symmetric transfer/decay rule, asymmetric AI treatment of it.</strong> Growth and decay are still one regression-to-institution-mean formula with two rate constants (<code class="sym">β</code>, <code class="sym">δ</code>) when AI is off. But when AI is on, the two branches are no longer dampened by the same factor: an earlier version of this spec applied <code class="sym">γ<sub>below</sub></code> to whichever branch fired, which meant it slowed decay as much as growth — protecting AI-reliant humans from erosion instead of causing it. <code class="sym">μ<sub>atr</sub></code> (§8) exists specifically to fix that: growth is dampened, decay is separately and independently accelerated.</li>
+        <li><strong>Prestige as a fixed structural term.</strong> Without it, the status term alone would push even the top human toward the emptiest institution, contradicting "the highest expertise humans will stay in the highest expertise institutions."</li>
+        <li><strong>Uniform-random exit.</strong> Simplest turnover mechanism that satisfies "leave at the same rate"; tenure-based exit is a drop-in alternative if career-length effects matter later.</li>
+        <li><strong>Mobility mode as a run-time switch, not three separate models.</strong> Per your steer — all three are implemented as one parameter so a single build supports comparison runs.</li>
+        <li><strong>One gain parameter (<code class="sym">κ</code>) shared across five AI response modes.</strong> Per your steer on expertise-dependent AI benefit — <code>floor</code>, <code>flat</code>, <code>linear</code>, <code>amplified</code>, and <code>exponential</code> are all <code>boost(E)</code> shapes scaled by the same dial, rather than five independently-parameterized mechanisms, so sweeping "does more expertise mean more AI benefit" is a two-value change (mode, κ), not a model rewrite. <code>floor</code> at <code class="sym">κ=1</code> reproduces the original spec exactly.</li>
+        <li><strong>Entrants are novices, not population clones (§7).</strong> Per your steer directly — this was the missing feedback loop. Before it, AI's effect was a lower <em>plateau</em>: turnover kept refeeding the system with reasonably-skilled fresh draws regardless of how bad things had gotten, so decline always leveled off. With genuine novices who can only rise via peer transfer, a suppressed transfer rate means they never rise — and their accumulating presence drags down institution averages for existing experts too. This is what makes the decline actually compounding rather than a one-time adjustment. It forced <code class="sym">β</code>'s default up 25x (0.02 → 0.5) — otherwise even the no-AI arm failed for reasons unrelated to AI, which would've made the whole comparison meaningless.</li>
+        <li><strong>ai_level fixed to the t=0 median, not the current top performer (§8) — later superseded, see next.</strong> Per your steer directly. The original formula (<code class="sym">λ · max<sub>i</sub> E<sub>i</sub>(t)</code>) made the "below AI level" cutoff a moving target: as the top performer's own expertise grew or shrank over the run, the threshold chased it, so the below/above split at any given tick depended on the population's own trajectory rather than a stable external benchmark. Pinning it to the median of the <em>starting</em> population — "the level of the majority of the human population at the start" — fixed it as a constant for the whole run instead, set once during initialization. Checked, not assumed: the self-renewal/collapse contrast this model exists to show (no-AI reaching ~95% expert share, AI-dampened collapsing to 0%) reproduced essentially unchanged under this formula, so it was a definitional correction, not a retune. This was itself later replaced — see the next entry.</li>
+        <li><strong>ai_level anchor changed again: from the t=0 median to the t=0 single greatest expert (§8).</strong> Per your steer directly — the concept "λ = fraction of the greatest human expert" (not the majority/median) is what the parameter was meant to capture. Same "fixed, not live" fix as before carries over unchanged: <code class="sym">start_top_e</code> is captured once at init from the t=0 population's single highest <code class="sym">E</code>, not recomputed from whoever is currently on top, so it doesn't reintroduce the moving-target problem the median anchor was originally built to avoid. Worth knowing if you're reading a specific run: for typical population sizes the t=0 maximum sits very close to the <code>[0,1]</code> ceiling (the skew-normal's own tail routinely produces a near-1.0 draw), so <code class="sym">ai_level</code> under this anchor is now much higher, relative to the population, than it was under the median anchor — at the default <code class="sym">λ=0.70</code> it lands around 0.70, rather than deep in the middle of a typical population as before. (At the time this change was made, <code class="sym">expert_threshold</code> also happened to be 0.7, making <code class="sym">ai_level</code> and <code class="sym">expert_threshold</code> numerically coincide under defaults — that coincidence no longer holds now that <code class="sym">expert_threshold</code> has moved to 0.585, see the next entry.) That shifts what "below ai_level" means: it now tracks closer to "not yet expert" than to "below the typical human," which changes the practical population split even though the formula's shape (a fixed fraction of a fixed t=0 benchmark) is unchanged.</li>
+        <li><strong>expert_threshold moved from 0.7 to 0.585.</strong> Per your steer directly, following an empirical sensitivity check (<code>expert_threshold_sensitivity.js</code>, and "Expert threshold" in README.md). <code class="sym">expert_threshold</code> is a bare constant, not a configurable parameter — it only defines <code class="sym">share_expert(t)</code> (§9), it never touches the dynamics. The self-renewal/collapse contrast reads cleanly for any threshold roughly in <code>[0.3, 0.86]</code>; outside that band it breaks down at both ends, for different reasons — below ~0.3 the bar is too low to discriminate (even the AI-collapsed population mostly clears it), above ~0.86 the bar exceeds the no-AI baseline's own steady-state ceiling ("Simulation steady state" in <code>paper.md</code>: meanE converges to ≈0.87 even under a healthy no-AI baseline), so a too-high threshold makes even a fully self-renewing population look collapsed — and in the AI-<em>amplification</em> regime specifically, a threshold that high manufactures an artificially large apparent AI benefit, since amplified humans get pushed past a ceiling the unassisted baseline can't reach. 0.7 sat close enough to that upper edge (0.16 away) to inflate the amplification-regime numbers somewhat; 0.585 sits near the middle of the robust band (~0.28 from each edge), which removes that artifact without changing the headline collapse story at all — checked directly, both thresholds show baseline ~97-98%, treatment ~0% under the engine's own default dampening (0.30/0.80 — this check doesn't override it, so it isn't the experiment set's worst-case backdrop).</li>
+        <li><strong>Ambient growth (§5), and why it's anchored to a fixed founding average, not the live one.</strong> Per your steer directly — decay alone made the "above your institution's ceiling" branch a dead end, which understates how real experts keep improving. The first version scaled ambient growth by the institution's <em>current</em> average, which is a positive-feedback loop: top performers rise → the average they're compared against rises → next tick's ambient term is larger for everyone → the whole population, not just the top, saturates to <code class="sym">E=1</code> within a few thousand ticks regardless of AI, quietly erasing the model's central contrast. Anchoring it to <code class="sym">start_ebar[j]</code> (each institution's own t=0 average, fixed for the run — same fix pattern as <code class="sym">ai_level</code> above) breaks that loop. It isn't a permanent equilibrium either — given a long enough horizon the population still drifts toward 1 — but checked directly: within the model's standard 1000-tick horizon it stays a gentle effect (a few percentage points) and leaves the AI/no-AI shortfall under worst-case dampening (0.0/0.0 — the experiment set's fixed-dampening default at the time this was checked; it has since moved to a neutral 1.0/1.0, see the entry on that below) essentially untouched (0.524 → 0.492 at the calibrated default), because it isn't AI-gated — it lifts both arms' shared floor rather than favoring either one.</li>
+        <li><strong>generate_experiments.js's fixed aiDampeningBelow/Above default moved from 0.0 (max dampening) to 1.0 (neutral).</strong> Per your steer directly, following a direct empirical check: with both pinned at max dampening — the experiment set's original default, itself an earlier explicit steer — <code class="sym">share_expert</code> read a flat 0.000 across the <em>entire</em> range of whatever else was being swept, for every one of the experiments that didn't itself study a dampening parameter. Checked with <code class="sym">turnover_rate</code> as a concrete example: <code class="sym">meanE</code> moved by only 0.025 total across its full range, and <code class="sym">share_expert</code> didn't move at all, versus a real, informative range under moderate dampening. A worst-case backdrop was originally chosen deliberately, to stress-test every other parameter against the harshest AI impact — but in practice it meant most of the 55 experiments couldn't show what the swept parameter actually did, on the metric the whole model exists to report. Neutral (1.0/1.0) removes that bias without introducing an opposite one, since it's the point on the dampening scale where AI reliance has exactly zero effect on learning either way. This doesn't fully restore <code class="sym">aiLevelFraction</code>'s informativeness in its other eight pairings (still symmetric, so the below/above split still mostly doesn't matter for learning) but does surface a smaller real effect through <code class="sym">μ<sub>atr</sub></code>'s own non-neutral default (1.5) acting on the decay branch instead — see the comment above <code>aiLevelFraction</code> in <code>generate_experiments.js</code> for the exact numbers.</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="extensions">
+      <h2>Out of scope / future extensions</h2>
+      <p>Excluded to keep the parameter count down for a first version; each is a plausible follow-up:</p>
+      <ul>
+        <li><strong>Shock events</strong> — a periodic disruption that only invention (high <code class="sym">E</code>, not <code class="sym">C</code>) can respond to. This is the most direct test of "brittle in the face of change" and is the natural next spec once the base model is validated.</li>
+        <li>Institution capacity limits (currently unconstrained; attractiveness alone shapes population)</li>
+        <li>Heterogeneous institution domains (all institutions are currently interchangeable except for graph position)</li>
+        <li>Tenure-weighted or skill-weighted exit instead of uniform-random</li>
+        <li>Graph rewiring over time (currently fixed at <code>t=0</code>)</li>
+        <li>Multiple, competing AI systems at different <code class="sym">λ</code> levels</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <hr class="divider" />
+  <footer>
+    Draft specification — engine and visualizer described here are not yet implemented.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var MODES = [
+    { key: "floor",       label: "floor",       lightHex: "#2a78d6", darkHex: "#3987e5", boost: function (e, a) { return Math.max(0, a - e); } },
+    { key: "flat",        label: "flat",        lightHex: "#eb6834", darkHex: "#d95926", boost: function (e, a) { return a; } },
+    { key: "linear",      label: "linear",      lightHex: "#1baf7a", darkHex: "#199e70", boost: function (e, a) { return a * e; } },
+    { key: "amplified",   label: "amplified",   lightHex: "#eda100", darkHex: "#c98500", boost: function (e, a) { return a * e * e; } },
+    { key: "exponential", label: "exponential", lightHex: "#e87ba4", darkHex: "#d55181", boost: function (e, a) { return e * (Math.exp(a * e) - 1); } }
+  ];
+  var AI_LEVEL = 0.70, KAPPA = 1.0, N = 41;
+
+  var THEME = {
+    light: { surface: "#ffffff", ink: "#0b0b0b", inkSecondary: "#52514e", muted: "#898781", grid: "#e1e0d9", baseline: "#c3c2b7" },
+    dark:  { surface: "#1b2022", ink: "#ffffff", inkSecondary: "#c3c2b7", muted: "#898781", grid: "#2c2c2a", baseline: "#484f52" }
+  };
+
+  function currentTheme() {
+    var t = document.documentElement.getAttribute("data-theme");
+    if (t === "dark" || t === "light") return t;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function buildSeries() {
+    var xs = [];
+    for (var i = 0; i < N; i++) xs.push(i / (N - 1));
+    return MODES.map(function (m) {
+      return {
+        mode: m,
+        points: xs.map(function (e) {
+          return { e: e, c: Math.min(1, Math.max(0, e + KAPPA * m.boost(e, AI_LEVEL))) };
+        })
+      };
+    });
+  }
+
+  var series = buildSeries();
+  var canvas = document.getElementById("modeCanvas");
+  var tooltip = null;
+  var root = document.getElementById("modeChartRoot");
+  var legendEl = document.getElementById("chartLegend");
+  if (!canvas || !root || !legendEl) return;
+  var ctx = canvas.getContext("2d");
+
+  var pad = { l: 40, r: 14, t: 12, b: 32 };
+
+  function layout() {
+    var rect = root.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = rect.width, cssH = 260;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: cssW, h: cssH };
+  }
+
+  function toX(e, w) { return pad.l + e * (w - pad.l - pad.r); }
+  function toY(c, h) { return (h - pad.b) - c * (h - pad.b - pad.t); }
+
+  function draw() {
+    var theme = THEME[currentTheme()];
+    var dims = layout();
+    var w = dims.w, h = dims.h;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.strokeStyle = theme.grid;
+    ctx.lineWidth = 1;
+    ctx.fillStyle = theme.muted;
+    ctx.font = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    ctx.textAlign = "center";
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      var x = toX(v, w);
+      ctx.beginPath();
+      ctx.moveTo(x, pad.t);
+      ctx.lineTo(x, h - pad.b);
+      ctx.stroke();
+      ctx.fillText(v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""), x, h - pad.b + 16);
+    });
+    ctx.textAlign = "right";
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      var y = toY(v, h);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(w - pad.r, y);
+      ctx.stroke();
+      ctx.fillText(v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""), pad.l - 8, y + 3);
+    });
+
+    ctx.strokeStyle = theme.baseline;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(toX(0, w), toY(0, h));
+    ctx.lineTo(toX(1, w), toY(1, h));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    var alX = toX(AI_LEVEL, w);
+    ctx.strokeStyle = theme.muted;
+    ctx.setLineDash([1, 3]);
+    ctx.beginPath();
+    ctx.moveTo(alX, pad.t);
+    ctx.lineTo(alX, h - pad.b);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = theme.muted;
+    ctx.textAlign = "left";
+    ctx.fillText("ai_level", alX + 4, pad.t + 10);
+
+    var themeName = currentTheme();
+    series.forEach(function (s) {
+      ctx.strokeStyle = themeName === "dark" ? s.mode.darkHex : s.mode.lightHex;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      s.points.forEach(function (p, i) {
+        var x = toX(p.e, w), y = toY(p.c, h);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = theme.muted;
+    ctx.font = "11px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("expertise (E)", pad.l + (w - pad.l - pad.r) / 2, h - 4);
+    ctx.save();
+    ctx.translate(12, pad.t + (h - pad.t - pad.b) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("capability (C)", 0, 0);
+    ctx.restore();
+  }
+
+  function buildLegend() {
+    legendEl.innerHTML = "";
+    var theme = currentTheme();
+    MODES.forEach(function (m) {
+      var li = document.createElement("li");
+      var sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.background = theme === "dark" ? m.darkHex : m.lightHex;
+      var label = document.createElement("span");
+      label.innerHTML = "<b>" + m.label + "</b>";
+      li.appendChild(sw);
+      li.appendChild(label);
+      legendEl.appendChild(li);
+    });
+  }
+
+  function ensureTooltip() {
+    if (tooltip) return tooltip;
+    tooltip = document.createElement("div");
+    tooltip.className = "chart-tooltip";
+    tooltip.hidden = true;
+    root.appendChild(tooltip);
+    return tooltip;
+  }
+
+  canvas.addEventListener("mousemove", function (evt) {
+    var rect = canvas.getBoundingClientRect();
+    var x = evt.clientX - rect.left;
+    var e = (x - pad.l) / (rect.width - pad.l - pad.r);
+    if (e < 0 || e > 1) { ensureTooltip().hidden = true; return; }
+    var idx = Math.round(e * (N - 1));
+    var theme = currentTheme();
+    var tt = ensureTooltip();
+    var eVal = idx / (N - 1);
+    var rows = MODES.map(function (m, i) {
+      var c = series[i].points[idx].c;
+      var hex = theme === "dark" ? m.darkHex : m.lightHex;
+      return '<div class="row"><span><span class="swatch" style="background:' + hex + '"></span>' + m.label + '</span><span>' + c.toFixed(2) + "</span></div>";
+    }).join("");
+    tt.innerHTML = '<div class="row"><span><b>E</b></span><span>' + eVal.toFixed(2) + "</span></div>" + rows;
+    tt.hidden = false;
+    var left = x + 14, top = evt.clientY - rect.top - 10;
+    if (left + 150 > rect.width) left = x - 150;
+    tt.style.left = left + "px";
+    tt.style.top = Math.max(0, top) + "px";
+  });
+  canvas.addEventListener("mouseleave", function () { if (tooltip) tooltip.hidden = true; });
+
+  buildLegend();
+  draw();
+  window.addEventListener("resize", draw);
+  new MutationObserver(function () { buildLegend(); draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { buildLegend(); draw(); });
+  }
+})();
+</script>

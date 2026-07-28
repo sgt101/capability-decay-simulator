@@ -1,0 +1,146 @@
+# ---------------------------------------------------------------------------
+# Credentials and secrets — never commit these
+# ---------------------------------------------------------------------------
+# Environment / config files that typically hold API keys and tokens
+.env
+.env.*
+!.env.example
+!.env.sample
+*.env
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+
+# Credential files by conventional name. Deliberately NOT a blanket "*.json"
+# rule — this project keeps real data in .json (world-model.json,
+# experiments.manifest.json, experiments/experiment.N.json, sweep*.json).
+credentials.json
+credentials*.json
+secrets.json
+secrets*.json
+client_secret*.json
+service-account*.json
+*serviceaccount*.json
+gha-creds-*.json
+*.credentials
+*.token
+*_token
+*.secret
+
+# Tool-specific credential stores
+.netrc
+.npmrc
+.pypirc
+.aws/
+.azure/
+.gcloud/
+.ssh/
+.docker/config.json
+
+# ---------------------------------------------------------------------------
+# Personal information / OS cruft
+# ---------------------------------------------------------------------------
+# Microsoft Office lock files. These embed the USERNAME of whoever has the
+# document open — "~$training-ecosystem.xlsx" in this repo contained a real
+# username. Always ignored.
+~$*
+.~lock.*
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# ---------------------------------------------------------------------------
+# Editors and IDEs
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+.history/
+*.swp
+*.swo
+*~
+.\#*
+\#*\#
+
+# Claude Code local overrides (machine-specific paths and permissions)
+.claude/settings.local.json
+
+# ---------------------------------------------------------------------------
+# Node / JavaScript tooling
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.npm/
+.yarn/
+.pnp.*
+.eslintcache
+coverage/
+.nyc_output/
+
+# ---------------------------------------------------------------------------
+# Generated simulation output
+# ---------------------------------------------------------------------------
+# Everything below is REPRODUCIBLE from committed source — it is regenerated,
+# not authored. Committing it previously made the working tree 5.3 GB.
+#
+#   results/     ~4.0 GB  — rebuild with ./run_experiments.sh
+#   report.html  ~308 MB  — rebuild with `node build_report.js`
+#                           (report.template.html IS tracked; report.html is
+#                           that template with the results data injected, and
+#                           exceeds GitHub's 100 MB per-file hard limit)
+#
+# Deliberately still tracked: "steady state/*.csv" (~16 KB), because those are
+# the recorded evidence behind paper.md's steady-state section, not bulk output.
+results/
+report.html
+
+# ---------------------------------------------------------------------------
+# Scratch and temporary files
+# ---------------------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+tmp/
+temp/
+scratch/
+.cache/
