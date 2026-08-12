@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "World-model experiment 1: mobility friction x AI dampening (below).",
+    "",
+    "Separate from the BA experiment set in experiments/ and writes to a separate",
+    "results directory. World-model results are NOT comparable with BA results —",
+    "different topology, different calibration — and must never be read side by",
+    "side as the same experiment.",
+    "",
+    "Time base: 1 tick = 1 month, career = 40 years = 480 ticks.",
+    "  turnoverRate 0.002083 = 1/480",
+    "  transferRate 0.13 / decayRate 0.024 from calibrate_time_base.js",
+    "  N 10504 = 40 years x (52514 annual intake / 200)",
+    "  horizon 1440 = 3 careers; recordAt at 1, 2 and 3 careers",
+    "M is absent on purpose: it is derived from the world model (245)."
+  ],
+
+  "mode": "grid",
+  "replicates": 3,
+  "horizon": 1440,
+  "recordAt": [480, 960, 1440],
+  "seed": 1,
+  "pairWithBaseline": true,
+
+  "worldModel": {
+    "worldModelPath": "world-model.json",
+    "mobilityCostsPath": "mobility-costs.json",
+    "worldModelOptions": {
+      "useBlocAffinity": true,
+      "hubSource": "located_in",
+      "prestigeFrom": "intake",
+      "zeroIntakePolicy": "floor1",
+      "useExplicitEdges": true
+    }
+  },
+
+  "fixed": {
+    "graphSource": "worldModel",
+    "institutionSizing": "weighted",
+    "N": 10504,
+    "turnoverRate": 0.002083,
+    "transferRate": 0.13,
+    "decayRate": 0.024,
+    "aiDampeningAbove": 1.0,
+    "aiAtrophyMultiplier": 1.5,
+    "aiLevelFraction": 0.7,
+    "aiGain": 1.0
+  },
+
+  "params": {
+    "mobilityFriction": { "values": [0, 0.05, 0.1, 0.2, 0.4] },
+    "aiDampeningBelow": { "values": [0.0, 0.25, 0.5, 0.75, 1.0] }
+  }
+}

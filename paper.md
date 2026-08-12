@@ -7,6 +7,15 @@ alongside this document.
 
 ## Simulation steady state
 
+> **Read this section as history, not as current numbers.** It documents the
+> equilibrium under the *original* dimensionless-tick calibration on a BA graph
+> (meanE ≈ 0.87, read at t=1,000). Under the monthly time base and the
+> world-model graph the equilibrium sits at meanE ≈ 0.63 and the horizon is
+> t=1,440. The *structural* argument below — that an attracting equilibrium
+> exists, and why — still holds and is why the recalibration was possible at
+> all. The specific values do not. See "Time, turnover, and population scale"
+> and "The stationary calibration" below.
+
 **Question:** with AI disabled, does the model settle into a steady state — a
 population-level equilibrium it converges to and stays at — or does it keep drifting
 indefinitely (e.g. toward everyone reaching full expertise, or toward collapse)?
@@ -291,13 +300,69 @@ forces `transferRate` and `decayRate` to be re-derived together.** Scanned at a
 | **0.1** | 0.97/0.00 | 0.95/0.00 | 0.00/0.00 | 0.00/0.00 | 0.00/0.00 |
 
 Two things to read off this. First, raising `decayRate` does pull the population
-off the ceiling without collapsing it, so a viable recalibration exists —
-`(0.2, 0.04)` and `(0.15, 0.02)` are both in range. Second, **the usable band is
-narrow and the edges are sharp**: at `transferRate = 0.1`, moving `decayRate` from
-0.01 to 0.02 takes `shareExpert` from 0.95 to 0.00. That knife-edge is a real
-property of the model (the same bifurcation the AI-dampening sweeps show), not a
-numerical artifact — but it means the recalibration has to be done by scanning,
-not by reasoning from the old values.
+off the ceiling without collapsing it, so a viable recalibration exists. Second,
+**the usable band is narrow and the edges are sharp**: at `transferRate = 0.1`,
+moving `decayRate` from 0.01 to 0.02 takes `shareExpert` from 0.95 to 0.00. That
+knife-edge is a real property of the model (the same bifurcation the AI-dampening
+sweeps show), not a numerical artifact — but it means the recalibration has to be
+done by scanning, not by reasoning from the old values.
+
+### Avoiding the ceiling is not enough — the baseline must also be *stationary*
+
+The scan above selects on dynamic range, and on that basis `(0.13, 0.024)` looked
+fine. It was not, and the reason is worth recording because it is easy to miss.
+
+A calibration can sit clear of both the ceiling and collapse and still have its
+**equilibrium in a different place from where the initial transient lands**. At
+`(0.13, 0.024)` the t=0 population rises quickly to `meanE ≈ 0.60`, but the
+system's actual equilibrium is `≈ 0.56`. With 40-year careers it takes many
+cohorts to forget the initial condition, so the no-AI baseline sags for the whole
+run and beyond (world-model scale, `N=10,504`, 3 seeds):
+
+| t | 120 | 480 | 960 | 1440 |
+|---|---|---|---|---|
+| meanE baseline | 0.5975 | 0.5818 | 0.5700 | 0.5622 |
+
+−0.035 across the horizon, still falling ten careers later. Two consequences:
+
+1. **`meanE_shortfall` stops being interpretable.** It becomes "what AI removed,
+   *plus* wherever the baseline had wandered to by the reporting tick".
+2. **`shareExpert` collapses out of proportion.** Because `sd(E) ≈ 0.06`, a drift
+   of 0.035 in the mean sweeps most of the population across the threshold:
+   measured across 5 seeds, `shareExpert` fell 0.80 → 0.05 between t=480 and
+   t=4800 while `meanE` moved only 7%. The two are not independent signals —
+   `correlation(meanE, shareExpert) = 0.987`. `shareExpert` is `meanE` amplified
+   roughly 16x, not a second measurement.
+
+### The stationary calibration
+
+Stationarity is therefore the *binding* criterion, and `calibrate_time_base.js`
+now tests it directly (rejecting any cell whose baseline drifts more than 0.010
+across the horizon) and scans against the world-model graph via `--world-model`,
+because the stationary ridge sits in a different place on BA than on the real
+graph.
+
+Verified at production scale (`N=10,504`, `M=245`, 3 seeds):
+
+| calibration | t=120 | t=480 | t=960 | t=1440 | drift | shortfall |
+|---|---|---|---|---|---|---|
+| **(0.15, 0.020)** | 0.6291 | 0.6289 | 0.6293 | **0.6294** | **+0.0002** | 0.369 |
+| (0.17, 0.024) | 0.6301 | 0.6293 | 0.6277 | 0.6274 | −0.0027 | 0.374 |
+| (0.13, 0.016) | 0.6280 | 0.6297 | 0.6313 | 0.6321 | +0.0041 | 0.362 |
+
+`MONTHLY_TICK_PARAMS` uses **`transferRate = 0.15`, `decayRate = 0.020`** — flat
+to four decimal places over three careers, with an AI shortfall of 0.369 and a
+seed spread on that shortfall of only 0.0042.
+
+No change to initialisation was needed. The earlier drift was not a bad starting
+point but a calibration whose equilibrium sat *below* where the transient settled;
+at `(0.15, 0.020)` the default init lands on the equilibrium by itself.
+
+The trade-off is that equilibrium `meanE` (0.63) now sits well *above*
+`EXPERT_THRESHOLD` (0.585), so baseline `shareExpert` is ~0.95 with little
+downward range. That is the right way round for this model: `meanE` is the
+headline metric and is now well-behaved, and `shareExpert` remains readable as a
+threshold-crossing indicator.
 
 ### The steady state survives realistic population scale
 
@@ -316,6 +381,201 @@ averaging, so a smaller effective peer gap), but `shareExpert` holds at ~0.97
 throughout. **The self-renewal property is robust to population scale.** It is
 `turnoverRate` — not `N` and not `M` — that governs whether the system can sustain
 itself.
+
+## Collapsing the AI mechanism: one reliance dial instead of two
+
+The model originally exposed `aiDampeningBelow` (γ_below) and
+`aiAtrophyMultiplier` (α) as independent parameters. They are not independent in
+any meaningful sense, and treating them as such was letting the sweep spend its
+budget on states the model should never have been able to express.
+
+### They gate on the same condition and act on disjoint branches
+
+The per-agent update is:
+
+```
+gap = Ebar[j] − E[i]          below = aiEnabled && E[i] < aiLevel
+
+gap > 0  (learning):  ΔE = β · gap · L  × (below ? γ_below : γ_above)
+gap ≤ 0  (decay):     ΔE = δ · gap · L  × (below ? α : 1)      + ambient
+```
+
+γ_below and α are selected by the *same* predicate, `below`, and applied to
+*disjoint* branches — an agent has either `gap > 0` or `gap ≤ 0`, never both.
+They are the two halves of de-skilling: "didn't get to learn" and "use it or
+lose it". As free parameters they permit "AI completely blocks novice learning
+but causes no atrophy", which is not a state any account of AI reliance
+describes.
+
+### The data already said they were one thing
+
+Before the change, a 21×21 sweep of δ × α collapses onto a single quantity:
+
+| collapse onto | rank-R² |
+|---|---|
+| **δ·(α−1)** | **0.946** |
+| δ·α | 0.879 |
+| α alone | 0.734 |
+| δ alone | 0.088 |
+
+`δ·(α−1)` is not a fitted form — it is the algebra. Decay in the AI arm is
+`δα·gap` against `δ·gap` in the baseline, so the *excess* is `δ(α−1)·gap`. The
+0.946 is that identity showing up in the measurement.
+
+### The reparameterisation
+
+```
+aiDampeningBelow    = 1 − ρ        ρ=−1 → 2.0    ρ=0 → 1    ρ=+1 → 0
+aiAtrophyMultiplier = 5 ^ ρ        ρ=−1 → 0.2    ρ=0 → 1    ρ=+1 → 5
+```
+
+Linear for the dampening, because it is a *fraction* of learning retained;
+log-symmetric for atrophy, because it is a *multiplier* and "equal and opposite"
+for a multiplier means symmetric in log space. Both hit the endpoints of the
+ranges the two parameters were previously swept over, so nothing in the explored
+space is lost except α < 0.2.
+
+Two properties are worth stating explicitly because they are what make ρ a
+better axis than the pair it replaces.
+
+**ρ = 0 is exactly inert.** Measured across the full λ range, `meanE_shortfall`
+at ρ = 0 is 0.00000 — not approximately zero, zero. The no-AI and with-AI arms
+are bit-identical in expertise. That gives the metric a true origin, which the
+old pair did not have: γ_below = 1, α = 1 was inert too, but nothing about the
+parameterisation made that the natural centre of either range.
+
+**The sign of ρ is the sign of the result.** Negative ρ — AI as a well-used tool
+that both teaches and preserves — produces negative shortfall throughout:
+
+```
+   ρ   |  λ=0.01   0.21    0.41    0.60    0.80    1.00
+ -1.00 |  -0.005  -0.031  -0.057  -0.090  -0.168  -0.294
+ -0.40 |  -0.002  -0.014  -0.032  -0.052  -0.150  -0.164
+ +0.00 |  +0.000  +0.000  +0.000  +0.000  +0.000  +0.000
+ +0.40 |  +0.002  +0.031  +0.071  +0.254  +0.262  +0.262
+ +1.00 |  +0.544  +0.613  +0.610  +0.612  +0.610  +0.612
+```
+
+Keeping ρ signed is a deliberate modelling choice. Restricting it to [0,1] would
+make the model structurally incapable of expressing the optimistic case — the
+AI-helps regime would be unreachable by construction rather than unsupported by
+evidence, and a model that cannot represent the answer it is being asked about
+cannot be said to have tested it.
+
+### The ρ = +1 endpoint is degenerate, and it is the parameterisation's fault
+
+`aiDampeningBelow = 1 − ρ` reaches exactly 0 at ρ = +1, which makes the learning
+branch `ΔE = 0` for any agent below λ. Since rising is the only way out from
+below λ, that is an absorbing state. Entrants clipped at 0 — about 16% of them at
+`entrantExpertiseMean = 0.05` — enter it on arrival and never leave. Measured at
+λ = 0.01, t = 1440:
+
+| ρ | γ_below | meanE | trapped below λ |
+|---|---|---|---|
+| 0.90 | 0.10 | 0.6244 | 0.1% |
+| 0.95 | 0.05 | 0.6206 | 0.1% |
+| **1.00** | **0.00** | **0.0894** | **19.7%** |
+
+The trapped pool pulls each institution's `Ebar` down, which puts the survivors
+into the decay branch, which lowers `Ebar` again — the collapse cascades rather
+than merely adding a fifth of the population at zero. `meanE_shortfall` jumps
+70× across the final step of the sweep, from 0.008 to 0.544.
+
+This is worth separating from the model's substantive claims. It is not a
+finding about AI reliance; it is a singularity at the edge of a chosen
+parameterisation meeting a clipping artifact in the entrant draw. ρ = 0.95
+behaves indistinguishably from ρ = 0.9. The honest reading is that the model has
+nothing to say about *total* reliance, because total reliance in this
+formulation is a degenerate limit rather than an extreme case.
+
+## Which parameters actually matter, and a warning about the ones that don't
+
+Reviewing a full 21×21 sweep over eleven parameters narrowed the study set to
+seven. Two findings from that review change how the remaining results should be
+read.
+
+### The parameters split into baseline-movers and AI-only
+
+`aiRelianceIntensity`, `aiDampeningAbove` and `aiLevelFraction` appear only
+behind `aiEnabled`. The no-AI arm is *mathematically* independent of them, so
+the baseline holds still while they sweep. The rest move both arms:
+
+| experiment | baseline `meanE` across the grid | spread |
+|---|---|---|
+| γ_below × γ_above | 0.627 → 0.635 | **0.008** |
+| δ × α | 0.493 → 0.808 | 0.316 |
+| λ × E₀ | 0.416 → 0.797 | 0.381 |
+| E₀ × entrant | 0.406 → 0.891 | 0.485 |
+| β × δ | 0.329 → 0.898 | **0.569** |
+
+Only the pure-AI pair keeps the baseline still. In β × δ the baseline wanders
+across most of the unit interval, so `meanE_shortfall` is not comparable between
+that grid's corners: 0.09 against a baseline of 0.33 and against 0.90 are
+different quantities, and the second is compressed against the ceiling. Some of
+the apparent structure along those axes is the baseline moving rather than AI
+biting. This is the same concern that motivated the stationarity work, arriving
+by a different route — stationarity was enforced at the *calibration point*, but
+sweeping β or δ walks away from it by construction.
+
+### A pinned parameter can silently switch another one off
+
+λ is a threshold, and equilibrium meanE ≈ 0.63, so λ decides what fraction of
+the population is subject to AI at all. Once λ clears the population mean,
+essentially everyone is below it and raising λ further changes nothing — the
+effect saturates:
+
+```
+λ=0.01   +0.001
+λ=0.406  +0.027
+λ=0.604  +0.077
+λ=0.653  +0.111    <- plateau begins
+λ=0.703  +0.113
+λ=1.000  +0.115
+```
+
+That has a consequence for a *different* parameter. γ_above governs only the
+above-threshold population, so inside the plateau it governs almost nobody.
+Spread in `meanE_shortfall` attributable to γ_above, by λ:
+
+```
+λ=0.01   0.7382    <- gamma_above governs everyone
+λ=0.41   0.3243
+λ=0.60   0.1158
+λ=0.65   0.0424    <- crossover
+λ=0.70   0.0037
+λ=1.00   0.0033
+```
+
+At λ = 0.70 — which was the pinned default when this was measured — γ_above
+shows 0.002 variance explained, which reads as "this parameter does nothing" and
+is entirely an artifact of where λ sat. Read the other way, γ_above is the single
+most powerful parameter in the model at low λ.
+
+**The pin has since moved to `EXPERT_THRESHOLD` = 0.585**, below the plateau, on
+the grounds that "the AI is as good as a human we would call expert" is a stated
+quantity rather than an arbitrary choice. That restores γ_above to a live
+parameter and stops every λ-pinned figure reporting the saturated maximum.
+
+The general lesson stands regardless of where the pin ends up: a null result for
+one parameter can be manufactured entirely by the pinned value of another, and
+nothing in the figure showing that null gives any hint of it. The only defence is
+to check the interaction before believing the null.
+
+The general lesson is worth stating plainly, because it applies to any pairwise
+design: **in a sweep that pins n−2 parameters per figure, a null result is a
+statement about the pinned point, not about the parameter.** Two of the eleven
+original parameters were nearly dropped on exactly this basis before the
+interaction was checked.
+
+### `aiLevelFraction` is not a fraction of anything
+
+`aiLevel = aiLevelFraction × startTopE`, documented as a fraction of the t=0
+population's greatest expert. `startTopE` measures **1.0 for every value of
+`expertiseMean` from 0 to 0.8** — with N = 10,504 draws and clipping to [0,1],
+the initial maximum always reaches the ceiling. λ is therefore an absolute
+expertise threshold, and the intended coupling to the starting population does
+not exist. Numerically harmless; it just means the name describes something the
+model does not do.
 
 ## Recruitment processes
 

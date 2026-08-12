@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "MODEL assumptions about how hard it is to move between organisations.",
+    "Deliberately separate from world-model.json: that file describes the world",
+    "(who exists, where they are, how deep each market is), this file describes",
+    "the model laid over it. Nothing here is measured — every number is a tunable",
+    "assumption, and the affinity tiers in particular have no observational",
+    "backing in the dataset (there are only 5 talent-flow edges in world-model.json,",
+    "far too few to fit against). See world-model-plan.md sections 3 and 7.",
+    "",
+    "Composition:  a(i->j) = geo(i,j) * sector(i,j) * gradient(i->j) * bonus(i,j)",
+    "capped at 1.0. Multiplicative, so 'cross-country AND cross-sector is harder",
+    "still' falls out without a special case."
+  ],
+
+  "version": 1,
+
+  "geoTiers": {
+    "_comment": "Symmetric. Evaluated most-favourable-first; multi-site organisations take the MINIMUM cost across all their site pairs, so two global banks sharing any city count as sameCity.",
+    "sameCity": 1.0,
+    "sameCountry": 0.6,
+    "sameBloc": 0.3,
+    "adjacentBloc": 0.12,
+    "distantBloc": 0.04
+  },
+
+  "sectorTiers": {
+    "_comment": "Symmetric. sameFamily captures that IB -> Elite Boutique is a much smaller step than IB -> Insurance.",
+    "sameSubsector": 1.0,
+    "sameSector": 0.7,
+    "sameFamily": 0.4,
+    "differentFamily": 0.15
+  },
+
+  "sectorFamilies": {
+    "_comment": "Groups the 14 Sector nodes. Keyed by Sector node_id so a renamed label doesn't silently break the mapping.",
+    "SEC_IB_BB": "advisory",
+    "SEC_IB_EB": "advisory",
+    "SEC_CONS": "advisory",
+    "SEC_QUANT": "markets",
+    "SEC_SEC": "markets",
+    "SEC_COMM": "banking",
+    "SEC_NBFC": "banking",
+    "SEC_FINTECH": "banking",
+    "SEC_AM": "assetside",
+    "SEC_INS": "assetside",
+    "SEC_CUST": "infrastructure",
+    "SEC_DATA": "infrastructure",
+    "SEC_POLICY": "policy",
+    "SEC_CB": "policy"
+  },
+
+  "blocAffinity": {
+    "_comment": [
+      "Which geoTier applies to a cross-country move, by bloc pair. 'same' is",
+      "implicit (sameBloc tier). Only pairs listed as 'adjacent' get adjacentBloc;",
+      "everything else falls through to distantBloc.",
+      "ANGLO groups by shared language, common-law tradition and mutual",
+      "qualification recognition — it deliberately cuts ACROSS the geographic",
+      "region hierarchy, which is why it cannot be derived from PART_OF."
+    ],
+    "adjacent": [
+      ["ANGLO", "EUR"],
+      ["ANGLO", "MENA"],
+      ["ANGLO", "INDIA"],
+      ["EUR", "MENA"],
+      ["MENA", "INDIA"],
+      ["GTCHINA", "EASIA"],
+      ["EASIA", "ANGLO"]
+    ]
+  },
+
+  "gradient": {
+    "_comment": [
+      "Asymmetry. gradient(i->j) = min(1, (w_j / w_i) ^ gamma) where w is the",
+      "market_index on the destination/origin location. Moving UP the economic",
+      "gradient costs nothing extra; moving DOWN is penalised — people do not",
+      "tend to move against the flow of money. gamma scales how strongly.",
+      "gamma = 0 disables asymmetry entirely (every gradient term becomes 1.0)."
+    ],
+    "gamma": 1.0
+  },
+
+  "edgeBonuses": {
+    "_comment": [
+      "Multipliers for the irreducible organisation-to-organisation relations in",
+      "world-model.json — the facts no attribute can reconstruct. PARENT_OF is",
+      "rated higher than COMPETES_FOR_TALENT because an intra-group transfer",
+      "typically bypasses the visa and qualification frictions that make an",
+      "external cross-border move rare. Result is capped at a <= 1.0.",
+      "PLACES_GRADUATES_IN / OFFSHORE_RECRUITS_FOR are annotation only (5 records",
+      "total) and are not used."
+    ],
+    "PARENT_OF": 3.0,
+    "COMPETES_FOR_TALENT": 2.0
+  }
+}

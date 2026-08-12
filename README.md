@@ -86,81 +86,140 @@ continuously at once, for exploring a wide space without the combinatorial
 blowup of a full grid. (It doesn't use `pairWithBaseline`; add it the same
 way if you want a wide random sweep to also report shortfalls.)
 
-### Parameter-pair experiment set (`experiments/experiment.1.json` .. `experiments/experiment.55.json`)
+### Parameter-pair experiment set (`experiments/experiment.1.json` .. `experiments/experiment.21.json`)
 
-One file per pair of eleven study parameters — the original six dynamics
-parameters (`turnoverRate`, `learningRateSpread`, `transferRate`,
-`decayRate`, `aiDampeningBelow`, `aiDampeningAbove`) plus five AI-mechanism
-and population parameters added later (`aiAtrophyMultiplier`,
-`aiLevelFraction`, `expertiseMean`, `entrantExpertiseMean`, `aiGain`) — with
-every other parameter (population size, graph, mobility) pinned at the same
-fixed value across all 55 files. 55, not 110: `A×B` and `B×A` would be the
-same grid transposed, not new information, so only the 55 unordered pairs
-(`11 choose 2`) are generated. `experiment.1..15` are the original six-param
-pairs and keep their original numbering exactly; `experiment.16..55` are the
-40 new pairs introduced by the five added parameters, appended rather than
-interleaved specifically so regenerating never silently renumbers a file you
-might be referencing elsewhere.
+One file per unordered pair of **seven** study parameters, with every other
+parameter pinned identically across all 21 files. 21, not 42: `A×B` and `B×A`
+are the same grid transposed, so only the `7 choose 2` unordered pairs are
+generated.
 
-Each is a 21×21 grid with `pairWithBaseline: true`, so each file is a single
-2D heatmap of that pair's interaction on the expertise shortfall — `x`, `y`,
-and a color for `meanE_shortfall` (or `shareExpert_shortfall`, or
-`meanC_shortfall` — see below), faceted over `t` if you want to watch it
-evolve rather than take a single tick. Not every axis uses the same `[0,1]`
-step-0.05 default; several are zoomed into a narrower range where anything
-happens at all, or widened past `[0,1]` to cover a regime the naive range
-would silently exclude (e.g. `aiDampeningBelow`/`aiDampeningAbove` extended
-to `[0,2]` so the *amplified* regime, `>1`, isn't excluded by construction —
-the only way `meanE_shortfall` can go negative). Every exception is checked
-empirically and explained in a comment directly above the parameter in
-`generate_experiments.js`, not just asserted. Two worth knowing before
-reading the new heatmaps:
+The seven, and why these:
 
-- **`aiGain` only affects observed capability `C`, never real expertise
-  `E`** — it has zero effect on `meanE_shortfall`/`shareExpert_shortfall`.
-  `meanC_shortfall` (below) is the metric to look at for its 10 pairs.
-- **`aiLevelFraction` is close to a no-op except paired against
-  `aiDampeningBelow`/`aiDampeningAbove`** — the below/above threshold only
-  matters for *learning* when the two dampening values actually differ, and
-  every non-dampening param is studied at the same fixed, neutral
-  `aiDampeningBelow == aiDampeningAbove == 1.0`. A small residual effect
-  survives through `aiAtrophyMultiplier`'s own non-neutral default (1.5)
-  acting on *decay* instead (meanE ranges roughly 0.81-0.82 through most of
-  the sweep, dropping to ~0.77 as `aiLevelFraction` approaches 1.0), but it's
-  far smaller than this parameter's two informative pairings against the
-  dampening params themselves (~0.45 range there). That's a checked finding,
-  not a bug.
+| Parameter | Role |
+|---|---|
+| `transferRate` | sets the baseline equilibrium (with `decayRate`) |
+| `decayRate` | sets the baseline equilibrium (with `transferRate`) |
+| `aiRelianceIntensity` | **AI-only.** One dial for both halves of de-skilling |
+| `aiDampeningAbove` | **AI-only.** Learning multiplier above the AI's level |
+| `aiLevelFraction` | **AI-only.** Where that threshold sits |
+| `expertiseMean` | starting expertise of the t=0 population |
+| `entrantExpertiseMean` | starting expertise of later entrants |
 
-`experiments.manifest.json` lists which pair is in which file, plus the
-values swept and the fixed baseline, so you don't have to open all 55 to
-remember what's what.
+Narrowed from an earlier eleven after reviewing a full 21×21 × 55 run.
+`turnoverRate`, `learningRateSpread` and `mobilityFriction` were demoted to
+fixed because they moved the primary metrics little relative to the rest
+(see `problems.md` P1 for the last of those). Separately,
+`aiDampeningBelow` and `aiAtrophyMultiplier` were **replaced by one
+parameter**: they gate on the same condition and act on disjoint branches of
+the update, so they are two consequences of a single cause. See
+"Coupled reliance" below.
+
+**The two groups matter more than the count.** `aiRelianceIntensity`,
+`aiDampeningAbove` and `aiLevelFraction` appear only behind `aiEnabled`, so the
+no-AI arm is mathematically independent of them and the baseline holds still
+while they sweep. The other four move *both* arms — across
+`transferRate × decayRate` the baseline `meanE` spans 0.33 to 0.90. A shortfall
+of 0.09 against a baseline of 0.33 and against 0.90 are not the same quantity,
+so read those four with the `meanE_baseline` metric alongside the shortfall.
+
+Each file is a 21×21 grid with `pairWithBaseline: true`, giving a 2D heatmap of
+that pair's interaction on the expertise shortfall, recorded yearly (`recordAt`
+every 12 ticks to 1440) so you can watch it evolve rather than only see the
+endpoint. Ranges are re-centred on the monthly-tick calibration rather than
+copied from the BA set: the usable `transferRate` band under this time base is
+roughly 0.11-0.15, so a naive `[0,1]` sweep would spend most of its cells either
+collapsed or pinned at the ceiling, measuring nothing. Every range has a comment
+above it in `generate_worldmodel_experiments.js` explaining the choice.
+
+`experiments.worldmodel.manifest.json` lists which pair is in which file, plus
+the values swept and the fixed baseline.
+
+> **The BA set is separate.** `experiments-ABGraph/` holds the older
+> Barabási–Albert set (`generate_experiments.js`,
+> `experiments.manifest.json`, 55 files, 11 params). The two are **not
+> comparable** — different topology under a different calibration — so they
+> live in separate directories and write to separate results directories.
 
 Run all of them, or a subset, into `results/experiment.<n>/`:
 
 ```bash
-./run_experiments.sh                    # all 55
+./run_experiments.sh                    # all 21
 ./run_experiments.sh 3 7 12             # just these
 ./run_experiments.sh --workers 14       # more worker threads on a bigger machine
 ./run_experiments.sh --workers 14 3 7   # both together, any order
+./run_experiments.sh --redo             # re-run even already-completed experiments
 ```
 
-At 21×21=441 grid cells × 5 replicates × 2 pairing arms, that's 4,410 runs
-per experiment — 242,550 across all 55 (up from 66,150 across the original
-15). `node generate_experiments.js` prints a rough range each time you
-regenerate, not a single number — two real measurements on the same
-machine, same `--workers 8`, disagreed by 4x (106s vs. 712s for comparable
-job counts), so treat any estimate here skeptically; at that spread the full
-55-experiment batch could be anywhere from ~2.5 to ~11 hours. Run
-`./run_experiments.sh 1` first and time it before committing to the full
-batch. `--workers` is the knob to bring the real number down on a machine
-with cores to spare, once you know what "real" looks like on your box.
+**Resume.** An experiment is skipped if its `results_shortfall.csv` already
+exists. That file is written last, and `batch_run.js` writes via temp-file +
+atomic rename, so its presence guarantees all three CSVs completed — there is no
+truncated-file case to worry about. If a long batch is interrupted, just rerun
+the same command; it picks up where it stopped.
 
-If you want to change the grid resolution, the values swept, or what's held
-fixed, edit `STUDY_PARAMS` / `BASE_FIXED` at the top of `generate_experiments.js`
-and rerun `node generate_experiments.js` — it regenerates all 55 files plus
-the manifest from those two objects, rather than each file needing hand edits.
-Replicates are set in the same file (`REPLICATES`, currently 5) if you want
-to trade runtime against per-cell noise.
+Resume is per *experiment*, not per run: `batch_run.js` buffers a whole
+experiment in memory and writes at the end, so an interrupt loses that
+experiment's work and it restarts from the beginning. Everything before it is
+kept.
+
+**Cost.** 21×21 = 441 cells × 3 replicates × 2 pairing arms = 2,646 runs per
+experiment, 55,566 across all 21. Measured on an 18-core box: **645 s per
+experiment at `--workers 14`**, so roughly 3.8 hours wall for the full set and
+~1.7 GB of CSV. `generate_worldmodel_experiments.js` prints its own estimate,
+but that assumes perfect scaling and came out ~3× optimistic — time
+`./run_experiments.sh 1` on your own machine before committing to the batch.
+
+To change the grid resolution, the values swept, or what's held fixed, edit
+`STUDY_PARAMS` / `BASE_FIXED` at the top of `generate_worldmodel_experiments.js`
+and rerun `node generate_worldmodel_experiments.js` — it regenerates all 21
+files plus the manifest from those two objects. `GRID` (currently 21) and
+`REPLICATES` (currently 3) are in the same file. **Regenerating with a different
+parameter list renumbers the files**, so anything referencing an experiment by
+number needs rechecking against the manifest.
+
+#### Coupled reliance (`aiRelianceIntensity`, ρ)
+
+`aiDampeningBelow` and `aiAtrophyMultiplier` both gate on exactly the same
+condition (`E[i] < aiLevel`) and act on disjoint branches of the update — the
+first on `gap > 0`, the second on `gap <= 0`. An agent is in one or the other,
+never both. As free parameters they permit behaviourally incoherent states like
+"AI completely blocks novice learning but causes no atrophy", so a single
+reliance intensity now drives both:
+
+```
+aiDampeningBelow    = 1 − ρ        ρ=−1 → 2.0    ρ=0 → 1    ρ=+1 → 0
+aiAtrophyMultiplier = 5 ^ ρ        ρ=−1 → 0.2    ρ=0 → 1    ρ=+1 → 5
+```
+
+Linear for the dampening (a retained *fraction*), log-symmetric for atrophy (a
+*multiplier*), so "equal and opposite" means the right thing for each. Both hit
+the endpoints of the ranges those two parameters were previously swept over, so
+nothing explored is lost except `aiAtrophyMultiplier < 0.2`.
+
+**ρ = 0 is exactly AI-inert** — measured, the shortfall is 0.00000 at every
+`aiLevelFraction`. **Negative ρ is the optimistic case**, AI as a well-used tool
+that both teaches and preserves; it is signed deliberately so the model can test
+that rather than assume it away.
+
+ρ is monotone and signed across its whole range, with an exact zero at 0
+(N = 10,504, t = 1440, λ = 0.585, baseline meanE = 0.6371):
+
+```
+  rho   gamma_below   meanE     shortfall
+ -1.0      2.00       0.7210     -0.0840
+  0.0      1.00       0.6371     +0.0000
+  0.4      0.60       0.3935     +0.2436
+  1.0      0.00       0.0557     +0.5814
+```
+
+> **`shareExpert_shortfall` saturates on this axis.** At λ = 0.585 `shareExpert`
+> hits exactly 0 for ρ ≳ 0.35, so roughly half the positive range is floored on
+> that metric. `meanE_shortfall` stays informative throughout and is the one to
+> read. See `problems.md` R11.
+
+`aiRelianceIntensity` defaults to `null`, meaning decoupled — the historical
+behaviour with both parameters set directly. Setting ρ *and* either derived
+parameter throws rather than silently resolving. The existing BA set and any
+existing config are therefore unaffected.
 
 ### Visualizing the experiment set: `report.html`
 
@@ -173,7 +232,27 @@ node build_report.js      # reads results/, writes report.html
 Open `report.html` directly in a browser — no server needed, everything is
 embedded at build time. Rerun `node build_report.js` any time you rerun
 experiments; it always reflects whatever's currently in `results/` (and
-tells you if any of the 55 are missing).
+tells you if any of the 21 are missing).
+
+**The manifest must match the results.** The manifest supplies the x/y axis
+keys per experiment; `results/` only supplies columns. Point the BA manifest at
+world-model results and experiment 6 is read as `learningRateSpread ×
+transferRate` — both present in those CSVs but *constant* — so the whole 21×21
+grid silently collapses to one averaged cell that still looks like a plausible
+heatmap. That happened. `build_report.js` now refuses to write anything if a
+manifest-declared sweep axis does not vary in the results, and names the
+mismatch. To build the BA set instead:
+
+```bash
+node build_report.js --manifest experiments.manifest.json \
+                     --results results-ba --out report-ba.html
+```
+
+| Flag | Default |
+|---|---|
+| `--manifest <path>` | `experiments.worldmodel.manifest.json` |
+| `--results <dir>` | `results` |
+| `--out <path>` | `report.html` |
 
 - **Sidebar** — click any of the loaded experiments to switch instantly; no
   page reload, since every grid is already in memory. Below the list, the
@@ -190,8 +269,19 @@ tells you if any of the 55 are missing).
   across every loaded experiment and every tick, so switching between them
   never silently rescales what a given color means.
 - **Metric / t controls** (top bar) — switch between the shortfall metrics
-  and the underlying baseline/treatment means, and scrub through the 10
-  recorded ticks to watch a grid evolve rather than only see its endpoint.
+  and the underlying baseline/treatment means, and scrub through the 120
+  recorded ticks (one per simulated year) to watch a grid evolve rather than
+  only see its endpoint.
+- **Axis labels** use one precision per parameter, chosen once from every value
+  that parameter takes anywhere in the report, so the same parameter reads
+  identically on every chart. The precision is whatever keeps rounding error
+  under a tenth of the axis's own step — enough that an evenly spaced grid also
+  *prints* evenly spaced.
+- **`ρ` is resolved wherever it appears.** `aiRelianceIntensity` derives two
+  engine parameters and neither is a column in the results, so a bare −1..+1
+  axis would be unreadable. The figure caption explains the mapping, and the
+  cell tooltip, the held-fixed panel and the trajectory headers all show what
+  that specific ρ resolves to (`peer learning ×0.75, skill loss ×1.50`).
 - **Table view** — exact values as a plain table, for reading precise
   numbers or copying out.
 - **⇄ flip axes** (top bar) — swaps which of the pair's two parameters is
@@ -231,6 +321,7 @@ tells you if any of the 55 are missing).
 | `fixed` | parameters held constant across every run |
 | `params` | parameters being swept — each is `{"values":[...]}` (a discrete list) or `{"range":[lo,hi]}`, plus `"steps":k` for a grid linspace or `"int":true` for integer random draws |
 | `pairWithBaseline` | default `false` — for every combo, also run a same-seed `aiEnabled:false` twin, and write `results_shortfall.csv` comparing them. Don't put `aiEnabled` in `fixed`/`params` when this is on — it's set per arm automatically |
+| `worldModel` | `{ "worldModelPath": ..., "mobilityCostsPath": ..., "worldModelOptions": {...} }` — **paths, not data**. Only needed when `fixed.graphSource` is `"worldModel"`. See below |
 
 ### Simulation parameters (usable in `fixed` / `params`)
 
@@ -256,19 +347,25 @@ tells you if any of the 55 are missing).
 | `baseMoveProb` | baseline per-tick chance a human reconsiders their institution at all |
 | `turnoverRate` | fraction of the population replaced with fresh humans each tick |
 | `aiEnabled` | master switch for the AI mechanism — off means no erosion, no dampening, no capability boost |
-| `aiLevelFraction` | AI's strength as a fraction of the **t=0 population's single greatest expert** (fixed for the whole run, not the current/live top performer). For typical population sizes the t=0 maximum sits close to the `[0,1]` ceiling, so at the default `0.70` this lands around 0.70 in absolute terms — meaningfully above the expert threshold (now `0.585`, see below), not coincident with it — "below AI level" tracks closer to "not yet expert" than to "below the typical human" |
-| `aiDampeningBelow` | multiplier on **learning** for humans below the AI's level — how much growth AI reliance crowds out. Stored/config/CSV value is always raw `[0,2]`: **`0` = max dampening** (learning zeroed out), **`1` = no dampening at all**, `>1` = amplified. `simulator.html` and `report.html` both *display* this shifted by −1 (reads as −1/0/+1) — only the on-screen label changes, never the number you put in a config file |
-| `aiAtrophyMultiplier` | multiplier on **decay** for humans below the AI's level — how hard AI reliance erodes expertise they already had. This is the headline erosion dial; `1` = no extra erosion, higher = faster obliteration |
+| `aiLevelFraction` | AI's strength as a fraction of the **t=0 population's single greatest expert**, fixed for the run. Measured, that maximum is `1.0` for any realistic `N` (clipping to `[0,1]` guarantees it), so this is in practice an **absolute expertise threshold** — see `problems.md` P17. Defaults to `EXPERT_THRESHOLD` (0.585), i.e. "the AI is as good as a human we would call expert", which is a stated quantity rather than an arbitrary pick. The effect saturates above ~0.65, so the earlier `0.70` default sat inside a plateau where λ stops mattering and `aiDampeningAbove` governs nobody |
+| `entrantExpertiseFloor` | lower bound on an entrant's draw, default `0.05`. Without it ~16% of entrants arrived at exactly `E = 0` (and half of them at a nominal mean of 0), which distorted the bottom of the `entrantExpertiseMean` axis and fed an absorbing state at high reliance — see `problems.md` P19/R11. Set to `0` for the pre-2026-08 behaviour. **Not AI-gated**, so it moves the no-AI baseline too |
+| `aiRelianceIntensity` | **ρ.** One dial driving both `aiDampeningBelow` and `aiAtrophyMultiplier`, which are two consequences of the same cause. `[-1, +1]`, where `−1` = AI teaches and preserves, `0` = AI changes nothing at all, `+1` = total reliance. `null` (default) = decoupled, set the two directly instead. Setting this *and* either derived parameter throws. See "Coupled reliance" above |
+| `aiDampeningBelow` | multiplier on **learning** for humans below the AI's level — how much growth AI reliance crowds out. Stored/config/CSV value is always raw `[0,2]`: **`0` = max dampening** (learning zeroed out), **`1` = no dampening at all**, `>1` = amplified. `simulator.html` and `report.html` both *display* this shifted by −1 (reads as −1/0/+1) — only the on-screen label changes, never the number you put in a config file. **Derived, not set, when `aiRelianceIntensity` is in use** |
+| `aiAtrophyMultiplier` | multiplier on **decay** for humans below the AI's level — how hard AI reliance erodes expertise they already had. `1` = no extra erosion, higher = faster obliteration. **Derived, not set, when `aiRelianceIntensity` is in use** |
 | `aiDampeningAbove` | multiplier on learning for humans at/above the AI's level. Same raw `[0,2]` shape and same −1-shifted display as `aiDampeningBelow` |
 | `aiResponseMode` | *(secondary — governs the illusion, not the erosion)* how the AI-inflated observed-capability metric `C` scales with a human's own expertise: `floor` / `flat` / `linear` / `amplified` / `exponential` |
 | `aiGain` | *(secondary)* overall strength of the `C` boost, `0` = no visible effect regardless of mode |
 | `seed` | RNG seed for a single run (set automatically per-run by the batch runner; only relevant for `simulator.html`'s manual seed field) |
+| `graphSource` | `"ba"` (default) = the generated Barabási–Albert graph; `"worldModel"` = the real institution graph built from `world-model.json`. See "World-model graph" below |
+| `institutionSizing` | `"uniform"` (default) = humans spread evenly across institutions; `"weighted"` = placed proportional to each organisation's intake. World-model mode only (needs `entryWeights`). Applies to entrants *and* initial placement — placing only at init washes out within ~50 ticks |
+| `mobilityFriction` | prices moves by affinity: adds `φ·log(affinity)` to the move utility, so distant cross-sector moves get rarer. **`0` (default) reproduces BA behaviour exactly**, and it can never fire on a BA graph (no affinity function) |
+| `worldModel` | a loaded `world_model.js` result. Not set in a config file — `batch_run.js` builds it from `config.worldModel` paths (below), and `simulator.html` from its file inputs |
 
 ## Expert threshold
 
 `EXPERT_THRESHOLD = 0.585` is a bare constant in `engine.js` (duplicated identically
-in `simulator.html`) — it is **not** a `DEFAULT_PARAMS` entry, is never swept in
-`generate_experiments.js`, and has no slider in `simulator.html`. Its only use:
+in `simulator.html`) — it is **not** a `DEFAULT_PARAMS` entry, is never swept by
+either experiment generator, and has no slider in `simulator.html`. Its only use:
 
 ```js
 if (E[i] >= EXPERT_THRESHOLD) expertCount++;
@@ -336,10 +433,194 @@ of the robust band, well clear of either failure mode — the headline self-rene
 collapse contrast doesn't depend delicately on that specific number, even though it
 was never calibrated.
 
+## World-model graph
+
+By default the simulator runs on a **generated** Barabási–Albert graph. It can
+instead run on the real institution graph in `world-model.json` — 245 financial
+organisations across 49 cities, with mobility priced by geography, sector and
+economic gradient.
+
+> **World-model results are not comparable with BA results.** Different topology
+> under a different calibration. Keep them in separate result directories and
+> never read a BA heatmap and a world-model heatmap as the same experiment.
+
+### Turning it on in batch
+
+Three things: a `worldModel` block giving **paths**, `graphSource` in `fixed`, and
+**no `M`** (it is derived from the data — setting it throws rather than being
+silently ignored).
+
+```jsonc
+{
+  "horizon": 1440,                    // 3 careers at 1 tick = 1 month
+  "recordAt": [480, 960, 1440],
+  "pairWithBaseline": true,
+
+  "worldModel": {                     // paths, resolved relative to the repo root
+    "worldModelPath": "world-model.json",
+    "mobilityCostsPath": "mobility-costs.json",
+    "worldModelOptions": {
+      "useBlocAffinity": true,        // false = ablate the Anglosphere/Greater China grouping
+      "hubSource": "located_in",      // "scalar" would discard 89 multi-site facts
+      "prestigeFrom": "intake",       // "degree" | "sizeBand" | "weightedDegree"
+      "zeroIntakePolicy": "floor1",   // "drop" | "keep"
+      "useExplicitEdges": true        // fold in PARENT_OF / COMPETES_FOR_TALENT bonuses
+    }
+  },
+
+  "fixed": {
+    "graphSource": "worldModel",      // <- the flag
+    "institutionSizing": "weighted",  // place entrants proportional to intake
+    "N": 10504,                       // 40 years x (52,514 annual intake / 200)
+    "turnoverRate": 0.002083,         // 1/480 — a 40-year career in monthly ticks
+    "transferRate": 0.15,             // from calibrate_time_base.js --world-model
+    "decayRate": 0.020                //   " — chosen for a STATIONARY baseline
+  },
+
+  "params": {
+    "mobilityFriction":  { "values": [0, 0.05, 0.1, 0.2, 0.4] },
+    "aiDampeningBelow":  { "values": [0.0, 0.25, 0.5, 0.75, 1.0] }
+  }
+}
+```
+
+Run it like any other config — nothing on the command line changes:
+
+```bash
+node batch_run.js --config experiments-worldmodel/worldmodel.1.json --workers 8 \
+  --out results-worldmodel/worldmodel.1/results.csv \
+  --summary-out results-worldmodel/worldmodel.1/results_summary.csv \
+  --shortfall-out results-worldmodel/worldmodel.1/results_shortfall.csv
+```
+
+`experiments-worldmodel/worldmodel.1.json` is a complete worked example.
+
+### Why paths and not data
+
+A loaded world model holds a closure (`affinity`), so it cannot cross a
+`worker_threads` boundary. Each worker reads the two JSON files itself and caches
+the result — parsing 400KB once per worker is nothing against thousands of runs.
+
+### Time base
+
+The world-model configs **and `simulator.html`** declare **1 tick = 1 month, career
+= 40 years = 480 ticks**. That is not the default calibration: `DEFAULT_PARAMS` was tuned when the
+tick was dimensionless, and at `turnoverRate = 1/480` its `transferRate = 0.5`
+saturates the no-AI baseline (98% of the population above `E = 0.95`), leaving AI
+nothing measurable to erode.
+
+`engine.js` exports `MONTHLY_TICK_PARAMS` with the recalibrated values.
+`DEFAULT_PARAMS` is deliberately **unchanged**, so the BA experiment set and its
+published results are untouched.
+
+```bash
+node calibrate_time_base.js --world-model   # the scan behind those numbers
+```
+
+`simulator.html` carries its own copy of `MONTHLY_TICK_PARAMS` and layers it over
+`DEFAULT_PARAMS` at boot, so the interactive tool runs the calibrated set and the
+legacy one is not reachable from the UI at all. `dom_stub_test.js` asserts the two
+copies agree and that the overlay is actually applied — a declared-but-unapplied
+overlay would otherwise pass silently.
+
+Why the interactive page needs the calibrated set specifically, beyond consistency:
+on the legacy pairing the no-AI baseline is **still climbing steeply through the
+window a user watches**, so toggling `ai_enabled` shows AI's effect plus wherever the
+baseline was heading anyway. Measured on the simulator's own boot config (BA graph,
+N=500, M=40, seed 1), `meanE` over t=60→480:
+
+| | legacy `DEFAULT_PARAMS` | `MONTHLY_TICK_PARAMS` |
+|---|---|---|
+| meanE t=60 → t=480 | 0.754 → 0.837 (**+0.082**) | 0.638 → 0.656 (+0.018) |
+| AI on at t=240 → meanE shortfall at t=1000 | 0.123 | 0.048 |
+
+The smaller shortfall is the part actually attributable to AI. Note that the
+calibration ridge was scanned at world-model scale (N=10,504, M=245); on the BA
+default it is *approximately* stationary, not exactly — +0.018 over the first 480
+ticks and −0.003 between t=1000 and t=3000. Read interactive runs as illustrative and
+the batch runs as the measurement.
+
+The calibration is selected for a **stationary no-AI baseline**, which is what
+makes `meanE_shortfall` interpretable — the shortfall is then "what AI removed",
+not "what AI removed plus wherever the baseline had drifted to by the reporting
+tick". Measured at production scale, `meanE` moves from 0.6291 at t=120 to 0.6294
+at t=1440: a drift of +0.0002 over three careers.
+
+Two consequences worth knowing. **`meanE_shortfall` is the headline metric** —
+baseline `shareExpert` sits at ~0.95 and has little range left, by design.
+And **the stationary band is a narrow ridge** that moves with the graph and with
+`N`, so any change to the dynamics means re-scanning with `--world-model` and
+verifying at production `N` (see `problems.md` P3).
+
+`N`, `turnoverRate` and career length are one identity (`headcount = annual intake
+x career length`), not three free parameters — so **do not sweep `turnoverRate`**
+in a world-model config without moving `N` with it. See `problems.md` P5.
+
+### Extra CSV columns
+
+World-model runs add `worldModelFingerprint` (identifies which revision of
+`world-model.json` + which options produced the row — the file is expected to
+change) and the derived `M`, plus occupancy diagnostics on every run:
+`minOccupancy`, `emptyInstitutions`, `underOccupiedInstitutions`.
+
+**Check those.** Asymmetric mobility drains low-market-index institutions by
+design, and an institution below ~5 members has an `Ebar` that is mostly noise
+while still feeding population aggregates. See `problems.md` P2.
+
+### In `simulator.html`
+
+**Time base.** One tick is one month. The scrub bar reads `t = 240 · 20y 0m`, the
+timeline charts label their x axis in years, and the speed control is in months/s.
+
+**Dial ranges are set for a monthly tick**, not for the dimensionless era, so the
+usable band of each parameter sits inside the slider's travel rather than in its first
+tenth: `transfer_rate` 0–0.3 (usable ≈0.11–0.20, calibrated 0.15), `decay_rate` 0–0.05
+(swept 0.005–0.040), `base_move_prob` 0–0.1, `turnover_rate` 0–0.02 stepped by 1/4800
+so the calibrated 1/480 is exactly representable and reading out as a career length in
+years. `ambient_growth_rate` keeps its 0–0.02 range, which came from a saturation check
+rather than the calibration scan. Every slider carries a plain-language description on
+hover; the always-visible `hint` under a slider is the mechanical/calibration detail.
+
+Sidebar → **World model graph**: a toggle mirroring `fixed.graphSource`, file
+inputs for the two JSON files, and an intake-sizing checkbox. Structural, so it
+applies on **Rebuild**. `mobility_friction` is a live slider under Mobility.
+
+Sidebar → **AI** → `couple_reliance`: on, a single `ρ_AI` slider drives both
+`γ_below` and `μ_atr`, and their own sliders are *replaced* by a live readout of
+what ρ resolves to — showing them would invite edits the next ρ change silently
+overwrites. Off, the independent sliders, unchanged. Turning coupling on infers
+ρ from the current `γ_below` rather than snapping to a default, so the learning
+half stays exactly where you had it; turning it off leaves both derived values
+in place, so decoupling never moves the model. (`ρ` alone is already taken by
+`competition_aversion` in this page, hence `ρ_AI`; in the report, where
+competition aversion is not a study parameter, it is plain `ρ`.)
+
+The page pulls in `world_model.js` with `<script src>` rather than carrying a
+second copy of the loader, so the browser and `batch_run.js` share one
+implementation. If `world_model.js` is not alongside the page, the controls
+disable themselves and the simulator still runs in BA mode.
+
+### Before trusting any of it
+
+Read `problems.md`. In particular **P1**: across an eightfold change in
+`mobilityFriction` the headline `meanE_shortfall` moved by 0.005. The graph is
+consumed only in the mobility step, while learning runs on an institution's
+*internal* mean — so the world model buys realism in *where people are*, not in
+*how much expertise exists*, and should not be expected to change the AI-erosion
+result.
+
 ## Tests
 
 ```bash
 node test_engine.js        # engine unit tests (no DOM)
 node dom_stub_test.js simulator.html          # drives simulator.html's actual UI code end-to-end under a stubbed DOM
 node dom_stub_test_report.js report.html      # same, for report.html — build it first
+node test_world_model.js   # world-model loader + engine integration (65 checks)
 ```
+
+The ρ→(`γ_below`, `μ_atr`) mapping exists in three places: `engine.js` for batch
+runs, `simulator.html` for the browser, `report.template.html` for display.
+`dom_stub_test.js` imports the **real engine** and asserts the simulator derives
+identical values at ρ = −1, −0.5, 0, 0.25, 0.5, 1; `dom_stub_test_report.js`
+does the same for the report. A silent divergence would let the interactive tool
+and the published results describe different models.

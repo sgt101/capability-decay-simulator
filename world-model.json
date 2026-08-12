@@ -166,7 +166,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "ANGLO",
+      "market_index": 1,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_IN",
@@ -190,7 +193,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "INDIA",
+      "market_index": 0.22,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_CN",
@@ -214,7 +220,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "GTCHINA",
+      "market_index": 0.45,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_BR",
@@ -238,7 +247,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.3,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_MX",
@@ -262,7 +274,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.28,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_CO",
@@ -286,7 +301,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.22,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_CL",
@@ -310,7 +328,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.28,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_PE",
@@ -334,7 +355,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.2,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_AR",
@@ -358,7 +382,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "LATAM",
+      "market_index": 0.18,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_DE",
@@ -382,7 +409,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.65,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_FR",
@@ -406,7 +436,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.65,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_CH",
@@ -430,7 +463,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.85,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_NL",
@@ -454,7 +490,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.62,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_ES",
@@ -478,7 +517,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.45,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_IT",
@@ -502,7 +544,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.45,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_SE",
@@ -526,7 +571,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.55,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_DK",
@@ -550,7 +598,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.55,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_NO",
@@ -574,7 +625,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.58,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_FI",
@@ -598,7 +652,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.5,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_IE",
@@ -622,7 +679,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "ANGLO",
+      "market_index": 0.6,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_LU",
@@ -646,7 +706,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": null
+      "notes": null,
+      "bloc": "EUR",
+      "market_index": 0.7,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_C_UK",
@@ -670,7 +733,10 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": null,
-      "notes": "Promoted from out-of-scope placeholder to a full region"
+      "notes": "Promoted from out-of-scope placeholder to a full region",
+      "bloc": "ANGLO",
+      "market_index": 0.8,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced"
     },
     {
       "node_id": "GEO_H_NYC",
@@ -694,7 +760,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 1,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_CHI",
@@ -790,7 +858,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.95,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_MIA",
@@ -886,7 +956,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.75,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_MUM",
@@ -910,7 +982,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.28,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_BLR",
@@ -982,7 +1056,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.16,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_BEI",
@@ -1006,7 +1082,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.5,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_SHA",
@@ -1030,7 +1108,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.52,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_SZX",
@@ -1102,7 +1182,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.32,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_SAO",
@@ -1126,7 +1208,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.34,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_MEX",
@@ -1294,7 +1378,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.7,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_MUC",
@@ -1342,7 +1428,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.7,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_ZRH",
@@ -1366,7 +1454,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.9,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_GVA",
@@ -1390,7 +1480,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "source",
-      "notes": null
+      "notes": null,
+      "market_index": 0.85,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "GEO_H_AMS",
@@ -1654,7 +1746,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "inferred",
-      "notes": null
+      "notes": null,
+      "market_index": 0.85,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "SEC_IB_BB",
@@ -6886,7 +6980,9 @@
       "confirmation_status": null,
       "data_confidence": null,
       "geo_source": "research",
-      "notes": "Catch-all for UK head offices outside the named hubs (e.g. Swindon, Cardiff, Sheffield)"
+      "notes": "Catch-all for UK head offices outside the named hubs (e.g. Swindon, Cardiff, Sheffield)",
+      "market_index": 0.55,
+      "market_index_basis": "assumption - relative market depth/compensation, US=1.00, not sourced (city-level override)"
     },
     {
       "node_id": "ORG_UK_BOE",

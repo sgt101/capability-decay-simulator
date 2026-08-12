@@ -19,6 +19,16 @@ function randNormal(rng) {
 
 function clip01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
+// HISTORICAL (removed 2026-08): a single signed dial `aiRelianceIntensity` (rho)
+// used to drive both halves of de-skilling — aiDampeningBelow = 1 - rho and
+// aiAtrophyMultiplier = 5^rho. It was removed because it named three parameters for
+// two independent quantities, and because the base 5 was an untested exchange rate
+// between the two channels: holding the learning half at rho = 0.5, varying that base
+// from 2 to 8 moved meanE_shortfall from 0.213 to 0.346. The two multipliers are now
+// always set directly. Don't reintroduce a coupling without measuring its base first.
+//
+// Old configs are rejected rather than ignored — see initSim().
+
 function sampleSkewNormalClipped(rng, mu, omega, alpha) {
   const x0 = randNormal(rng), x1 = randNormal(rng);
   const delta = alpha / Math.sqrt(1 + alpha * alpha);
@@ -83,6 +93,14 @@ const AI_MODES = {
   exponential: (e, a) => e * (Math.exp(a * e) - 1),
 };
 
+// Chosen to sit roughly in the middle of the range where the self-renewal/collapse
+// contrast reads cleanly (~0.3-0.86) — see expert_threshold_sensitivity.js and the
+// "Expert threshold" section in README.md for the empirical check behind this choice.
+// (Previously 0.7 — undocumented and close enough to the upper edge of that range
+// that it inflated the AI-amplification-regime numbers via a baseline-ceiling
+// artifact; 0.585 doesn't have that problem.)
+const EXPERT_THRESHOLD = 0.585;
+
 const DEFAULT_PARAMS = {
   N: 500, M: 40,
   expertiseMean: 0.28, expertiseSpread: 0.30, expertiseSkew: 3,
@@ -95,6 +113,14 @@ const DEFAULT_PARAMS = {
   // existing experts near them decay faster too (their own gap = Ebar - E gets more
   // negative). See spec.html "Entrant renewal" for the full mechanism.
   entrantExpertiseMean: 0.05, entrantExpertiseSpread: 0.05, entrantExpertiseSkew: 0,
+  // Lower bound on an entrant's draw. The draw is skew-normal clipped to [0,1],
+  // so at entrantExpertiseMean = 0.05 with spread 0.05, ~16% of entrants used to
+  // arrive at exactly E = 0 — and at a nominal mean of 0, fully half did. That
+  // pile-up at the boundary made the bottom of the entrantExpertiseMean axis
+  // non-linear in its own parameter (nominal 0 realised as 0.020), and it fed
+  // the absorbing state at aiRelianceIntensity = 1 (problems.md P19).
+  // Set to 0 for the pre-2026-08 behaviour.
+  entrantExpertiseFloor: 0.05,
   graphAttachment: 2,
   transferRate: 0.5, decayRate: 0.01, learningRateSpread: 0.4,
   // Humans at/above their institution's own average don't just decay — being
@@ -115,26 +141,127 @@ const DEFAULT_PARAMS = {
   competitionAversion: 0.5, prestigeWeight: 0.3, baseMoveProb: 0.05,
   turnoverRate: 0.01,
   aiEnabled: false, aiResponseMode: "floor",
-  aiLevelFraction: 0.70, aiGain: 1.0,
+  // The AI's reference level, in absolute expertise units (aiLevel =
+  // aiLevelFraction x startTopE, and startTopE is 1.0 for any realistic N — see
+  // problems.md P17). Defaulted to EXPERT_THRESHOLD deliberately: the natural
+  // reading of "the AI's level" is "as good as a human we would call expert",
+  // and that is a stated quantity rather than a free choice. It also sits below
+  // the saturation plateau that begins around 0.65, where lambda stops mattering
+  // and aiDampeningAbove stops governing anybody (P16).
+  aiLevelFraction: EXPERT_THRESHOLD, aiGain: 1.0,
   aiDampeningBelow: 0.30, aiDampeningAbove: 0.80,
   aiAtrophyMultiplier: 1.5,
+
   seed: 1,
+
+  // --- world-model graph support (world-model-plan.md phases C/D) ----------
+  // All default to today's behaviour, so an existing config is unaffected.
+  graphSource: "ba",           // "ba" | "worldModel"
+  worldModel: null,            // a loadWorldModel() result, NOT a path — keeps
+                               // this file fs-free and browser-compatible
+  institutionSizing: "uniform",// "uniform" | "weighted" (intake-proportional)
+  // Mobility friction from the affinity model. Enters the move utility as
+  // mobilityFriction * log(affinity), so under the softmax it multiplies a
+  // candidate's weight by affinity^(mobilityFriction/MOVE_TEMPERATURE).
+  // 0 reproduces the pre-world-model behaviour EXACTLY — asserted in test_engine.js.
+  mobilityFriction: 0,
+  // Top-K mobility heuristic. 0 = off (evaluate the full near-neighbour set, the
+  // original behaviour). When > 0, an agent considers only its K highest-affinity
+  // destinations instead of every neighbour — mobility is ~75% of runtime and its
+  // cost is linear in the candidate count. World-model mode only; the BA graph has
+  // no affinity ordering to take a top-K of.
+  candidateCap: 0,
 };
+
+// Calibrated parameter set for the DECLARED time base: 1 tick = 1 month, career
+// = 40 years = 480 ticks. DEFAULT_PARAMS above was tuned when the tick was
+// dimensionless and does NOT survive that reading — at turnoverRate = 1/480 its
+// transferRate = 0.5 drives 98% of the population above E = 0.95, saturating the
+// no-AI baseline so the AI contrast has nothing to measure against.
+//
+// Kept as a separate overlay rather than folded into DEFAULT_PARAMS so the
+// existing BA experiment set and its published results are untouched. Apply with
+//   initSim(Object.assign({}, MONTHLY_TICK_PARAMS, yourParams))
+//
+// Derivation: calibrate_time_base.js and the "Time, turnover, and population
+// scale" section of paper.md.
+//
+// Selected for a STATIONARY no-AI baseline, which is what makes meanE_shortfall
+// interpretable — the shortfall is then "what AI removed", not "what AI removed
+// plus wherever the baseline happened to have drifted to by the reporting tick".
+// Measured at world-model scale (N=10,504, M=245), meanE over the 1440-tick
+// horizon: 0.6291 -> 0.6294, a drift of +0.0002. Confirmed stationary long-run
+// too (0.6589 at t=4800 vs 0.6586 at t=9600 for N=3000).
+//
+// The earlier pairing (0.13, 0.024) was NOT stationary: its equilibrium sits at
+// ~0.56, below where the initial transient lands, so the baseline fell 0.5975 ->
+// 0.5622 across the horizon (-0.035) and kept declining for another ten careers.
+// Because sd(E) is only ~0.06, that slow drift dragged shareExpert from 0.80 to
+// 0.05 — see problems.md P4/P7.
+//
+// Trade-off accepted: the higher baseline puts shareExpert at ~0.95, so that
+// metric has little downward range left. meanE is the headline metric here.
+const MONTHLY_TICK_PARAMS = {
+  turnoverRate: 1 / 480,   // 0.002083 — 40-year career
+  transferRate: 0.15,      // equilibrium meanE ~0.63 at world-model scale
+  decayRate: 0.020,        // counterweight; sets where that equilibrium sits
+};
+const TICKS_PER_YEAR = 12;
 
 const MOVE_TEMPERATURE = 0.12;
 const UNCONSTRAINED_CANDIDATE_CAP = 25;
-// Chosen to sit roughly in the middle of the range where the self-renewal/collapse
-// contrast reads cleanly (~0.3-0.86) — see expert_threshold_sensitivity.js and the
-// "Expert threshold" section in README.md for the empirical check behind this choice.
-// (Previously 0.7 — undocumented and close enough to the upper edge of that range
-// that it inflated the AI-amplification-regime numbers via a baseline-ceiling
-// artifact; 0.585 doesn't have that problem.)
-const EXPERT_THRESHOLD = 0.585;
+
+// Institution occupancy below this makes an institution's internal dynamics
+// meaningless: learning runs on gap = Ebar[j] - E[i], and you are part of Ebar,
+// so in a k-member institution the peer gap you feel is attenuated to (k-1)/k.
+// At k=1 it is exactly zero. Reported per tick rather than enforced — the drain
+// that asymmetric mobility produces is a real prediction, not an error, but a run
+// where institutions fall below this should be treated as suspect.
+const MIN_MEANINGFUL_OCCUPANCY = 5;
+
+// Cumulative-weight sampling, shared by initial placement and turnover. This
+// pairing is the whole point: placing entrants uniformly (as the engine used to)
+// erases any intake-weighted distribution within ~50 ticks, so weighted sizing
+// applied only at init is purely cosmetic. See world-model-plan.md D2.
+function sampleInstitution(state, rng) {
+  const cdf = state.institutionCDF;
+  if (!cdf) return Math.floor(rng() * state.M);
+  const r = rng() * cdf[cdf.length - 1];
+  let lo = 0, hi = cdf.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cdf[mid] < r) lo = mid + 1; else hi = mid; }
+  return lo;
+}
 
 function initSim(userParams) {
   const params = Object.assign({}, DEFAULT_PARAMS, userParams || {});
+
+  // Rejected, not ignored: initSim merges unknown keys straight into params and from
+  // there into every CSV column, so a stale config would otherwise run DEFAULT
+  // dampening while its results rows still advertised a reliance intensity.
+  if (userParams && userParams.aiRelianceIntensity != null) {
+    throw new Error(
+      "[engine] aiRelianceIntensity was removed — set aiDampeningBelow and " +
+      "aiAtrophyMultiplier directly (the old mapping was 1 - rho and 5^rho)");
+  }
+
   const rng = mulberry32(params.seed >>> 0 || 1);
-  const graph = generateBAGraph(params.M, params.graphAttachment, rng);
+
+  let graph;
+  if (params.graphSource === "worldModel") {
+    const wm = params.worldModel;
+    if (!wm || !wm.isWorldModel) {
+      throw new Error("[engine] graphSource 'worldModel' requires params.worldModel to be a loadWorldModel() result");
+    }
+    // M is DERIVED from the data, not configured. Fail loudly rather than
+    // silently ignoring whichever of the two the caller meant.
+    if (userParams && userParams.M != null && userParams.M !== wm.M) {
+      throw new Error(`[engine] M is derived from the world model (${wm.M}) — remove M from the config (got ${userParams.M})`);
+    }
+    params.M = wm.M;
+    graph = wm;
+  } else {
+    graph = generateBAGraph(params.M, params.graphAttachment, rng);
+  }
 
   const N = params.N;
   const E = new Float32Array(N);
@@ -142,10 +269,21 @@ function initSim(userParams) {
   const L = new Float32Array(N);
   const inst = new Int32Array(N);
 
+  // Built before placement so init and turnover draw from the same distribution.
+  let institutionCDF = null;
+  if (params.institutionSizing === "weighted") {
+    const w = graph.entryWeights;
+    if (!w) throw new Error("[engine] institutionSizing 'weighted' requires a world model supplying entryWeights");
+    institutionCDF = new Float64Array(params.M);
+    let acc = 0;
+    for (let j = 0; j < params.M; j++) { acc += w[j]; institutionCDF[j] = acc; }
+  }
+  const placer = { M: params.M, institutionCDF };
+
   for (let i = 0; i < N; i++) {
     E[i] = sampleSkewNormalClipped(rng, params.expertiseMean, params.expertiseSpread, params.expertiseSkew);
     L[i] = sampleLognormal(rng, params.learningRateSpread);
-    inst[i] = Math.floor(rng() * params.M);
+    inst[i] = sampleInstitution(placer, rng);
     C[i] = E[i];
   }
 
@@ -171,6 +309,12 @@ function initSim(userParams) {
     params, rng, graph,
     N, M: params.M,
     E, C, L, inst,
+    // Reusable mobility scratch (problems.md O1). Bounded by M+1: a candidate set
+    // can never hold more than every institution plus the current one. ~2KB at
+    // M=245. Allocated once per run, not once per moving agent per tick.
+    scratchCand: new Int32Array(params.M + 1),
+    scratchUtil: new Float64Array(params.M + 1),
+    institutionCDF,
     startTopE, startEbar,
     t: 0,
     history: [],
@@ -189,38 +333,79 @@ function institutionStats(state) {
   return { Ebar, count };
 }
 
-function candidateInstitutions(state, humanIdx, rng) {
+// Fills state.scratchCand with the candidate institution indices for this human
+// and returns HOW MANY. Writing into a preallocated buffer rather than returning
+// a fresh Set/Array removes ~3 allocations per moving agent; with ~560 movers per
+// tick that was the single largest cost in the engine (problems.md O1).
+//
+// Dedupe is a linear scan rather than a Set: the candidate list is bounded by
+// UNCONSTRAINED_CANDIDATE_CAP (25), and at that size a scan over a contiguous
+// Int32Array beats hashing plus the allocation.
+function fillCandidates(state, humanIdx, rng) {
   const mode = state.params.mobilityMode;
   const current = state.inst[humanIdx];
-  const neighbors = state.graph.neighbors[current];
+  const buf = state.scratchCand;
+  let n = 0;
   const useFull = mode === "unconstrained" || (mode === "hybrid" && rng() < state.params.jumpProbability);
 
   if (useFull) {
     if (state.M <= UNCONSTRAINED_CANDIDATE_CAP) {
-      const all = [];
-      for (let j = 0; j < state.M; j++) all.push(j);
-      return all;
+      for (let j = 0; j < state.M; j++) buf[n++] = j;
+      return n;
     }
-    const set = new Set([current]);
-    while (set.size < UNCONSTRAINED_CANDIDATE_CAP) set.add(Math.floor(rng() * state.M));
-    return Array.from(set);
+    buf[n++] = current;
+    const sampleDest = state.graph.sampleDestination;
+    if (sampleDest) {
+      let draws = 0;
+      const budget = UNCONSTRAINED_CANDIDATE_CAP * 8;
+      while (n < UNCONSTRAINED_CANDIDATE_CAP && draws < budget) {
+        draws++;
+        const cand = sampleDest(current, rng());
+        if (cand < 0) continue;
+        let dup = false;
+        for (let k = 0; k < n; k++) if (buf[k] === cand) { dup = true; break; }
+        if (!dup) buf[n++] = cand;
+      }
+      return n;
+    }
+    while (n < UNCONSTRAINED_CANDIDATE_CAP) {
+      const cand = Math.floor(rng() * state.M);
+      let dup = false;
+      for (let k = 0; k < n; k++) if (buf[k] === cand) { dup = true; break; }
+      if (!dup) buf[n++] = cand;
+    }
+    return n;
   }
-  const arr = Array.from(neighbors);
-  arr.push(current);
-  return arr;
+
+  const cap = state.params.candidateCap | 0;
+  const top = state.graph.topDestinations;
+  if (cap > 0 && top) {
+    const K = state.graph.TOP_K;
+    const c = Math.min(cap, state.graph.topCount[current]);
+    for (let r = 0; r < c; r++) buf[n++] = top[current * K + r];
+    buf[n++] = current;
+    return n;
+  }
+  for (const j of state.graph.neighbors[current]) buf[n++] = j;
+  buf[n++] = current;
+  return n;
 }
 
-function softmaxPick(rng, ids, utilities, temperature) {
+// Operates on preallocated buffers over [0, n). Overwrites `utils` with the
+// softmax weights in place — the raw utilities aren't needed once maxU is known
+// — so no weights array is allocated either. Arithmetic and summation order are
+// unchanged from the array version, so results are bit-identical.
+function softmaxPick(rng, ids, utils, n, temperature) {
   let maxU = -Infinity;
-  for (const u of utilities) if (u > maxU) maxU = u;
-  const weights = utilities.map((u) => Math.exp((u - maxU) / temperature));
-  const sum = weights.reduce((a, b) => a + b, 0);
+  for (let k = 0; k < n; k++) if (utils[k] > maxU) maxU = utils[k];
+  let sum = 0;
+  for (let k = 0; k < n; k++) { const e = Math.exp((utils[k] - maxU) / temperature); utils[k] = e; sum += e; }
   let r = rng() * sum;
-  for (let k = 0; k < ids.length; k++) {
-    r -= weights[k];
+  for (let k = 0; k < n; k++) {
+    r -= utils[k];
     if (r <= 0) return ids[k];
   }
-  return ids[ids.length - 1];
+  return ids[n - 1];
 }
 
 function tick(state) {
@@ -272,21 +457,38 @@ function tick(state) {
 
   for (let i = 0; i < N; i++) {
     if (rng() >= p.baseMoveProb * L[i]) continue;
-    const candidates = candidateInstitutions(state, i, rng);
-    const utilities = candidates.map((j) => {
+    const from = inst[i];
+    const cands = state.scratchCand, utils = state.scratchUtil;
+    const nc = fillCandidates(state, i, rng);
+    const useFriction = p.mobilityFriction !== 0 && !!graph.affinity;
+    const affAt = graph.affinityAt || graph.affinity;
+    for (let k = 0; k < nc; k++) {
+      const j = cands[k];
       const growth = Math.max(0, Ebar[j] - E[i]);
       const status = E[i] - Ebar[j];
-      return (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
-    });
-    inst[i] = softmaxPick(rng, candidates, utilities, MOVE_TEMPERATURE);
+      let u = (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
+      // Mobility friction. affinity <= 1 so the log is <= 0 — always a penalty,
+      // never a bonus. Under the softmax this scales the candidate's weight by
+      // affinity^(mobilityFriction / MOVE_TEMPERATURE). At mobilityFriction = 0
+      // the term vanishes and behaviour is bit-for-bit identical to before.
+      if (useFriction && j !== from) {
+        const a = affAt(from, j);
+        u += p.mobilityFriction * Math.log(a > 1e-12 ? a : 1e-12);
+      }
+      utils[k] = u;
+    }
+    inst[i] = softmaxPick(rng, cands, utils, nc, MOVE_TEMPERATURE);
   }
 
   let removed = 0;
   for (let i = 0; i < N; i++) {
     if (rng() < p.turnoverRate) {
-      E[i] = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, p.entrantExpertiseSkew);
+      const draw = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, p.entrantExpertiseSkew);
+      E[i] = draw < p.entrantExpertiseFloor ? p.entrantExpertiseFloor : draw;
       L[i] = sampleLognormal(rng, p.learningRateSpread);
-      inst[i] = Math.floor(rng() * M);
+      // Same sampler as initial placement — see sampleInstitution(). Placing
+      // entrants uniformly here is what used to wash out any weighted sizing.
+      inst[i] = sampleInstitution(state, rng);
       C[i] = E[i];
       removed++;
     }
@@ -309,19 +511,54 @@ function tick(state) {
   for (let j = 0; j < M; j++) if (count[j] > 0) varEbar += (Ebar[j] - meanEbar) ** 2;
   varEbar = activeCount ? varEbar / activeCount : 0;
 
+  // Occupancy diagnostics. Asymmetric mobility drains low-market-index
+  // institutions by design (that is the brain-drain prediction), but an
+  // institution that falls below MIN_MEANINGFUL_OCCUPANCY has an Ebar that is
+  // mostly noise, so its internal dynamics stop meaning anything. Recorded per
+  // tick rather than enforced, so a run can be judged rather than silently
+  // rejected. Counted AFTER mobility and turnover, so it reflects the state the
+  // next tick will actually run on.
+  const occ = new Int32Array(M);
+  for (let i = 0; i < N; i++) occ[inst[i]]++;
+  let minOcc = Infinity, emptyInst = 0, underOcc = 0;
+  for (let j = 0; j < M; j++) {
+    if (occ[j] < minOcc) minOcc = occ[j];
+    if (occ[j] === 0) emptyInst++;
+    if (occ[j] < MIN_MEANINGFUL_OCCUPANCY) underOcc++;
+  }
+
   const entry = {
     t: state.t, meanE, meanC, gap: meanC - meanE,
     divergence: varEbar, topE, aiLevel,
     shareBelowAI: p.aiEnabled ? belowCount / N : null,
     shareExpert: expertCount / N,
     turnover: removed,
+    minOccupancy: minOcc === Infinity ? 0 : minOcc,
+    emptyInstitutions: emptyInst,
+    underOccupiedInstitutions: underOcc,
   };
   state.history.push(entry);
   return entry;
 }
 
-module.exports = {
-  mulberry32, randNormal, sampleSkewNormalClipped, sampleLognormal,
+const API = {
+  mulberry32, randNormal, sampleSkewNormalClipped, sampleLognormal, clip01,
   generateBAGraph, AI_MODES, DEFAULT_PARAMS, EXPERT_THRESHOLD,
-  initSim, institutionStats, tick,
+  MONTHLY_TICK_PARAMS, TICKS_PER_YEAR, MIN_MEANINGFUL_OCCUPANCY,
+  initSim, institutionStats, tick, sampleInstitution,
 };
+
+// Dual-mode export, same pattern as world_model.js. Node gets CommonJS; the
+// browser gets globalThis.Engine, so simulator.html <script src>es THIS file
+// instead of carrying its own copy of the model. There was such a copy until
+// 2026-08; nothing compared the two, so the interactive tool could silently
+// simulate different dynamics from the ones the published results came from.
+//
+// No fallback if this file is missing: the page throws and renders nothing.
+// A simulator that quietly runs a different model than the batch runs is worse
+// than one that doesn't start.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = API;
+} else if (typeof globalThis !== "undefined") {
+  globalThis.Engine = API;
+}

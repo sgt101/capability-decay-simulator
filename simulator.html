@@ -58,6 +58,8 @@
   .app { display: flex; flex-direction: column; min-height: 100vh; }
 
   /* ---- Topbar ---- */
+  .wm-check { display: flex; gap: .5rem; align-items: flex-start; font-size: .78rem; line-height: 1.35; cursor: pointer; }
+  .wm-check input { margin-top: .15rem; flex: none; }
   .topbar {
     display: flex; align-items: center; gap: 1.2rem;
     padding: 0.7rem 1.1rem; background: var(--panel);
@@ -127,6 +129,10 @@
   .field input[type="range"] { width: 100%; }
   .field select, .field input[type="number"] { width: 100%; }
   .field .hint { font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; }
+  /* Anything carrying a plain-language description on hover advertises it: the
+     dotted underline on the name is the only cue that the tooltip is there. */
+  .field[title], .switch-row[title] { cursor: help; }
+  .field[title] > label > span { text-decoration: underline dotted var(--ink-faint); text-underline-offset: 0.18em; }
   .seed-row { display: flex; gap: 0.4rem; }
   .seed-row input { flex: 1; }
 
@@ -179,12 +185,12 @@
     <span class="ai-chip" id="aiChip">AI off</span>
     <div class="spacer"></div>
     <div class="transport">
-      <button class="btn btn-icon" id="btnStep" title="Step one tick">⏭</button>
+      <button class="btn btn-icon" id="btnStep" title="Step one month (one tick)">⏭</button>
       <button class="btn btn-primary btn-icon" id="btnPlay" title="Play / pause">▶</button>
       <div class="speed-field">
         <span>speed</span>
         <input type="range" id="speedRange" min="1" max="30" value="6" step="1" />
-        <output id="speedOut" class="tabular">6/s</output>
+        <output id="speedOut" class="tabular">6 months/s</output>
       </div>
       <button class="btn" id="btnRebuild" title="Rebuild with current N / M / m / seed">Rebuild</button>
     </div>
@@ -193,7 +199,7 @@
   <div class="scrubbar">
     <span>scrub</span>
     <input type="range" id="scrubRange" min="0" max="0" value="0" />
-    <span class="tabular" id="scrubLabel">t = 0</span>
+    <span class="tabular" id="scrubLabel">t = 0 · 0y 0m</span>
     <button class="btn live-btn is-live" id="btnLive">live</button>
   </div>
 
@@ -251,238 +257,59 @@
   </div>
 </div>
 
+<!-- The model itself. REQUIRED: this page has no copy of the engine and refuses to
+     render without it, so the interactive tool and batch_run.js can never be running
+     different dynamics. -->
+<script src="engine.js"></script>
+<!-- Loads the shared loader rather than carrying a second copy that would drift
+     from world_model.js. Unlike engine.js this one is optional: if it isn't
+     alongside this page, window.WorldModel stays undefined and the world-model
+     controls disable themselves — the simulator still runs in BA mode. -->
+<script src="world_model.js"></script>
 <script>
 /* ============================== ENGINE ============================== */
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+// The model lives in engine.js and is loaded by the <script src> above — this page
+// does NOT define its own. Until 2026-08 it carried a hand-maintained copy of the
+// whole engine; nothing compared the two, so an edit to engine.js left the
+// interactive tool silently simulating different dynamics from the batch runs that
+// produced the published results.
+//
+// Hard failure, deliberately: no BA-only fallback, no degraded mode. If engine.js
+// is not alongside this page, nothing renders. Producing plausible-looking numbers
+// from an unknown model is the outcome worth preventing.
+if (typeof Engine === "undefined" || !Engine || typeof Engine.initSim !== "function") {
+  document.body.innerHTML =
+    '<div style="max-width:34rem;margin:16vh auto;padding:1.5rem;font:14px/1.6 ui-monospace,monospace">' +
+    '<h1 style="font-size:1.1rem;margin:0 0 0.6rem">engine.js not loaded</h1>' +
+    '<p style="margin:0 0 0.6rem">This page runs the model from <b>engine.js</b>, which must sit in the ' +
+    'same directory. It is not there, or it failed to parse.</p>' +
+    '<p style="margin:0">Nothing is shown rather than a run of some other model.</p></div>';
+  throw new Error("[simulator] engine.js is required and was not loaded");
 }
-function randNormal(rng) {
-  let u = 0, v = 0;
-  while (u === 0) u = rng();
-  while (v === 0) v = rng();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-function clip01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
-function sampleSkewNormalClipped(rng, mu, omega, alpha) {
-  const x0 = randNormal(rng), x1 = randNormal(rng);
-  const delta = alpha / Math.sqrt(1 + alpha * alpha);
-  const u1 = delta * x0 + Math.sqrt(1 - delta * delta) * x1;
-  const z = x0 >= 0 ? u1 : -u1;
-  return clip01(mu + omega * z);
-}
-function sampleLognormal(rng, sigma) { return Math.exp(randNormal(rng) * sigma); }
+const {
+  mulberry32, clip01, DEFAULT_PARAMS, MONTHLY_TICK_PARAMS, TICKS_PER_YEAR,
+  institutionStats, tick,
+} = Engine;
 
-function generateBAGraph(M, mAttach, rng) {
-  const m = Math.max(1, Math.min(mAttach, M - 1));
-  const neighbors = Array.from({ length: M }, () => new Set());
-  const degree = new Uint32Array(M);
-  const m0 = m + 1;
-  for (let a = 0; a < m0; a++) for (let b = a + 1; b < m0; b++) { neighbors[a].add(b); neighbors[b].add(a); degree[a]++; degree[b]++; }
-  const repeated = [];
-  for (let a = 0; a < m0; a++) for (let k = 0; k < degree[a]; k++) repeated.push(a);
-  for (let i = m0; i < M; i++) {
-    const targets = new Set();
-    let tries = 0;
-    while (targets.size < m && tries < 200) {
-      tries++;
-      const cand = repeated.length ? repeated[Math.floor(rng() * repeated.length)] : Math.floor(rng() * i);
-      if (cand !== i && !targets.has(cand)) targets.add(cand);
-    }
-    while (targets.size < m) { const cand = Math.floor(rng() * i); if (cand !== i) targets.add(cand); }
-    targets.forEach((t) => { neighbors[i].add(t); neighbors[t].add(i); degree[i]++; degree[t]++; repeated.push(i, t); });
-  }
-  let maxDeg = 1;
-  for (let i = 0; i < M; i++) if (degree[i] > maxDeg) maxDeg = degree[i];
-  const prestige = new Float32Array(M);
-  for (let i = 0; i < M; i++) prestige[i] = degree[i] / maxDeg;
-  return { M, neighbors, degree, prestige };
+// Boot on the calibrated monthly set (1 tick = 1 month, 40-year career). engine.js
+// keeps MONTHLY_TICK_PARAMS as an overlay rather than folding it into
+// DEFAULT_PARAMS, so the older BA experiment set stays reproducible; this page only
+// ever runs the calibrated one. Layered UNDER userParams so a Rebuild carries live
+// slider edits through instead of snapping them back.
+//
+// The two recording structures the batch engine has no use for — a per-institution
+// Ebar history for the inspector sparkline, and the snapshot ring the scrub bar
+// rewinds through — are attached here and filled by doTick(), NOT by engine.tick().
+function initSim(userParams) {
+  const sim = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, userParams || {}));
+  sim.instHistory = Array.from({ length: sim.M }, () => []);
+  sim.snapshots = [];
+  sim.aiToggleEvents = [];
+  return sim;
 }
 
-const AI_MODES = {
-  floor: (e, a) => Math.max(0, a - e),
-  flat: (e, a) => a,
-  linear: (e, a) => a * e,
-  amplified: (e, a) => a * e * e,
-  exponential: (e, a) => e * (Math.exp(a * e) - 1),
-};
-
-const DEFAULT_PARAMS = {
-  N: 500, M: 40,
-  expertiseMean: 0.28, expertiseSpread: 0.30, expertiseSkew: 3,
-  entrantExpertiseMean: 0.05, entrantExpertiseSpread: 0.05, entrantExpertiseSkew: 0,
-  graphAttachment: 2,
-  transferRate: 0.5, decayRate: 0.01, learningRateSpread: 0.4,
-  // Ambient growth: humans at/above their institution's founding average don't just
-  // decay — being embedded among strong peers is itself a source of gradual
-  // improvement, scaled by how strong the institution was at t=0 (state.startEbar,
-  // fixed at init — using the LIVE average instead creates runaway positive feedback
-  // that saturates the whole population to E=1). Not AI-gated: applies identically in
-  // both arms, so it shifts the shared floor, not the AI/no-AI contrast.
-  ambientGrowthRate: 0.001,
-  mobilityMode: "hybrid", jumpProbability: 0.10,
-  competitionAversion: 0.5, prestigeWeight: 0.3, baseMoveProb: 0.05,
-  turnoverRate: 0.01,
-  aiEnabled: false, aiResponseMode: "floor",
-  aiLevelFraction: 0.70, aiGain: 1.0,
-  aiDampeningBelow: 0.30, aiDampeningAbove: 0.80,
-  aiAtrophyMultiplier: 1.5,
-  seed: 1,
-};
-const MOVE_TEMPERATURE = 0.12;
-const UNCONSTRAINED_CANDIDATE_CAP = 25;
 const REPULSION_SAMPLE = 60;
 const SNAPSHOT_CAP = 4000, SNAPSHOT_EVICT = 800;
-// See engine.js's DEFAULT_PARAMS-adjacent comment / README.md's "Expert threshold"
-// section for why this is 0.585, not the original undocumented 0.7.
-const EXPERT_THRESHOLD = 0.585;
-
-function initSim(userParams) {
-  const params = Object.assign({}, DEFAULT_PARAMS, userParams || {});
-  const rng = mulberry32(params.seed >>> 0 || 1);
-  const graph = generateBAGraph(params.M, params.graphAttachment, rng);
-  const N = params.N;
-  const E = new Float32Array(N), C = new Float32Array(N), L = new Float32Array(N), inst = new Int32Array(N);
-  for (let i = 0; i < N; i++) {
-    E[i] = sampleSkewNormalClipped(rng, params.expertiseMean, params.expertiseSpread, params.expertiseSkew);
-    L[i] = sampleLognormal(rng, params.learningRateSpread);
-    inst[i] = Math.floor(rng() * params.M);
-    C[i] = E[i];
-  }
-  // Fixed for the whole run: the single highest E in the t=0 population — "the
-  // greatest human expert at the start" — not the current/live top performer.
-  let startTopE = 0;
-  for (let i = 0; i < N; i++) if (E[i] > startTopE) startTopE = E[i];
-  // Each institution's own founding average, fixed at init — the anchor for ambient
-  // growth. Not recomputed per tick (see ambientGrowthRate above).
-  const startEbar = new Float32Array(params.M), startCount = new Int32Array(params.M);
-  for (let i = 0; i < N; i++) { startEbar[inst[i]] += E[i]; startCount[inst[i]]++; }
-  for (let j = 0; j < params.M; j++) startEbar[j] = startCount[j] > 0 ? startEbar[j] / startCount[j] : 0;
-  return {
-    params, rng, graph, N, M: params.M, E, C, L, inst, startTopE, startEbar,
-    t: 0, history: [], snapshots: [], instHistory: Array.from({ length: params.M }, () => []),
-    lastAiLevel: null, aiToggleEvents: [],
-  };
-}
-
-function institutionStats(state) {
-  const { M, inst, E } = state;
-  const sumE = new Float64Array(M), count = new Int32Array(M);
-  for (let i = 0; i < state.N; i++) { sumE[inst[i]] += E[i]; count[inst[i]]++; }
-  const Ebar = new Float32Array(M);
-  for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
-  return { Ebar, count };
-}
-
-function candidateInstitutions(state, humanIdx, rng) {
-  const mode = state.params.mobilityMode;
-  const current = state.inst[humanIdx];
-  const neighbors = state.graph.neighbors[current];
-  const useFull = mode === "unconstrained" || (mode === "hybrid" && rng() < state.params.jumpProbability);
-  if (useFull) {
-    if (state.M <= UNCONSTRAINED_CANDIDATE_CAP) { const all = []; for (let j = 0; j < state.M; j++) all.push(j); return all; }
-    const set = new Set([current]);
-    while (set.size < UNCONSTRAINED_CANDIDATE_CAP) set.add(Math.floor(rng() * state.M));
-    return Array.from(set);
-  }
-  const arr = Array.from(neighbors); arr.push(current); return arr;
-}
-
-function softmaxPick(rng, ids, utilities, temperature) {
-  let maxU = -Infinity;
-  for (const u of utilities) if (u > maxU) maxU = u;
-  const weights = utilities.map((u) => Math.exp((u - maxU) / temperature));
-  const sum = weights.reduce((a, b) => a + b, 0);
-  let r = rng() * sum;
-  for (let k = 0; k < ids.length; k++) { r -= weights[k]; if (r <= 0) return ids[k]; }
-  return ids[ids.length - 1];
-}
-
-function tick(state) {
-  const p = state.params;
-  const { N, M, E, C, L, inst, rng, graph } = state;
-  const { Ebar, count } = institutionStats(state);
-
-  let topE = 0;
-  for (let i = 0; i < N; i++) if (E[i] > topE) topE = E[i];
-  // aiLevel is a fraction of the fixed t=0 top performer (state.startTopE), not of
-  // the live one above. topE is still tracked/reported as its own metric.
-  const aiLevel = p.aiEnabled ? p.aiLevelFraction * state.startTopE : null;
-  state.lastAiLevel = aiLevel;
-  const boostFn = AI_MODES[p.aiResponseMode] || AI_MODES.floor;
-
-  for (let i = 0; i < N; i++) {
-    const j = inst[i];
-    const gap = Ebar[j] - E[i];
-    const below = p.aiEnabled && E[i] < aiLevel;
-    let delta;
-    if (gap > 0) {
-      delta = p.transferRate * gap * L[i];
-      if (p.aiEnabled) delta *= below ? p.aiDampeningBelow : p.aiDampeningAbove;
-    } else {
-      let decay = p.decayRate * gap * L[i];
-      if (below) decay *= p.aiAtrophyMultiplier;
-      const ambient = p.ambientGrowthRate * state.startEbar[j] * L[i] * (1 - E[i]);
-      delta = decay + ambient;
-    }
-    const newE = clip01(E[i] + delta);
-    E[i] = newE;
-    C[i] = p.aiEnabled ? clip01(newE + p.aiGain * boostFn(newE, aiLevel)) : newE;
-  }
-
-  for (let i = 0; i < N; i++) {
-    if (rng() >= p.baseMoveProb * L[i]) continue;
-    const candidates = candidateInstitutions(state, i, rng);
-    const utilities = candidates.map((j) => {
-      const growth = Math.max(0, Ebar[j] - E[i]);
-      const status = E[i] - Ebar[j];
-      return (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
-    });
-    inst[i] = softmaxPick(rng, candidates, utilities, MOVE_TEMPERATURE);
-  }
-
-  let removed = 0;
-  for (let i = 0; i < N; i++) {
-    if (rng() < p.turnoverRate) {
-      E[i] = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, p.entrantExpertiseSkew);
-      L[i] = sampleLognormal(rng, p.learningRateSpread);
-      inst[i] = Math.floor(rng() * M);
-      C[i] = E[i];
-      removed++;
-    }
-  }
-
-  state.t++;
-  for (let j = 0; j < M; j++) { state.instHistory[j].push(Ebar[j]); }
-
-  let sumE = 0, sumC = 0, belowCount = 0, expertCount = 0;
-  for (let i = 0; i < N; i++) {
-    sumE += E[i]; sumC += C[i];
-    if (p.aiEnabled && E[i] < aiLevel) belowCount++;
-    if (E[i] >= EXPERT_THRESHOLD) expertCount++;
-  }
-  const meanE = sumE / N, meanC = sumC / N;
-
-  let activeCount = 0, sumEbar = 0;
-  for (let j = 0; j < M; j++) if (count[j] > 0) { activeCount++; sumEbar += Ebar[j]; }
-  const meanEbar = activeCount ? sumEbar / activeCount : 0;
-  let varEbar = 0;
-  for (let j = 0; j < M; j++) if (count[j] > 0) varEbar += (Ebar[j] - meanEbar) ** 2;
-  varEbar = activeCount ? varEbar / activeCount : 0;
-
-  const entry = { t: state.t, meanE, meanC, gap: meanC - meanE, divergence: varEbar, topE, aiLevel, shareBelowAI: p.aiEnabled ? belowCount / N : null, shareExpert: expertCount / N };
-  state.history.push(entry);
-
-  state.snapshots.push({ t: state.t, E: E.slice(), C: C.slice(), inst: inst.slice(), Ebar, count });
-  if (state.snapshots.length > SNAPSHOT_CAP) state.snapshots.splice(0, SNAPSHOT_EVICT);
-
-  return entry;
-}
 
 /* ============================== APP ============================== */
 const app = {
@@ -497,34 +324,102 @@ const app = {
   layout: null, // { x, y, vx, vy } per institution, persists across rebuilds of dynamics but not structure
 };
 
+// desc: a plain-language sentence shown on hover (title attribute), so the dial can
+// be used without remembering what beta or lambda stand for. Says what the number
+// MEANS in the world being modelled, not what the code does with it — the mechanical
+// detail belongs in `hint`, which is always-visible text under the slider.
+// Keep desc free of double quotes: it is interpolated into a title="..." attribute.
 const PARAM_FIELDS = [
-  { key: "expertiseMean", group: "init", label: "expertise_mean", sym: "μ_E", min: 0, max: 0.8, step: 0.01, hint: "t=0 population only — an already-running system's starting mix" },
-  { key: "expertiseSpread", group: "init", label: "expertise_spread", sym: "ω_E", min: 0.05, max: 0.6, step: 0.01 },
-  { key: "expertiseSkew", group: "init", label: "expertise_skew", sym: "α_E", min: -6, max: 6, step: 0.5 },
-  { key: "entrantExpertiseMean", group: "init", label: "entrant_expertise_mean", sym: "μ_ent", min: 0, max: 0.5, step: 0.01, hint: "every turnover replacement (mid-run), not t=0 — novices who must earn expertise via peer transfer" },
-  { key: "entrantExpertiseSpread", group: "init", label: "entrant_expertise_spread", sym: "ω_ent", min: 0.01, max: 0.3, step: 0.01 },
-  { key: "entrantExpertiseSkew", group: "init", label: "entrant_expertise_skew", sym: "α_ent", min: -6, max: 6, step: 0.5 },
-  { key: "learningRateSpread", group: "learn", label: "learning_rate_spread", sym: "σ_L", min: 0, max: 1, step: 0.02 },
-  { key: "transferRate", group: "learn", label: "transfer_rate", sym: "β", min: 0, max: 0.08, step: 0.001 },
-  { key: "decayRate", group: "learn", label: "decay_rate", sym: "δ", min: 0, max: 0.08, step: 0.001 },
-  { key: "ambientGrowthRate", group: "learn", label: "ambient_growth_rate", sym: "μ_amb", min: 0, max: 0.02, step: 0.0005, hint: "growth for humans already at/above their institution's founding average — scales with how strong that institution was at t=0, tapers to 0 near the ceiling. Checked past this range it saturates the whole population to E=1 well within typical run lengths." },
-  { key: "competitionAversion", group: "mobility", label: "competition_aversion", sym: "ρ", min: 0, max: 1, step: 0.02 },
-  { key: "prestigeWeight", group: "mobility", label: "prestige_weight", sym: "η", min: 0, max: 1, step: 0.02 },
-  { key: "baseMoveProb", group: "mobility", label: "base_move_prob", sym: "p_move", min: 0, max: 0.3, step: 0.01 },
-  { key: "jumpProbability", group: "mobility", label: "jump_probability", sym: "ε", min: 0, max: 1, step: 0.02 },
-  { key: "turnoverRate", group: "turnover", label: "turnover_rate", sym: "r", min: 0, max: 0.05, step: 0.001 },
-  { key: "aiLevelFraction", group: "ai", label: "ai_level_fraction", sym: "λ", min: 0.01, max: 1, step: 0.02, hint: "fraction of the t=0 population's single greatest human expert, not of the current top performer" },
-  { key: "aiGain", group: "ai", label: "ai_gain", sym: "κ", min: 0, max: 2, step: 0.05 },
-  { key: "aiDampeningBelow", group: "ai", label: "ai_dampening_below", sym: "γ_below", min: 0, max: 2, step: 0.05, display: (v) => v - 1, hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
-  { key: "aiDampeningAbove", group: "ai", label: "ai_dampening_above", sym: "γ_above", min: 0, max: 2, step: 0.05, display: (v) => v - 1, hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
-  { key: "aiAtrophyMultiplier", group: "ai", label: "ai_atrophy_multiplier", sym: "μ_atr", min: 1, max: 5, step: 0.1 },
+  { key: "expertiseMean", group: "init", label: "expertise_mean", sym: "μ_E", min: 0, max: 0.8, step: 0.01,
+    desc: "Average skill of the population on day one, from 0 (all novices) to 1 (all world-class). Sets how good the field is before anything happens.",
+    hint: "t=0 population only — an already-running system's starting mix" },
+  { key: "expertiseSpread", group: "init", label: "expertise_spread", sym: "ω_E", min: 0.05, max: 0.6, step: 0.01,
+    desc: "How unequal day-one skill is. Low = almost everybody is similar; high = a mix of raw novices and standout experts." },
+  { key: "expertiseSkew", group: "init", label: "expertise_skew", sym: "α_E", min: -6, max: 6, step: 0.5,
+    desc: "Which way the day-one skill distribution leans. Positive = most people are below average with a thin tail of stars; negative = most are near the top with a tail of stragglers; 0 = symmetric." },
+  { key: "entrantExpertiseMean", group: "init", label: "entrant_expertise_mean", sym: "μ_ent", min: 0, max: 0.5, step: 0.01,
+    desc: "How skilled a fresh recruit is when they replace someone who retires. Low values mean the field depends entirely on newcomers learning from colleagues — which is exactly what AI reliance can block.",
+    hint: "every turnover replacement (mid-run), not t=0 — novices who must earn expertise via peer transfer" },
+  { key: "entrantExpertiseSpread", group: "init", label: "entrant_expertise_spread", sym: "ω_ent", min: 0.01, max: 0.3, step: 0.01,
+    desc: "How much recruits differ from each other. Low = every intake looks the same; high = the odd exceptional hire alongside the usual novices." },
+  { key: "entrantExpertiseSkew", group: "init", label: "entrant_expertise_skew", sym: "α_ent", min: -6, max: 6, step: 0.5,
+    desc: "Which way the recruit distribution leans — positive puts most recruits below their own average with a few strong outliers." },
+  // Exposed as a dial because entrant_expertise_mean is not interpretable without it:
+  // the draw is clipped at this floor, so below it the mean stops meaning the mean.
+  { key: "entrantExpertiseFloor", group: "init", label: "entrant_expertise_floor", sym: "E_min", min: 0, max: 0.2, step: 0.01,
+    desc: "The least skilled a recruit is allowed to be. Above 0 it stops a pile-up of people arriving at exactly zero, who can never recover once AI reliance blocks their learning. Set 0 for the pre-2026-08 behaviour.",
+    hint: "when entrant_expertise_mean sits within a spread of this floor, a large share of recruits land exactly ON it and the realised mean is higher than the nominal one" },
+  { key: "learningRateSpread", group: "learn", label: "learning_rate_spread", sym: "σ_L", min: 0, max: 1, step: 0.02,
+    desc: "How much people differ in how quickly they pick things up. 0 = everyone learns (and forgets, and moves) at the same speed; high = a few very fast learners carry the field." },
+  // Ranged for the monthly tick: the usable band (0.11-0.20, calibrated 0.15) sits
+  // mid-slider, and the swept range 0.08-0.26 is fully reachable. Deliberately does
+  // NOT reach the legacy dimensionless 0.5 — under a monthly reading that pins the
+  // whole population near the ceiling.
+  { key: "transferRate", group: "learn", label: "transfer_rate", sym: "β", min: 0, max: 0.3, step: 0.001,
+    desc: "How fast someone absorbs skill from stronger colleagues each month. This is the only way a novice becomes an expert, so it is the main engine of renewal.",
+    hint: "usable band is roughly 0.11–0.20 (0.15 calibrated): below it the population cannot renew itself, above it everyone pins near the ceiling" },
+  { key: "decayRate", group: "learn", label: "decay_rate", sym: "δ", min: 0, max: 0.05, step: 0.001,
+    desc: "How fast skill erodes each month when you are already stronger than the people around you — the use-it-or-lose-it half of the model.",
+    hint: "calibrated to 0.020 against transfer_rate 0.15; the swept range is 0.005–0.040" },
+  // NOT re-ranged for the monthly tick, unlike its neighbours: this range comes from a
+  // saturation check, not from the calibration scan, so narrowing it would imply a scan
+  // that has not been run. 0.001/month is the checked default.
+  { key: "ambientGrowthRate", group: "learn", label: "ambient_growth_rate", sym: "μ_amb", min: 0, max: 0.02, step: 0.0005,
+    desc: "Slow improvement you get just from working somewhere strong, even with nobody left to learn from. Applies equally with and without AI, so it lifts the floor rather than changing the AI contrast.",
+    hint: "growth for humans already at/above their institution's founding average — scales with how strong that institution was at t=0, tapers to 0 near the ceiling. Checked past this range it saturates the whole population to E=1 well within typical run lengths." },
+  { key: "competitionAversion", group: "mobility", label: "competition_aversion", sym: "ρ", min: 0, max: 1, step: 0.02,
+    desc: "Big fish or small pond. 0 = people chase the strongest institution they can get into and learn there; 1 = they prefer places where they outrank everyone, which is comfortable and stops them learning." },
+  { key: "prestigeWeight", group: "mobility", label: "prestige_weight", sym: "η", min: 0, max: 1, step: 0.02,
+    desc: "How much a place's reputation pulls people in regardless of what it would do for their skill. 0 = nobody cares about the name on the door." },
+  // Max cut from 0.3 for the monthly tick: 0.3 per MONTH is reconsidering your job
+  // every quarter. 0.1 is already high-churn.
+  { key: "baseMoveProb", group: "mobility", label: "base_move_prob", sym: "p_move", min: 0, max: 0.1, step: 0.01,
+    desc: "Chance per month that a given person considers changing institution. Higher = a churn-heavy field that mixes skill around quickly.",
+    hint: "scaled per-person by their learning rate, so fast learners also move more" },
+  { key: "jumpProbability", group: "mobility", label: "jump_probability", sym: "ε", min: 0, max: 1, step: 0.02,
+    desc: "In hybrid mobility, the share of moves that ignore the network and can land anywhere — the cold-application route rather than the who-you-know one. No effect in the other two mobility modes." },
+  { key: "mobilityFriction", group: "mobility", label: "mobility_friction", sym: "φ", min: 0, max: 1, step: 0.01,
+    desc: "How strongly people stay near their own sector and region. 0 = a move across the world into an unrelated field is as easy as one next door.",
+    hint: "prices moves by affinity: adds φ·log(affinity) to the move utility, so distant cross-sector moves get rarer. Only has any effect when the world-model graph is loaded — the BA graph has no affinity. 0 = off." },
+  // step = 1/4800 so the calibrated 1/480 (a 40-year career) is exactly representable
+  // and lands on step 10 of 96 — no decimal step can hit it. Max cut from 0.05, which
+  // under a monthly tick was a 20-month career. Reads out as a career length in years,
+  // since that is the quantity anyone actually has an intuition for.
+  { key: "turnoverRate", group: "turnover", label: "turnover_rate", sym: "r", min: 0, max: 0.02, step: 1 / 4800,
+    fmtOut: (v) => (v > 0 ? v.toFixed(4) + " · " + (1 / (v * TICKS_PER_YEAR)).toFixed(0) + "y" : "0 · no exit"),
+    desc: "Chance per month that a person retires and is replaced by a recruit — one over the career length in months. The calibrated 0.0021 is a 40-year career.",
+    hint: "N, turnover_rate and career length are one identity (headcount = annual intake × career length), so changing this on the world-model graph without moving N breaks that — see problems.md P5" },
+  { key: "aiLevelFraction", group: "ai", label: "ai_level_fraction", sym: "λ", min: 0.01, max: 1, step: 0.005,
+    desc: "How good the AI is, on the same skill scale as the humans. Everybody below this line is the one who leans on it, stops learning from colleagues, and atrophies. 0.585 = as good as a human we would call an expert.",
+    hint: "fraction of the t=0 population's single greatest human expert, not of the current top performer" },
+  { key: "aiGain", group: "ai", label: "ai_gain", sym: "κ", min: 0, max: 2, step: 0.05,
+    desc: "How much the AI flatters measured output. It moves what the field appears able to do, never the underlying human skill — which is the gap this simulator exists to show." },
+  { key: "aiDampeningBelow", group: "ai", label: "ai_dampening_below", sym: "γ_below", min: 0, max: 2, step: 0.05, display: (v) => v - 1,
+    desc: "What AI does to the learning of people BELOW its level: negative = it crowds out the learning they would have got from colleagues, positive = it teaches them faster than colleagues alone would.",
+    hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
+  { key: "aiDampeningAbove", group: "ai", label: "ai_dampening_above", sym: "γ_above", min: 0, max: 2, step: 0.05, display: (v) => v - 1,
+    desc: "The same, for people ALREADY better than the AI. Only bites when there are such people — at a high ai_level_fraction it governs almost nobody.",
+    hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
+  // Range is symmetric in log space about 1 (1/5 .. 5): an equal-and-opposite
+  // optimistic case is reachable, so the model can express AI preserving skill
+  // rather than only eroding it.
+  { key: "aiAtrophyMultiplier", group: "ai", label: "ai_atrophy_multiplier", sym: "μ_atr", min: 0.2, max: 5, step: 0.05,
+    desc: "How much faster rusty skills fade for people leaning on AI. 1 = no change; 5 = five times faster; below 1 = the AI keeps their hand in.",
+    hint: "1 = no change. Below 1 is AI keeping a rusty hand in; the range is symmetric in log space, so 0.2 is the exact opposite of 5" },
 ];
 
 function fmt(v) { return Math.abs(v) < 1 ? v.toFixed(v === 0 ? 0 : 3).replace(/0+$/, "").replace(/\.$/, "") : v.toFixed(2); }
+// One tick is one month (see MONTHLY_TICK_PARAMS), so elapsed time is worth showing as
+// something a reader can place against a career rather than as a bare tick count.
+function fmtElapsed(t) { return Math.floor(t / TICKS_PER_YEAR) + "y " + (t % TICKS_PER_YEAR) + "m"; }
+function fmtTickLabel(t) { return "t = " + t + " · " + fmtElapsed(t); }
 // Some fields (currently just the AI dampening pair) are stored/fed to the engine as a
 // raw 0..2 multiplier but shown to a human on a -1..+1 scale instead — f.display converts
 // for display only; the slider's own min/max/step/value and app.sim.params stay raw 0..2.
 function fmtField(f, v) {
+  // f.fmtOut takes over the readout entirely — used where the raw number is not the
+  // quantity a human thinks in (turnover_rate, which is really a career length).
+  if (f.fmtOut) return f.fmtOut(v);
   if (!f.display) return fmt(v);
   const d = f.display(v);
   const s = fmt(d);
@@ -536,7 +431,7 @@ function buildSidebar() {
   sidebar.innerHTML = "";
 
   function fieldHTML(f) {
-    return `<div class="field" data-key="${f.key}">
+    return `<div class="field" data-key="${f.key}"${f.desc ? ` title="${f.desc}"` : ""}>
       <label>&nbsp;<span><span class="sym">${f.sym}</span>${f.label}</span><output>${fmtField(f, app.sim.params[f.key])}</output></label>
       <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${app.sim.params[f.key]}" />
       ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}
@@ -547,21 +442,53 @@ function buildSidebar() {
   }
 
   const structuralHTML = `
-    <div class="field"><label>&nbsp;<span><span class="sym">N</span>humans</span></label>
+    <div class="field" title="How many people are in the simulated field. Larger populations give smoother curves and slower ticks.">
+      <label>&nbsp;<span><span class="sym">N</span>humans</span></label>
       <input type="number" id="fieldN" min="20" max="4000" step="10" value="${app.sim.params.N}" /></div>
-    <div class="field"><label>&nbsp;<span><span class="sym">M</span>institutions</span></label>
+    <div class="field" title="How many organisations they are spread across. Fewer, bigger institutions means more colleagues to learn from in each one.">
+      <label>&nbsp;<span><span class="sym">M</span>institutions</span></label>
       <input type="number" id="fieldM" min="4" max="400" step="1" value="${app.sim.params.M}" /></div>
-    <div class="field"><label>&nbsp;<span><span class="sym">m</span>graph_attachment</span></label>
+    <div class="field" title="How densely the generated institution network is wired: how many existing institutions each new one links to. Higher = more places within reach of a move, and a flatter prestige ranking.">
+      <label>&nbsp;<span><span class="sym">m</span>graph_attachment</span></label>
       <input type="number" id="fieldAttach" min="1" max="6" step="1" value="${app.sim.params.graphAttachment}" /></div>
-    <div class="field seed-row"><label style="width:100%">&nbsp;<span><span class="sym">—</span>seed</span></label></div>
+    <div class="field seed-row" title="Fixes the random draws. The same seed and settings always reproduce exactly the same run; change it to see whether a result was luck.">
+      <label style="width:100%">&nbsp;<span><span class="sym">—</span>seed</span></label></div>
     <div class="seed-row"><input type="number" id="fieldSeed" value="${app.sim.params.seed}" /><button class="btn" id="btnRandSeed">⟳</button></div>
     <div class="hint">changes here need <b>Rebuild</b> (top right) to take effect</div>
+  `;
+
+  // World-model graph. Mirrors batch_run.js's config.worldModel + fixed.graphSource:
+  // off = the generated Barabasi-Albert graph, on = the real institution graph
+  // built from world-model.json. Results from the two are NOT comparable — different
+  // topology under a different calibration.
+  const wmDisabled = !worldModelState.available ? "disabled" : "";
+  const wmReady = !!worldModelState.loaded;
+  const worldModelHTML = `
+    <div class="field">
+      <label style="width:100%">&nbsp;<span><span class="sym">g</span>graph_source</span></label>
+      <label class="wm-check"><input type="checkbox" id="fieldUseWorldModel" ${wmDisabled} ${wmReady && app.sim.params.graphSource === "worldModel" ? "checked" : ""} />
+        use world model instead of the generated BA graph</label>
+    </div>
+    <div class="field">
+      <label>&nbsp;<span><span class="sym">1</span>world-model.json</span></label>
+      <input type="file" id="fileWorldModel" accept=".json,application/json" ${wmDisabled} />
+    </div>
+    <div class="field">
+      <label>&nbsp;<span><span class="sym">2</span>mobility-costs.json</span></label>
+      <input type="file" id="fileMobilityCosts" accept=".json,application/json" ${wmDisabled} />
+    </div>
+    <div class="field">
+      <label class="wm-check"><input type="checkbox" id="fieldWeightedSizing" ${wmDisabled} ${app.sim.params.institutionSizing === "weighted" ? "checked" : ""} />
+        size institutions by intake (entrants placed proportionally)</label>
+    </div>
+    <div class="hint" id="worldModelStatus">${worldModelStatusText()}</div>
+    <div class="hint">when on, <b>M</b> is derived from the data and the M field above is ignored. Use <b>mobility_friction</b> (mobility group) to price moves by affinity.</div>
   `;
 
   const initHTML = PARAM_FIELDS.filter((f) => f.group === "init").map(fieldHTML).join("");
   const learnHTML = PARAM_FIELDS.filter((f) => f.group === "learn").map(fieldHTML).join("");
   const mobilityHTML = `
-    <div class="field">
+    <div class="field" title="Where people are allowed to move. unconstrained = anyone can go anywhere; edge_constrained = only to institutions connected to their own; hybrid = mostly connected moves, with a jump_probability share going anywhere.">
       <label>&nbsp;<span>mobility_mode</span></label>
       <select id="fieldMobilityMode">
         <option value="unconstrained">unconstrained</option>
@@ -571,11 +498,11 @@ function buildSidebar() {
     </div>` + PARAM_FIELDS.filter((f) => f.group === "mobility").map(fieldHTML).join("");
   const turnoverHTML = PARAM_FIELDS.filter((f) => f.group === "turnover").map(fieldHTML).join("");
   const aiHTML = `
-    <div class="switch-row">
+    <div class="switch-row" title="Turns AI on mid-run. Everything below only matters while this is on; toggling it is recorded on the charts so you can see the before and after.">
       <span class="field-label">ai_enabled</span>
       <label class="switch"><input type="checkbox" id="fieldAiEnabled" /><span class="track"></span></label>
     </div>
-    <div class="field">
+    <div class="field" title="The shape of the help AI gives: floor = it lifts everyone to its own level and no further; flat = the same boost for everyone; linear = more for those already skilled; amplified = strongly favours the already-skilled; exponential = runaway advantage at the top.">
       <label>&nbsp;<span>ai_response_mode</span></label>
       <select id="fieldAiMode">
         <option value="floor">floor</option>
@@ -584,10 +511,13 @@ function buildSidebar() {
         <option value="amplified">amplified</option>
         <option value="exponential">exponential</option>
       </select>
-    </div>` + PARAM_FIELDS.filter((f) => f.group === "ai").map(fieldHTML).join("");
+    </div>
+    <div class="hint">γ_below and μ_atr are the two halves of de-skilling for people below the AI's level — learning crowded out, and skill already held eroding faster. They are set independently: nothing ties one to the other, so a run that dampens learning without accelerating atrophy is expressible, and is a mechanism ablation rather than a scenario.</div>
+    ` + PARAM_FIELDS.filter((f) => f.group === "ai").map(fieldHTML).join("");
 
   sidebar.innerHTML =
     group("structural", "Scale &amp; graph", structuralHTML, true) +
+    group("worldmodel", "World model graph", worldModelHTML, false) +
     group("init", "Initial & entrant expertise", initHTML, false) +
     group("learn", "Learning dynamics", learnHTML, true) +
     group("mobility", "Mobility", mobilityHTML, false) +
@@ -597,6 +527,7 @@ function buildSidebar() {
 
   PARAM_FIELDS.forEach((f) => {
     const root = sidebar.querySelector(`.field[data-key="${f.key}"]`);
+    if (!root) return;
     const input = root.querySelector("input");
     const out = root.querySelector("output");
     input.addEventListener("input", () => {
@@ -605,6 +536,7 @@ function buildSidebar() {
       out.textContent = fmtField(f, v);
     });
   });
+
   document.getElementById("fieldMobilityMode").value = app.sim.params.mobilityMode;
   document.getElementById("fieldMobilityMode").addEventListener("change", (e) => { app.sim.params.mobilityMode = e.target.value; });
   document.getElementById("fieldAiEnabled").checked = app.sim.params.aiEnabled;
@@ -619,6 +551,54 @@ function buildSidebar() {
   document.getElementById("btnRandSeed").addEventListener("click", () => {
     document.getElementById("fieldSeed").value = Math.floor(Math.random() * 1e9);
   });
+
+  // ---- world-model file inputs ----
+  // FileReader rather than fetch: this page is opened from file://, where fetch
+  // on a sibling file is blocked but a user-chosen File is not.
+  function wireJsonInput(id, assign) {
+    const el = document.getElementById(id);
+    if (!el || !worldModelState.available) return;
+    el.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          assign(JSON.parse(reader.result));
+          worldModelState.error = null;
+        } catch (err) {
+          worldModelState.error = id + ": " + err.message;
+        }
+        tryBuildWorldModel();
+        const status = document.getElementById("worldModelStatus");
+        if (status) status.textContent = worldModelStatusText();
+        const toggle = document.getElementById("fieldUseWorldModel");
+        // Loading both files is the natural moment to want it on, but never flip
+        // it silently on a failed parse.
+        if (toggle && worldModelState.loaded && !toggle.checked) toggle.checked = true;
+      };
+      reader.onerror = () => {
+        worldModelState.error = "could not read " + file.name;
+        const status = document.getElementById("worldModelStatus");
+        if (status) status.textContent = worldModelStatusText();
+      };
+      reader.readAsText(file);
+    });
+  }
+  wireJsonInput("fileWorldModel", (json) => { worldModelState.worldJson = json; });
+  wireJsonInput("fileMobilityCosts", (json) => { worldModelState.costsJson = json; });
+
+  const wmToggle = document.getElementById("fieldUseWorldModel");
+  if (wmToggle) wmToggle.addEventListener("change", () => {
+    const status = document.getElementById("worldModelStatus");
+    if (wmToggle.checked && !worldModelState.loaded) {
+      wmToggle.checked = false;   // nothing to switch to yet
+      if (status) status.textContent = worldModelStatusText();
+      return;
+    }
+    // Structural, like N/M/seed — takes effect on Rebuild, not mid-run.
+    if (status) status.textContent = worldModelStatusText() + " · press Rebuild to apply";
+  });
 }
 
 function updateAiChip() {
@@ -627,22 +607,74 @@ function updateAiChip() {
   else { chip.textContent = "AI off"; chip.classList.remove("on"); }
 }
 
+// ---- world model (graphSource toggle, mirrors batch_run.js's config.worldModel) ----
+// Held outside app.sim so it survives Rebuild — reloading two JSON files on every
+// structural change would be tedious.
+const worldModelState = {
+  available: typeof WorldModel !== "undefined" && !!(WorldModel && WorldModel.loadWorldModel),
+  worldJson: null, costsJson: null, loaded: null, error: null,
+};
+
+function worldModelStatusText() {
+  if (!worldModelState.available) return "world_model.js not found next to this page — BA only";
+  if (worldModelState.error) return "error: " + worldModelState.error;
+  if (worldModelState.loaded) {
+    const wm = worldModelState.loaded;
+    let deg = 0; for (let i = 0; i < wm.M; i++) deg += wm.degree[i];
+    return `loaded — ${wm.M} institutions, mean near-degree ${(deg / wm.M).toFixed(1)}, fingerprint ${wm.fingerprint}`;
+  }
+  const need = [];
+  if (!worldModelState.worldJson) need.push("world-model.json");
+  if (!worldModelState.costsJson) need.push("mobility-costs.json");
+  return "waiting for " + need.join(" + ");
+}
+
+// Rebuilds the loaded model whenever both files are present. Any load failure
+// disables world-model mode rather than leaving a half-built graph in place.
+function tryBuildWorldModel() {
+  worldModelState.loaded = null;
+  worldModelState.error = null;
+  if (!worldModelState.available) return;
+  if (!worldModelState.worldJson || !worldModelState.costsJson) return;
+  try {
+    worldModelState.loaded = WorldModel.loadWorldModel(worldModelState.worldJson, worldModelState.costsJson, {});
+  } catch (err) {
+    worldModelState.error = err.message;
+  }
+}
+
 function readStructuralFields() {
   // Guarded: on the very first call the sidebar hasn't been built yet (buildSidebar()
   // runs later in rebuild()), so these fields don't exist in the DOM. Fall back to defaults.
   const val = (id, fallback) => { const el = document.getElementById(id); return el ? parseInt(el.value, 10) || fallback : fallback; };
-  return {
+  const toggle = document.getElementById("fieldUseWorldModel");
+  const useWM = !!(toggle && toggle.checked && worldModelState.loaded);
+  const weighted = document.getElementById("fieldWeightedSizing");
+  const out = {
     N: val("fieldN", DEFAULT_PARAMS.N),
     M: val("fieldM", DEFAULT_PARAMS.M),
     graphAttachment: val("fieldAttach", DEFAULT_PARAMS.graphAttachment),
     seed: val("fieldSeed", DEFAULT_PARAMS.seed),
+    graphSource: useWM ? "worldModel" : "ba",
+    worldModel: useWM ? worldModelState.loaded : null,
+    institutionSizing: useWM && weighted && weighted.checked ? "weighted" : "uniform",
   };
+  // M is derived from the data in world-model mode — don't pass a stale sidebar
+  // value that initSim would have to reconcile.
+  if (useWM) delete out.M;
+  return out;
 }
 
 function rebuild(preserveLive) {
   const structural = readStructuralFields();
   const liveParams = preserveLive && app.sim ? Object.assign({}, app.sim.params) : {};
   const params = Object.assign({}, liveParams, structural);
+  // Same contract for M: in world-model mode it is derived from the data and engine.js
+  // rejects a config that also states it. readStructuralFields() already omits it, but
+  // the previous run's params carry one, so it has to be dropped here too. (The private
+  // engine copy this page used to carry reconciled a stale M silently instead — which
+  // is the class of drift that copy existed to enable.)
+  if (params.graphSource === "worldModel") delete params.M;
   app.sim = initSim(params);
   app.following = true;
   app.viewT = 0;
@@ -665,7 +697,7 @@ document.getElementById("btnStep").addEventListener("click", () => { setPlaying(
 document.getElementById("btnRebuild").addEventListener("click", () => rebuild(true));
 document.getElementById("speedRange").addEventListener("input", (e) => {
   app.ticksPerSec = parseInt(e.target.value, 10);
-  document.getElementById("speedOut").textContent = app.ticksPerSec + "/s";
+  document.getElementById("speedOut").textContent = app.ticksPerSec + " months/s";
 });
 
 const scrubRange = document.getElementById("scrubRange");
@@ -675,19 +707,28 @@ scrubRange.addEventListener("input", () => {
   app.following = false;
   app.viewT = parseInt(scrubRange.value, 10);
   btnLive.classList.remove("is-live");
-  scrubLabel.textContent = "t = " + app.viewT + " (history)";
+  scrubLabel.textContent = fmtTickLabel(app.viewT) + " (history)";
   renderSnapshotViews();
 });
 btnLive.addEventListener("click", () => {
   app.following = true;
   btnLive.classList.add("is-live");
   app.viewT = app.sim.t;
-  scrubLabel.textContent = "t = " + app.viewT;
+  scrubLabel.textContent = fmtTickLabel(app.viewT);
   refreshAll();
 });
 
+// One tick, plus the recording only this page needs. Both structures used to be
+// filled inside a private copy of tick(); keeping them out here is what lets the
+// page share engine.js unmodified — the engine records population-level history
+// and nothing else, exactly as it does under batch_run.js.
 function doTick() {
   tick(app.sim);
+  const { Ebar, count } = institutionStats(app.sim);
+  const sim = app.sim;
+  for (let j = 0; j < sim.M; j++) sim.instHistory[j].push(Ebar[j]);
+  sim.snapshots.push({ t: sim.t, E: sim.E.slice(), C: sim.C.slice(), inst: sim.inst.slice(), Ebar, count });
+  if (sim.snapshots.length > SNAPSHOT_CAP) sim.snapshots.splice(0, SNAPSHOT_EVICT);
   if (app.following) app.viewT = app.sim.t;
   scrubRange.max = app.sim.t;
   if (app.following) scrubRange.value = app.sim.t;
@@ -947,6 +988,17 @@ function drawMiniChart(canvasId, key, color, options) {
     ctx.fillText(v.toFixed(v < 0.01 ? 4 : 2), pad.l - 4, y + 3);
   });
 
+  // x axis in years: a tick is a month, so a bare tick count leaves the reader doing
+  // the division. Two labels only — the gutter is 16px and these charts are small.
+  const yearsAt = (t) => (t / TICKS_PER_YEAR).toFixed(t >= TICKS_PER_YEAR * 10 ? 0 : 1) + "y";
+  ctx.textAlign = "left";
+  ctx.fillText(yearsAt(t0), pad.l, h - 4);
+  if (t1 > t0) {
+    ctx.textAlign = "right";
+    ctx.fillText(yearsAt(t1), w - pad.r, h - 4);
+  }
+  ctx.textAlign = "right";
+
   ctx.strokeStyle = cssVar("--ink-faint");
   ctx.setLineDash([1, 3]);
   app.sim.aiToggleEvents.forEach((ev) => {
@@ -1011,7 +1063,7 @@ function refreshAll() {
   document.getElementById("statT").textContent = app.sim.t;
   document.getElementById("statN").textContent = app.sim.N;
   document.getElementById("statM").textContent = app.sim.M;
-  if (app.following) scrubLabel.textContent = "t = " + app.sim.t;
+  if (app.following) scrubLabel.textContent = fmtTickLabel(app.sim.t);
   drawHistogram();
   drawMiniChart("expertCanvas", "shareExpert", seqColor(0.6, currentTheme() === "dark"), { zeroFloor: true, fixedMax: 1 });
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });

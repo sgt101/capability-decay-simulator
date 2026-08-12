@@ -456,6 +456,14 @@ world model doesn't constrain, while the interesting new ones are structural
 (`mobilityFriction`, γ, bloc toggle, sector-family costs). The world-model set
 probably wants a different parameter list, not a copy of the BA one.
 
+> **Answered, and the guess was backwards.** The set does want a different
+> parameter list — it is now 7 parameters and 21 files — but not the list
+> predicted here. `mobilityFriction` moved `meanE_shortfall` by 0.005 across an
+> eightfold change and was demoted to a fixed value; `entrantExpertiseMean`
+> moves it by 0.062 and stayed. The structural parameters turned out to be the
+> weak ones and the population properties the strong ones. See `problems.md`
+> P15 and P18.
+
 ### A side effect worth exploiting
 
 Pinning the tick to real time makes several parameters **falsifiable for the first
@@ -464,3 +472,227 @@ takes to become senior — checkable against reality. `decayRate` becomes a clai
 about how fast an unused skill degrades. Neither could be validated while the tick
 was dimensionless. Phase A is therefore not just bookkeeping: it is the first
 opportunity to check the model against something outside itself.
+
+---
+
+## 7. Data representation: are the edges just signifiers?
+
+Partly — and where they are, it is a symptom of storing the same fact twice.
+
+### The file is a bipartite affiliation network, not a peer graph
+
+The confusion is worth naming precisely. `world-model.json` is not a badly-formed
+peer graph; it is a well-formed **affiliation network** — Organisations affiliate
+with Contexts (Hubs, Sectors), which are themselves nested via `PART_OF`. Deriving
+a peer graph from it by connecting co-affiliated organisations is the textbook
+*one-mode projection*, not a workaround.
+
+So the edges are not signifiers by nature. The reason they *feel* like signifiers
+is that the same information is stored **twice with different cardinality** — once
+as edges, once denormalised onto node attributes — leaving two sources of truth
+that disagree about how many values a fact can have.
+
+### What is actually lost by ignoring the edges
+
+Measured, not assumed:
+
+| Edge type | Count | Recoverable from node attributes? |
+|---|---|---|
+| `IN_SECTOR` | 245 | **Yes, entirely.** Exactly one per org, always equal to `org.sector` (0 mismatches). Pure duplication. |
+| `PART_OF` | 71 | **Yes** for affinity — `org.country`/`org.region` are exact denormalised copies (0 mismatches). But it is the scaffolding `bloc` and `market_index` must hang off. |
+| `LOCATED_IN` | 334 | **Only the first per org.** Set-valued (193 orgs in 1 hub … JPMorgan in 8) while `org.hub_city` is scalar. **89 facts lost.** |
+| `PARENT_OF` | 14 | **No.** Irreducible pairwise fact. |
+| `COMPETES_FOR_TALENT` | 7 | **No.** Irreducible pairwise fact. |
+| `PLACES_GRADUATES_IN` | 4 | **No.** And *not* location data — see below. |
+| `OFFSHORE_RECRUITS_FOR` | 1 | **No.** |
+
+```
+561 of 676 edges (83%)  recoverable from node attributes
+115 of 676 edges (17%)  irreducible
+      89   multi-site presence
+      21   org <-> org relations
+       5   talent flow
+```
+
+The losses are not equal — one affects the plan, two are marginal:
+
+**1. Multi-site presence (89 facts).** Collapsing `LOCATED_IN` to the scalar
+`hub_city` makes every global bank single-sited. That directly contradicts the
+requirement that moves between global banks in the same city are easy — JPMorgan
+would occupy one city instead of eight, so most such moves would be priced as
+cross-city or cross-country.
+
+**2. Irreducible pairwise relations (21 facts).** `PARENT_OF` and
+`COMPETES_FOR_TALENT` cannot be reconstructed from any attribute. They are exactly
+the kind of fact an attribute-based kernel cannot express, which is why §3 folds
+them in as bonus multipliers rather than deriving them.
+
+**3. Talent flow (5 facts) — semantically distinct, but negligible in quantity.**
+`PLACES_GRADUATES_IN` is not a location edge: verified, all four Santander targets
+(São Paulo, Mexico City, Santiago, Bogotá) are cities Santander is **not**
+`LOCATED_IN`, so it encodes a recruiting pipeline rather than geography. That
+distinction is real, but at five records it is a curiosity, not a resource — the
+same judgement already applied to `COMPETES_FOR_TALENT` in Q4, and it should not
+be dressed up as more than that because the phenomenon it names happens to be the
+model's subject.
+
+What the count does indicate is a **gap, not a finding**: the file has no
+systematic record of where people move. That is unsurprising — it is a taxonomy,
+and taxonomies describe structure. But it has one consequence worth stating. Under
+the affinity model, mobility is *derived* from the §3 cost tiers, so flow data
+would serve as **validation**, not input. With none available, the tier costs, γ,
+and the bloc matrix are unfalsifiable: they can be tuned until the behaviour looks
+plausible, but nothing in the dataset can contradict them. That is a limitation of
+the model's evidential standing, not a defect in the file.
+
+### A cleaner representation
+
+Separate three kinds of thing the current schema conflates:
+
+| Kind | What it is | Cardinality | Examples |
+|---|---|---|---|
+| **Attribute** | property of one entity | scalar | `sector`, `subsector_tier`, `org_size_band`, `intake`, `market_index`, `bloc` |
+| **Affiliation** | membership of a context | **set-valued, weighted** | org → hubs |
+| **Relation** | irreducible pairwise fact | pairwise, **directional, weighted** | `PARENT_OF`, `COMPETES_FOR_TALENT`, `PLACES_GRADUATES_IN` |
+
+Affinity is then a **kernel over attributes + affiliations, modulated by
+relations** — and the peer graph becomes an *output* of the model rather than an
+input to it. That is the real conceptual shift: there is no "transfer graph" in the
+data, only the ingredients from which one is computed.
+
+### Concrete schema changes worth making
+
+Ordered by value, and all cheap relative to a restructure:
+
+1. **Weight the affiliation edges.** `LOCATED_IN` is currently unweighted, so
+   JPMorgan's New York presence and its Sydney presence count equally. A `weight`
+   field (headcount share) would fix both the affinity calculation *and* entrant
+   placement, which currently allocates an organisation's intake with no idea where
+   it geographically lands. This is the single highest-value addition.
+2. **Pick one source of truth for single-valued facts.** Either drop the 245
+   `IN_SECTOR` edges or drop `org.sector` — they cannot disagree today, but nothing
+   prevents it. For `hub_city`, keep the edges as authoritative and rename the
+   scalar to `primary_hub` so it reads as derived rather than definitive.
+3. **Treat the existing flow edges as annotation, not structure.** Five records
+   cannot inform the model; fold them in as a bonus multiplier alongside
+   `COMPETES_FOR_TALENT` or leave them out. Separately — and as speculative future
+   work rather than part of this plan — systematically collected flow volumes would
+   be the only thing capable of *validating* the §3 cost tiers rather than merely
+   fitting them. Worth noting when deciding what to collect next; not worth acting
+   on now.
+4. **Hang `bloc` and `market_index` off the `PART_OF` hierarchy** (Phase B), which
+   is what that hierarchy is genuinely useful for even though it is redundant for
+   affinity.
+5. **Consider a temporal dimension.** Nothing in the file is dated, so all
+   structure is static in a model whose entire subject is change over time.
+
+### What this does not change
+
+The affinity model in §3 stands. This section argues the *inputs* should be
+cleaner, not that the kernel approach is wrong — an attribute kernel plus a sparse
+relational overlay is the right shape given that 83% of the edges are attributes in
+disguise. The practical consequence for the loader (Phase C) is only that
+`hubSource: "located_in"` must be the default rather than an option: reading the
+scalar throws away 89 facts that the stated requirements depend on.
+
+---
+
+## 8. Implementation status
+
+Phases A-G implemented. What landed, and two results that qualify the design.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `calibrate_time_base.js` | Phase A scan. `node calibrate_time_base.js` |
+| `mobility-costs.json` | Model assumptions: geo/sector tiers, bloc matrix, γ, edge bonuses |
+| `add_geo_attributes.js` | Phase B. Adds `bloc` + `market_index` to `world-model.json` (idempotent, `--dry-run`) |
+| `world_model.js` | Phase C loader. fs-free, returns `generateBAGraph`'s shape + `affinity`, `entryWeights`, `fingerprint` |
+| `test_world_model.js` | Phase G. 65 checks |
+| `experiments-worldmodel/worldmodel.1.json` | Worked example config → `results-worldmodel/` |
+| `generate_worldmodel_experiments.js` | The pairwise set. 7 study params → 21 files in `experiments/` |
+
+`engine.js` gained `graphSource`, `worldModel`, `institutionSizing`, `mobilityFriction`,
+`MONTHLY_TICK_PARAMS`, a shared `sampleInstitution()` (the D2 fix), and per-tick
+occupancy diagnostics. `batch_run.js` resolves the world model per worker from
+paths (a loaded model holds a closure and cannot be structured-cloned).
+
+### Phase A result
+
+> **Superseded.** These values were later found to *drift* rather than sit
+> still: the no-AI baseline wandered over the 1440-tick horizon, which makes
+> `meanE_shortfall` mean "what AI removed, plus wherever the baseline had got
+> to by the reporting tick". `calibrate_time_base.js` now rejects a cell for
+> drifting however healthy its level looks, and the shipped values are
+> **`transferRate = 0.15`, `decayRate = 0.020`** (drift +0.0002 over the full
+> horizon). The original finding is kept below because the narrowness it
+> describes is still true and still the reason this is difficult.
+
+`transferRate = 0.13`, `decayRate = 0.024`, `turnoverRate = 1/480`. Gives ~5.4
+years to expert and a baseline `shareExpert ≈ 0.44` — room to move in both
+directions. Exported as `MONTHLY_TICK_PARAMS`, deliberately **not** folded into
+`DEFAULT_PARAMS`, so the BA set is untouched (asserted in `test_world_model.js`:
+`mobilityFriction` cannot fire on a BA graph, and BA runs are bit-identical).
+
+The usable band is narrow. At `transferRate = 0.13`, moving `decayRate` from
+0.022 to 0.026 takes `shareExpert` from 0.87 to 0.00. Equilibrium `meanE` sits at
+~0.57, straddling `EXPERT_THRESHOLD = 0.585`, so `shareExpert` behaves like a step
+function — maximally sensitive, which is useful, but not robust.
+
+### Result 1 — mobilityFriction barely moves the outcome
+
+From `results-worldmodel/worldmodel.1/`, `meanE_shortfall` at t=1440:
+
+| `mobilityFriction` | 0 | 0.05 | 0.1 | 0.2 | 0.4 |
+|---|---|---|---|---|---|
+| shortfall at `aiDampeningBelow=0` | 0.525 | 0.522 | 0.521 | 0.520 | 0.520 |
+
+An eightfold change in friction moves the headline metric by 0.005. The entire
+affinity apparatus — tiers, blocs, asymmetric gradient — is close to a no-op for
+expertise outcomes.
+
+This was predicted and is not a bug: the graph touches only *mobility*, and
+learning runs on `Ebar[j]`, an institution's internal mean. If institutions have
+broadly similar `Ebar`, moving between them changes little. `paper.md` states it
+directly — "a more realistic topology changes the *sorting* of people across
+institutions, not the mechanism by which they gain or lose expertise."
+
+The honest conclusion: **the world model buys realism in *where* people are, not
+in *how much expertise exists*.** Worth having for questions about geographic and
+sectoral distribution; it should not be expected to change the AI-erosion result.
+If it is meant to, the coupling has to change — e.g. cross-institution learning,
+or institution-level AI adoption — which is a modelling change, not a data one.
+
+### Result 2 — the drain risk is real
+
+Baseline arm, t=1440, out of 245 institutions:
+
+| `mobilityFriction` | 0 | 0.05 | 0.1 | 0.2 | 0.4 |
+|---|---|---|---|---|---|
+| min occupancy | 1.3 | 0.7 | 0.8 | 0.8 | 0.7 |
+| under-occupied (<5) | 12.7 | 21.1 | 21.5 | 22.3 | 27.8 |
+
+Between 5% and 11% of institutions fall below meaningful occupancy, and friction
+makes it worse — it traps people in high-index locations by penalising the move
+back down. Those institutions' `Ebar` is noise, so their internal dynamics are
+meaningless even though they still contribute to population aggregates.
+
+Not fatal at these levels, but it must be read alongside any result. The
+diagnostics are in the CSVs (`minOccupancy`, `emptyInstitutions`,
+`underOccupiedInstitutions`) rather than enforced, because the drain is a genuine
+prediction — but a run should be judged on them, not assumed sound.
+
+### Done since
+
+- **`simulator.html` file-input UI** (Phase F). Toggle, two file inputs, intake-sizing checkbox, live `mobility_friction` slider. Shares `world_model.js` with the batch runner via `<script src>` rather than carrying a second loader.
+- **`report.html` for world-model results.** `build_report.js` takes `--manifest`/`--results`/`--out`, defaults to the world-model set, and refuses to build if the manifest's declared sweep axes do not vary in the results — a guard added after that exact mismatch silently collapsed every grid to a single averaged cell.
+- **The pairwise world-model set.** `generate_worldmodel_experiments.js` → 21 files. The open question's prediction about *which* parameters would matter was wrong; see `problems.md` P15.
+- **Stationary recalibration.** `transferRate = 0.15`, `decayRate = 0.020`.
+
+### Not done
+
+- Career length as a swept parameter with `N` following (§6, open question 2). Still blocking — `N`, `turnoverRate` and career length are one identity, and sweeping the rate without moving `N` describes a fixed-size system with different attrition, not a different demography.
+- `aiLevelFraction` is pinned at 0.70 in the 15 files that do not sweep it, which is inside the saturated plateau, so those figures report an upper bound with respect to λ rather than a typical value (`problems.md` P16).
+- `aiRelianceIntensity = +1` is an absorbing state that collapses the population, discontinuously, at the top of the swept range (`problems.md` P19). It affects one full edge of the grid in the 6 experiments that sweep ρ, and it sets the report's global colour scale. The cheapest fix is to stop the range at 0.95.
+- The bloc toggle, γ, and the sector-family cost tiers are model assumptions in `mobility-costs.json` that are never swept — they are fixed inputs, not studied parameters.

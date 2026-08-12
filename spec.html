@@ -358,6 +358,26 @@
         <code class="sym">λ</code>) — the rest have defaults that shouldn't need touching for a
         first experiment.
       </p>
+      <p>
+        <strong>Time base: 1 tick = 1 month, career = 40 years = 480 ticks.</strong> Every rate in
+        the tables below is therefore <em>per month</em>, and the <code>Default</code> column shows
+        the <strong>calibrated monthly set</strong> — <code>engine.js</code>'s
+        <code>DEFAULT_PARAMS</code> with <code>MONTHLY_TICK_PARAMS</code> applied over it, which is
+        what <code>simulator.html</code> and the world-model experiment set both run.
+      </p>
+      <p>
+        Three defaults differ from the raw <code>DEFAULT_PARAMS</code> in <code>engine.js</code>
+        (<code class="sym">β</code>, <code class="sym">δ</code>, <code>turnover_rate</code>, marked
+        <strong>†</strong> below). Those raw values — <code class="sym">β</code> = 0.5,
+        <code class="sym">δ</code> = 0.01, <code>turnover_rate</code> = 0.01 — were tuned when a tick
+        was <em>dimensionless</em>; at <code>turnover_rate</code> = 1/480 that
+        <code class="sym">β</code> saturates the no-AI baseline, leaving AI nothing measurable to
+        erode. They are kept unchanged in <code>engine.js</code> so the older BA experiment set stays
+        reproducible, and are not reachable from <code>simulator.html</code>. The calibration is
+        selected for a <em>stationary</em> no-AI baseline, which is what makes the AI shortfall
+        readable as "what AI removed" rather than "what AI removed plus baseline drift". See
+        README.md's "Time base" section and <code>calibrate_time_base.js</code> for the scan.
+      </p>
 
       <h3>Scale</h3>
       <div class="table-wrap"><table>
@@ -365,7 +385,7 @@
         <tbody>
           <tr><td class="symcol">N</td><td>humans</td><td>population size, held roughly constant by turnover</td><td class="numcol">500</td></tr>
           <tr><td class="symcol">M</td><td>institutions</td><td>number of graph nodes</td><td class="numcol">40</td></tr>
-          <tr><td class="symcol">T</td><td>horizon</td><td>ticks to simulate</td><td class="numcol">500</td></tr>
+          <tr><td class="symcol">T</td><td>horizon</td><td>ticks (months) to simulate — 1440 is 3 careers, the length the world-model configs report at</td><td class="numcol">1440</td></tr>
         </tbody>
       </table></div>
 
@@ -398,8 +418,8 @@
       <div class="table-wrap"><table>
         <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
         <tbody>
-          <tr><td class="symcol">β</td><td>transfer_rate</td><td>speed of upward pull toward a stronger institution's average — needs to comfortably outpace <code>turnover_rate</code>'s dilution or even a no-AI system fails to self-sustain; see §7</td><td class="numcol">0.5</td></tr>
-          <tr><td class="symcol">δ</td><td>decay_rate</td><td>speed of downward drift when a human is above their institution's average — partly offset by <code class="sym">μ<sub>amb</sub></code> below, not the sole force acting on this group anymore</td><td class="numcol">0.01</td></tr>
+          <tr><td class="symcol">β</td><td>transfer_rate</td><td>speed of upward pull toward a stronger institution's average — needs to comfortably outpace <code>turnover_rate</code>'s dilution or even a no-AI system fails to self-sustain; see §7. Usable band is roughly 0.11–0.20: below it the population cannot renew itself, above it everyone pins near the ceiling</td><td class="numcol">0.15 <strong>†</strong></td></tr>
+          <tr><td class="symcol">δ</td><td>decay_rate</td><td>speed of downward drift when a human is above their institution's average — partly offset by <code class="sym">μ<sub>amb</sub></code> below, not the sole force acting on this group anymore. Sets where the equilibrium sits against <code class="sym">β</code>; the two are calibrated as a pair</td><td class="numcol">0.020 <strong>†</strong></td></tr>
           <tr><td class="symcol">μ<sub>amb</sub></td><td>ambient_growth_rate</td><td>gradual improvement for humans already at/above their institution's average — being embedded among strong peers, not gap-closing. Scales with the institution's <em>founding</em> average (fixed at t=0, not its current one — see §11 for why), tapering to 0 as a human nears the 1.0 ceiling</td><td class="numcol">0.001</td></tr>
           <tr><td class="symcol">σ<sub>L</sub></td><td>learning_rate_spread</td><td>spread of each human's fixed <code class="sym">L<sub>i</sub></code> ~ Lognormal(0, σ<sub>L</sub>)</td><td class="numcol">0.4</td></tr>
         </tbody>
@@ -413,7 +433,7 @@
           <tr><td class="symcol">ε</td><td>jump_probability</td><td>hybrid only: chance a move considers the whole graph, not just neighbors</td><td class="numcol">0.10</td></tr>
           <tr><td class="symcol">ρ</td><td>competition_aversion</td><td>weight on relative standing vs. growth potential, <code>[0,1]</code></td><td class="numcol">0.50</td></tr>
           <tr><td class="symcol">η</td><td>prestige_weight</td><td>weight on an institution's structural prestige (its degree)</td><td class="numcol">0.30</td></tr>
-          <tr><td class="symcol">p<sub>move</sub></td><td>base_move_prob</td><td>base per-tick chance a human reconsiders at all, scaled by <code class="sym">L<sub>i</sub></code></td><td class="numcol">0.05</td></tr>
+          <tr><td class="symcol">p<sub>move</sub></td><td>base_move_prob</td><td>base per-tick (per-month) chance a human reconsiders at all, scaled by <code class="sym">L<sub>i</sub></code></td><td class="numcol">0.05</td></tr>
         </tbody>
       </table></div>
 
@@ -421,7 +441,7 @@
       <div class="table-wrap"><table>
         <thead><tr><th class="symcol">Symbol</th><th>Name</th><th>Meaning</th><th class="numcol">Default</th></tr></thead>
         <tbody>
-          <tr><td class="symcol">r</td><td>turnover_rate</td><td>fraction of population replaced per tick, entry = exit</td><td class="numcol">0.01</td></tr>
+          <tr><td class="symcol">r</td><td>turnover_rate</td><td>fraction of population replaced per tick, entry = exit. 1/480 is a 40-year career. <code>N</code>, this, and career length are one identity (headcount = annual intake × career length), so it is not a free parameter on the world-model graph — see problems.md P5</td><td class="numcol">1/480 ≈ 0.00208 <strong>†</strong></td></tr>
         </tbody>
       </table></div>
 
@@ -431,11 +451,12 @@
         <tbody>
           <tr><td class="symcol">—</td><td>ai_enabled</td><td>on/off switch for the whole mechanism</td><td class="numcol">false</td></tr>
           <tr><td class="symcol">—</td><td>ai_response_mode</td><td>who benefits from AI, and how — <code>floor</code> / <code>flat</code> / <code>linear</code> / <code>amplified</code> / <code>exponential</code>; see §8</td><td class="numcol">floor</td></tr>
-          <tr><td class="symcol">λ</td><td>ai_level_fraction</td><td>AI's reference strength as a fraction of the <em>t=0 population's single greatest human expert</em> — fixed for the whole run, not the current/live top performer</td><td class="numcol">0.70</td></tr>
+          <tr><td class="symcol">λ</td><td>ai_level_fraction</td><td>AI's reference strength as a fraction of the <em>t=0 population's single greatest human expert</em> — fixed for the whole run, not the current/live top performer. Defaults to <code>expert_threshold</code> (§11): "as good as a human we would call expert" is a stated quantity rather than an arbitrary pick, and it sits below the saturation plateau that starts around 0.65. The earlier 0.70 default sat <em>inside</em> that plateau, where λ stops mattering and γ<sub>above</sub> governs almost nobody — measured, 0.0037 spread in shortfall at 0.70 vs 0.1158 at 0.60 (problems.md P16)</td><td class="numcol">0.585</td></tr>
           <tr><td class="symcol">κ</td><td>ai_gain</td><td>strength of the capability boost, <code>[0,2]</code> — <code>0</code> = AI has no visible effect in any mode; <code>1</code> = the mode's canonical shape</td><td class="numcol">1.00</td></tr>
           <tr><td class="symcol">γ<sub>below</sub></td><td>ai_dampening_below</td><td>multiplier, <code>[0,2]</code>, on <em>learning</em> for humans below the AI level — how much growth is crowded out. Counterintuitively named: <strong>0 = maximum dampening</strong> (learning zeroed out), <strong>1 = no dampening at all</strong>, <code>&gt;1</code> = amplified. <code>simulator.html</code> and <code>report.html</code> both <em>display</em> this shifted by −1 (so it reads as −1/0/+1 instead of 0/1/2) — the stored/config/CSV value is always the raw 0–2 number; only the on-screen label is shifted</td><td class="numcol">0.30</td></tr>
           <tr><td class="symcol">γ<sub>above</sub></td><td>ai_dampening_above</td><td>multiplier, <code>[0,2]</code>, on <em>learning</em> for humans at/above the AI level. Same direction as γ<sub>below</sub>, including the −1-shifted display</td><td class="numcol">0.80</td></tr>
-          <tr><td class="symcol">μ<sub>atr</sub></td><td>ai_atrophy_multiplier</td><td>multiplier, <code>[1,5]</code>, on <em>decay</em> for humans below the AI level — how much reliance actively erodes expertise already held</td><td class="numcol">1.5</td></tr>
+          <tr><td class="symcol">μ<sub>atr</sub></td><td>ai_atrophy_multiplier</td><td>multiplier, <code>[0.2, 5]</code>, on <em>decay</em> for humans below the AI level — how much reliance actively erodes expertise already held. Below 1 is the optimistic case, AI as a tool that keeps a rusty hand in. <strong>Derived, not set, when <code>ai_reliance_intensity</code> is in use</strong></td><td class="numcol">1.5</td></tr>
+          <tr><td class="symcol">ρ<sub>AI</sub></td><td>ai_reliance_intensity</td><td>one signed dial, <code>[-1, 1]</code>, driving <em>both</em> halves of de-skilling for humans below the AI level: <code>γ<sub>below</sub> = 1 − ρ</code> and <code>μ<sub>atr</sub> = 5<sup>ρ</sup></code>. They gate on the same condition and act on disjoint branches of the update, so as free parameters they permit incoherent states ("learning fully blocked, no atrophy"); one cause driving both removes that. <code>ρ = 0</code> is exactly AI-inert; negative ρ is the optimistic regime, AI that both teaches and preserves — kept signed on purpose, so the model can <em>test</em> the AI-helps case rather than assume it away. The forms differ because the quantities do: dampening is a fraction of learning retained, so linear; atrophy is a multiplier, so symmetric in log space. <code>null</code> = decoupled, γ<sub>below</sub> and μ<sub>atr</sub> set directly</td><td class="numcol">null (decoupled)</td></tr>
         </tbody>
       </table></div>
       <p style="font-size:0.9rem; color:var(--ink-muted);">
@@ -554,6 +575,7 @@ U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
           <tr><td class="symcol">μ<sub>ent</sub></td><td>entrant_expertise_mean</td><td>location of the entrant skew-normal — deliberately low</td><td class="numcol">0.05</td></tr>
           <tr><td class="symcol">ω<sub>ent</sub></td><td>entrant_expertise_spread</td><td>scale, pre-clip</td><td class="numcol">0.05</td></tr>
           <tr><td class="symcol">α<sub>ent</sub></td><td>entrant_expertise_skew</td><td>shape — unskewed by default; entrants aren't expected to already have a tail of high performers</td><td class="numcol">0</td></tr>
+          <tr><td class="symcol">E<sub>min</sub></td><td>entrant_expertise_floor</td><td>lower bound on an entrant's draw, applied after the <code>[0,1]</code> clip. The clip alone piled entrants up at exactly <code>E = 0</code> — ~16% of them at the defaults above, and fully half at a nominal mean of 0 — which made the bottom of the <code class="sym">μ<sub>ent</sub></code> axis non-linear in its own parameter and fed an absorbing state at full reliance, where the shortfall jumped ~70× across the final step of the ρ sweep (problems.md P19). <code>0</code> restores the pre-2026-08 behaviour. Note the interaction: when <code class="sym">μ<sub>ent</sub></code> sits within a spread of this floor, a large share of entrants land exactly <em>on</em> it and the realised mean runs above the nominal one</td><td class="numcol">0.05</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -680,11 +702,11 @@ U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
 
       <div class="chart-block">
         <div class="chart-head">
-          <h4 style="margin:0 0 0.15rem; font-size:0.95rem;">C(E) at ai_level = 0.70, κ = 1</h4>
+          <h4 style="margin:0 0 0.15rem; font-size:0.95rem;">C(E) at ai_level = 0.585, κ = 1</h4>
           <p style="margin:0; font-size:0.83rem; color:var(--ink-muted);">the canonical shape of each mode — hover to read values</p>
         </div>
         <div class="viz-root" id="modeChartRoot">
-          <canvas id="modeCanvas" role="img" aria-label="Line chart comparing five AI capability boost modes as a function of human expertise, at ai_level 0.7 and gain 1"></canvas>
+          <canvas id="modeCanvas" role="img" aria-label="Line chart comparing five AI capability boost modes as a function of human expertise, at ai_level 0.585 and gain 1"></canvas>
         </div>
         <ul class="chart-legend" id="chartLegend"></ul>
       </div>
@@ -718,15 +740,39 @@ U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
 
     <section class="doc-section" id="metrics">
       <h2>Metrics &amp; logging</h2>
-      <p>Recorded every tick, at both levels, to drive the visualizer without re-deriving anything from raw state:</p>
+      <p>
+        One record per tick, at the <em>population</em> level only. <code>tick()</code> returns it and
+        appends it to <code>state.history</code>; <code>batch_run.js</code> writes those fields — bar the
+        turnover count — as CSV columns at each <code>recordAt</code> tick, alongside every parameter the
+        run used.
+      </p>
       <ul>
-        <li><strong>Per institution:</strong> <code class="sym">n<sub>j</sub></code>, <code class="sym">Ē<sub>j</sub></code>, mean <code class="sym">C<sub>j</sub></code>, prestige</li>
-        <li><strong>Population:</strong> mean / median / 10th &amp; 90th percentile of <code class="sym">E</code> and of <code class="sym">C</code></li>
-        <li><strong>Share expert:</strong> fraction of the population with <code class="sym">E ≥ 0.585</code> (<code>expert_threshold</code>, §11) — the headline series; compare against a same-seed AI-off run to see how much AI reliance has obliterated</li>
-        <li><strong>Center–periphery divergence:</strong> variance (or Gini) of <code class="sym">Ē<sub>j</sub></code> across institutions, weighted by degree vs. unweighted</li>
+        <li><strong>Mean <code class="sym">E</code> and mean <code class="sym">C</code></strong> — the headline pair. <em>Only</em> the means: no median and no percentiles are computed anywhere, for either quantity.</li>
+        <li><strong>Share expert:</strong> fraction of the population with <code class="sym">E ≥ 0.585</code> (<code>expert_threshold</code>, §11) — compare against a same-seed AI-off run to see how much AI reliance has obliterated</li>
+        <li><strong>Center–periphery divergence:</strong> the <em>unweighted</em> variance of <code class="sym">Ē<sub>j</sub></code> across occupied institutions (empty ones are skipped, so the denominator is the occupied count, not <code>M</code>). No Gini and no degree-weighted variant exist</li>
         <li><strong>Illusion gap</strong> (secondary): mean(<code class="sym">C</code>) − mean(<code class="sym">E</code>) — near zero with AI off, opens up with AI on; measures the appearance of capability, not its erosion</li>
-        <li><strong>Share of humans below <code class="sym">ai_level</code></strong>, when AI is enabled</li>
+        <li><strong>Top <code class="sym">E</code></strong>, the live strongest human, and <strong><code>ai_level</code></strong>, the fixed benchmark derived from the <em>t=0</em> strongest (§8)</li>
+        <li><strong>Share of humans below <code class="sym">ai_level</code></strong>, when AI is enabled (<code>null</code> otherwise)</li>
+        <li><strong>Occupancy diagnostics:</strong> <code>minOccupancy</code>, <code>emptyInstitutions</code>, <code>underOccupiedInstitutions</code> — asymmetric mobility drains weak institutions by design, and an institution below ~5 members has an <code class="sym">Ē<sub>j</sub></code> that is mostly noise. Read them on every world-model run</li>
+        <li><strong>Turnover count</strong> for the tick — in the returned record, but not among the CSV columns</li>
       </ul>
+      <p>
+        <strong>No per-institution series is logged.</strong> <code class="sym">n<sub>j</sub></code> and
+        <code class="sym">Ē<sub>j</sub></code> are recomputed from raw state every tick by
+        <code>institutionStats()</code> because the dynamics need them, and are then discarded; mean
+        <code class="sym">C<sub>j</sub></code> is never computed at all. Prestige is not a time series —
+        it is fixed once when the graph is built (degree ÷ max degree on Barabási–Albert; by default
+        derived from intake on the world-model graph).
+      </p>
+      <p>
+        <code>simulator.html</code> keeps two extras that the batch engine does not, purely to drive its
+        own panels: a per-institution history of <code class="sym">Ē<sub>j</sub></code>, and a rolling
+        buffer of full state snapshots (<code class="sym">E</code>, <code class="sym">C</code>, and
+        placement arrays, capped at 4,000 ticks) so the scrub bar can rewind. The distribution
+        histogram and the inspector's per-institution figures are re-derived from those raw snapshots at
+        render time rather than read from any logged metric; only the inspector's
+        <code class="sym">Ē<sub>j</sub></code> sparkline reads a stored series.
+      </p>
     </section>
 
     <section class="doc-section" id="viz">
@@ -737,18 +783,18 @@ U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
         <li><strong>Network panel</strong> — force-directed layout of the institution graph. Node size = <code class="sym">n<sub>j</sub></code>, node color = <code class="sym">Ē<sub>j</sub></code> on a low→high scale. Redraws each tick; hub institutions should visibly hold their position.</li>
         <li><strong>Distribution panel</strong> — animated histogram of <code class="sym">E</code> across the population, with a thin overlay line for <code class="sym">C</code> when AI is on, so the gap between "real" and "observed" is visible directly, not just as a summary number.</li>
         <li><strong>Timeline panel</strong> — share-expert and center–periphery divergence plotted over <code class="sym">t</code> (the illusion gap is available too, but secondary), with a marker at the tick AI was toggled.</li>
-        <li><strong>Institution inspector</strong> — click a node to see that institution's member expertise histogram and its history of <code class="sym">Ē<sub>j</sub></code>.</li>
+        <li><strong>Institution inspector</strong> — click a node for that institution's population, average latent expertise, degree and prestige, plus a sparkline of its <code class="sym">Ē<sub>j</sub></code> history. Note it shows the institution's <em>average</em>, not a histogram of its members.</li>
       </ul>
       <h3>Controls</h3>
       <ul>
-        <li>Play / pause / step / scrub across <code class="sym">t</code></li>
-        <li>Parameter panel for every knob in §3, with the seven headline parameters surfaced first</li>
-        <li>AI on/off toggle that re-runs from <code class="sym">t=0</code> with an identical random seed, so paired runs are comparable</li>
+        <li>Play / pause / step one month / scrub back across <code class="sym">t</code></li>
+        <li>Parameter panel for every knob in §3, grouped by concern (scale &amp; graph, world-model graph, initial &amp; entrant expertise, learning, mobility, turnover, AI) rather than ranked by importance. Sliders apply on the next tick; scale and graph fields need an explicit <strong>Rebuild</strong></li>
+        <li>AI on/off toggle that applies <em>live, mid-run</em> — it does not restart. Each toggle is marked on the timeline charts, so one run shows the before and after directly. For a matched pair from <code class="sym">t=0</code>, run the same seed twice, or use <code>batch_run.js</code>'s <code>pairWithBaseline</code>, which runs a same-seed <code>aiEnabled: false</code> twin of every combination</li>
       </ul>
       <p class="abstract" style="margin-top:1rem;">
-        This section specifies behavior, not implementation. A self-contained single-page build
-        (canvas or SVG force layout, no external network calls) is the natural fit once this spec
-        is approved — not part of this deliverable.
+        This section described intended behavior when the spec was written; it has since been updated to
+        describe <code>simulator.html</code> as built — a self-contained single page, canvas force
+        layout, no external network calls.
       </p>
     </section>
 
@@ -803,7 +849,7 @@ U(i,j) = (1-ρ) * growth(i,j) + ρ * status(i,j) + η * prestige(j)</pre>
     { key: "amplified",   label: "amplified",   lightHex: "#eda100", darkHex: "#c98500", boost: function (e, a) { return a * e * e; } },
     { key: "exponential", label: "exponential", lightHex: "#e87ba4", darkHex: "#d55181", boost: function (e, a) { return e * (Math.exp(a * e) - 1); } }
   ];
-  var AI_LEVEL = 0.70, KAPPA = 1.0, N = 41;
+  var AI_LEVEL = 0.585, KAPPA = 1.0, N = 41;   // = ai_level_fraction's default, = expert_threshold
 
   var THEME = {
     light: { surface: "#ffffff", ink: "#0b0b0b", inkSecondary: "#52514e", muted: "#898781", grid: "#e1e0d9", baseline: "#c3c2b7" },

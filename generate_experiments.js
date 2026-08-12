@@ -1,4 +1,4 @@
-// Generates experiments/experiment.1.json ... experiments/experiment.N.json — one
+// Generates experiments-ABGraph/experiment.1.json ... experiment.N.json — one
 // file per UNORDERED pair of the eleven parameters under study (11 choose 2 = 55
 // pairs; A x B and B x A would be the same grid transposed, not new information, so
 // they're not both generated). Each is a 2D heatmap: paramA x paramB ->
@@ -209,7 +209,9 @@ for (let i = 0; i < NEW_KEYS.length; i++) {
   for (let j = i + 1; j < NEW_KEYS.length; j++) pairs.push([NEW_KEYS[i], NEW_KEYS[j]]);
 }
 
-fs.mkdirSync(path.join(__dirname, "experiments"), { recursive: true });
+// experiments/ now holds the WORLD-MODEL set (generate_worldmodel_experiments.js).
+// The BA set lives here so regenerating either one can never clobber the other.
+fs.mkdirSync(path.join(__dirname, "experiments-ABGraph"), { recursive: true });
 
 const manifest = [];
 pairs.forEach(([a, b], idx) => {
@@ -231,7 +233,7 @@ pairs.forEach(([a, b], idx) => {
     },
   };
 
-  const file = `experiments/experiment.${n}.json`;
+  const file = `experiments-ABGraph/experiment.${n}.json`;
   fs.writeFileSync(path.join(__dirname, file), JSON.stringify(config, null, 2) + "\n");
   manifest.push({ n, file, x: a, y: b, runs: STUDY_PARAMS[a].values.length * STUDY_PARAMS[b].values.length * REPLICATES * 2 });
 });
@@ -254,7 +256,7 @@ const MS_PER_RUN_LOW = 40, MS_PER_RUN_HIGH = 161;
 const estLow = Math.round((totalRuns * MS_PER_RUN_LOW) / 1000);
 const estHigh = Math.round((totalRuns * MS_PER_RUN_HIGH) / 1000);
 
-console.log(`wrote ${pairs.length} experiment files (experiments/experiment.1.json .. experiments/experiment.${pairs.length}.json) + experiments.manifest.json`);
+console.log(`wrote ${pairs.length} BA experiment files (experiments-ABGraph/experiment.1.json .. experiment.${pairs.length}.json) + experiments.manifest.json`);
 manifest.forEach((m) => console.log(`  ${m.file}: x=${m.x} y=${m.y} (${m.runs} runs)`));
 console.log(`total runs across all experiments: ${totalRuns}`);
 console.log(`rough range at ~8 workers, based on 2 measurements that disagreed 4x: ~${(estLow / 60).toFixed(0)}-${(estHigh / 60).toFixed(0)} min for the full ./run_experiments.sh`);

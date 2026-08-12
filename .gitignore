@@ -131,6 +131,12 @@ coverage/
 results/
 report.html
 
+# Archived/renamed result sets (e.g. results_AB_graph_interesting280726/) — same
+# bulk output, kept under a descriptive name. Without this a `git add .` would
+# stage several GB.
+results_*/
+results-*/
+
 # ---------------------------------------------------------------------------
 # Scratch and temporary files
 # ---------------------------------------------------------------------------

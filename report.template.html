@@ -455,6 +455,7 @@
       grid-template-columns: 1fr;
     }
   }
+  .traj-head-note { color: var(--ink-faint); font-style: italic; }
   .traj-panel-head {
     font-size: 0.82rem;
     color: var(--ink-muted);
@@ -616,6 +617,7 @@
     aiAtrophyMultiplier: "AI atrophy multiplier", aiLevelFraction: "AI level fraction",
     expertiseMean: "expertise mean (start)", entrantExpertiseMean: "entrant expertise mean",
     aiGain: "AI gain",
+    mobilityFriction: "mobility friction",
   };
   const SYMBOL = {
     turnoverRate: "r", learningRateSpread: "σ_L", transferRate: "β", decayRate: "δ",
@@ -623,6 +625,7 @@
     aiAtrophyMultiplier: "μ_atr", aiLevelFraction: "λ",
     expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
     aiGain: "κ",
+    mobilityFriction: "φ",
   };
   // These two are stored (in every config/CSV) as a raw multiplier on the learning
   // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
@@ -639,6 +642,12 @@
     aiDampeningBelow: "(−1=max dampening, 0=neutral, +1=max amplified)",
     aiDampeningAbove: "(−1=max dampening, 0=neutral, +1=max amplified)",
   };
+
+  // NOTE for archived data: results produced before 2026-08 carry an
+  // aiRelianceIntensity column. It was a single dial deriving aiDampeningBelow =
+  // 1 - rho and aiAtrophyMultiplier = 5^rho; both are recorded as their own columns
+  // in those same files, so a historical CSV reads correctly without it. This
+  // template no longer renders rho — see engine.js for why it was removed.
   const DAMPENING_KEYS = new Set(["aiDampeningBelow", "aiDampeningAbove"]);
   function pretty(key) { return PRETTY[key] || key.replace(/([A-Z])/g, " $1").toLowerCase(); }
   function sym(key) { return SYMBOL[key] || ""; }
@@ -650,14 +659,68 @@
     if (a < 1) return v.toFixed(a < 0.01 ? 4 : 3).replace(/0+$/, "").replace(/\.$/, "");
     return v.toFixed(2);
   }
-  // fmtAxis: use wherever a raw parameter value (not a metric) is displayed to a human.
-  // Shifts aiDampeningBelow/Above by -1 for display and adds an explicit "+" so the
-  // sign is never ambiguous; every other parameter is unaffected (passes straight to fmtNum).
+  // Decimal places are chosen PER PARAMETER — once, from every value that
+  // parameter ever takes anywhere in the report — and then used for every label
+  // on every chart.
+  //
+  // fmtNum picks precision from each value's own magnitude (4dp below 0.01, 3dp
+  // above) and then strips trailing zeros. That is right for metrics, whose
+  // magnitudes vary, but wrong for an axis: it rendered decayRate as
+  // "0.005 0.0067 0.0085 0.01 0.012" — three precisions on one ruler — and made
+  // the same parameter read differently from one chart to the next.
+  //
+  // The rule: the fewest decimals whose ROUNDING ERROR stays under a tenth of the
+  // axis's own step. Distinctness alone is not enough — decayRate's 21 evenly
+  // spaced values survive it at 3dp but print as "0.005 0.007 0.009 0.010 0.012",
+  // making a uniform grid look unevenly spaced. Tying precision to the step
+  // instead keeps the printed gaps faithful to the real ones.
+  //
+  // A parameter that only ever appears held-fixed has no step, so it falls back
+  // to "within 0.5% of its own value", which also stops a small value like
+  // turnoverRate = 0.00208 collapsing to "0".
+  const AXIS_DECIMALS = (function () {
+    const vals = new Map();
+    const add = (k, v) => {
+      if (typeof v !== "number" || !isFinite(v)) return;
+      if (!vals.has(k)) vals.set(k, new Set());
+      vals.get(k).add(DAMPENING_KEYS.has(k) ? v - 1 : v);
+    };
+    DATA.experiments.forEach((e) => {
+      e.xValues.forEach((v) => add(e.xKey, v));
+      e.yValues.forEach((v) => add(e.yKey, v));
+      Object.keys(e.fixed || {}).forEach((k) => add(k, e.fixed[k]));
+    });
+    const out = {};
+    vals.forEach((set, k) => {
+      const arr = [...set].sort((a, b) => a - b);
+      let tol;
+      if (arr.length > 1) {
+        let minGap = Infinity;
+        for (let i = 1; i < arr.length; i++) minGap = Math.min(minGap, arr[i] - arr[i - 1]);
+        tol = minGap / 10;
+      } else {
+        tol = Math.abs(arr[0]) * 0.005;
+      }
+      if (!(tol > 0)) tol = 1e-9;
+      let d = 0;
+      for (; d < 8; d++) {
+        if (arr.every((v) => Math.abs(v - parseFloat(v.toFixed(d))) < tol)) break;
+      }
+      out[k] = d;
+    });
+    return out;
+  })();
+
+  // fmtAxis: use wherever a raw parameter value (not a metric) is displayed to a
+  // human. Shifts aiDampeningBelow/Above by -1 for display and adds an explicit
+  // "+" so the sign is never ambiguous.
   function fmtAxis(key, v) {
-    if (!DAMPENING_KEYS.has(key) || v == null) return fmtNum(v);
-    const d = v - 1;
-    const s = fmtNum(d);
-    return d > 1e-9 ? "+" + s : s;
+    if (v == null) return "—";
+    if (typeof v !== "number") return String(v);
+    const shifted = DAMPENING_KEYS.has(key) ? v - 1 : v;
+    const d = AXIS_DECIMALS[key];
+    const s = d == null ? fmtNum(shifted) : shifted.toFixed(d);
+    return DAMPENING_KEYS.has(key) && shifted > 1e-9 ? "+" + s : s;
   }
   // Some held-fixed values are categorical (mobilityMode, aiResponseMode), not numeric
   // — fmtAxis/fmtNum assume a number, so route non-numbers straight through as text.
@@ -675,6 +738,7 @@
     aiDampeningAbove: "how much AI use reduces learning, for humans at or above the AI's reference level.",
     aiAtrophyMultiplier: "how much faster expertise is lost, for humans below the AI's reference level, when AI use is active.",
     aiLevelFraction: "the AI's reference level, expressed as a fraction of the starting population's median expertise.",
+    mobilityFriction: "how strongly the cost of a move (distance, sector, market gradient) discourages humans from taking it.",
     expertiseMean: "the average starting expertise of the population at the beginning of the simulation.",
     entrantExpertiseMean: "the average starting expertise of new entrants who replace departing humans during the simulation.",
     aiGain: "the strength of the boost applied to observed, not real, capability when AI is enabled.",
@@ -736,9 +800,13 @@
     const el = document.getElementById("fixedPanel");
     const studyKeys = [...new Set(DATA.experiments.flatMap((e) => [e.xKey, e.yKey]))];
     const held = studyKeys.filter((k) => k !== exp.xKey && k !== exp.yKey);
-    el.innerHTML = held.map((k) =>
-      '<div class="fixed-kv"' + (DIRECTION_HINT[k] ? ' title="' + DIRECTION_HINT[k] + '"' : "") + '><span><span class="sym">' + sym(k) + "</span>" + pretty(k) + (DIRECTION_HINT[k] ? ' <span style="text-decoration:underline dotted;">ⓘ</span>' : "") + "</span><b>" + fmtAxis(k, exp.fixed[k]) + "</b></div>"
-    ).join("") +
+    el.innerHTML = held.map((k) => {
+      const hint = DIRECTION_HINT[k] || "";
+      return '<div class="fixed-kv"' + (hint ? ' title="' + hint.replace(/"/g, "&quot;") + '"' : "") +
+        '><span><span class="sym">' + sym(k) + "</span>" + pretty(k) +
+        (hint ? ' <span style="text-decoration:underline dotted;">ⓘ</span>' : "") +
+        "</span><b>" + fmtAxis(k, exp.fixed[k]) + "</b></div>";
+    }).join("") +
       '<div class="fixed-kv"><span>N / M</span><b>' + exp.fixed.N + " / " + exp.fixed.M + "</b></div>" +
       '<div class="fixed-kv"><span>replicates</span><b>' + DATA.replicates + "</b></div>";
   }
@@ -849,9 +917,36 @@
   // xi/yi are DISPLAY grid indices (0..nx-1 / 0..ny-1 along whatever's currently
   // shown horizontal/vertical) — resolved to the real x/y via axisValues/cellField so
   // this works the same whether or not axes are flipped.
-  function cellAt(exp, xi, yi, t) {
-    const dx = axisValues(exp, "x")[xi], dy = axisValues(exp, "y")[yi];
-    return exp.cells.find((c) => Math.abs(cellField(c, "x") - dx) < 1e-9 && Math.abs(cellField(c, "y") - dy) < 1e-9 && Math.abs(c.t - t) < 1e-9) || null;
+  //
+  // The payload is COLUMNAR: exp.m[metric] is one flat array indexed
+  // (realXi * nYValues + realYi) * nTicks + tickIndex. Cells are no longer
+  // stored as objects — 2.9M of them at 21x21x120x55 overflowed the max string
+  // length in build_report.js — so these helpers do the indexing that
+  // exp.cells.find() used to do by linear scan (also ~50,000x fewer comparisons
+  // per lookup).
+  function realIndices(dxi, dyi) { return realAxisOf("x") === "x" ? [dxi, dyi] : [dyi, dxi]; }
+  function flatIndex(exp, rxi, ryi, ti) { return (rxi * exp.yValues.length + ryi) * exp.ticks.length + ti; }
+
+  // Single metric value at a DISPLAY grid position and tick index.
+  function metricAt(exp, dxi, dyi, ti, key) {
+    const [rxi, ryi] = realIndices(dxi, dyi);
+    const a = exp.m[key];
+    return a ? a[flatIndex(exp, rxi, ryi, ti)] : null;
+  }
+
+  // Materialises ONE cell on demand, in the shape the tooltip expects (real x/y
+  // coordinates, so cellField can re-apply the flip).
+  function cellAt(exp, dxi, dyi, t) {
+    const ti = exp.ticks.indexOf(t);
+    if (ti < 0) return null;
+    const [rxi, ryi] = realIndices(dxi, dyi);
+    const p = flatIndex(exp, rxi, ryi, ti);
+    const cell = {
+      x: exp.xValues[rxi], y: exp.yValues[ryi], t,
+      n: exp.reps != null ? exp.reps : (exp.repsPerCell ? exp.repsPerCell[p] : null),
+    };
+    DATA.metrics.forEach((m) => { cell[m.key] = exp.m[m.key] ? exp.m[m.key][p] : null; });
+    return cell;
   }
 
   function drawHeatmap() {
@@ -885,9 +980,8 @@
 
     for (let xi = 0; xi < nx; xi++) {
       for (let yi = 0; yi < ny; yi++) {
-        const cell = cellAt(exp, xi, yi, t);
         const cx = pad.l + xi * cw, cy = pad.t + (ny - 1 - yi) * ch; // y grows upward
-        const v = cell ? cell[app.metricKey] : null;
+        const v = metricAt(exp, xi, yi, app.tickIndex, app.metricKey);
         ctx.fillStyle = divergingColor(v, domain);
         const gap = Math.min(2, cw * 0.08, ch * 0.08);
         roundRect(ctx, cx + gap / 2, cy + gap / 2, cw - gap, ch - gap, Math.min(3, cw / 4));
@@ -998,14 +1092,14 @@
     let html = '<table class="data-table"><thead><tr><th>' + pretty(dispYKey) + " \\ " + pretty(dispXKey) + "</th>";
     dispXValues.forEach((x) => { html += "<th>" + fmtAxis(dispXKey, x) + "</th>"; });
     html += "</tr></thead><tbody>";
-    [...dispYValues].reverse().forEach((y) => {
-      html += "<tr><th>" + fmtAxis(dispYKey, y) + "</th>";
-      dispXValues.forEach((x) => {
-        const cell = exp.cells.find((c) => Math.abs(cellField(c, "x") - x) < 1e-9 && Math.abs(cellField(c, "y") - y) < 1e-9 && Math.abs(c.t - t) < 1e-9);
-        html += "<td>" + (cell ? fmtNum(cell[app.metricKey]) : "—") + "</td>";
-      });
+    for (let yi = dispYValues.length - 1; yi >= 0; yi--) {
+      html += "<tr><th>" + fmtAxis(dispYKey, dispYValues[yi]) + "</th>";
+      for (let xi = 0; xi < dispXValues.length; xi++) {
+        const v = metricAt(exp, xi, yi, app.tickIndex, app.metricKey);
+        html += "<td>" + (v == null ? "—" : fmtNum(v)) + "</td>";
+      }
       html += "</tr>";
-    });
+    }
     html += "</tbody></table>";
     wrap.innerHTML = html;
   }
@@ -1063,26 +1157,41 @@
     const vValues = axisValues(exp, vAxis);
     const byVarying = new Map();
     vValues.forEach((v) => byVarying.set(v, []));
-    exp.cells.forEach((c) => {
-      const fv = cellField(c, fixAxis);
-      if (Math.abs(fv - fixedValue) > 1e-9) return;
-      const vv = cellField(c, vAxis);
-      const arr = byVarying.get(vv);
-      if (arr) arr.push({ t: c.t, v: c[metricKey] });
-    });
-    byVarying.forEach((arr) => arr.sort((a, b) => a.t - b.t));
+    const fValues = axisValues(exp, fixAxis);
+    const fi = fValues.findIndex((v) => Math.abs(v - fixedValue) < 1e-9);
+    const arrM = exp.m[metricKey];
+    if (fi >= 0 && arrM) {
+      for (let vi = 0; vi < vValues.length; vi++) {
+        const dxi = fixAxis === "x" ? fi : vi, dyi = fixAxis === "x" ? vi : fi;
+        const [rxi, ryi] = realIndices(dxi, dyi);
+        const base = flatIndex(exp, rxi, ryi, 0);
+        const arr = byVarying.get(vValues[vi]);
+        // exp.ticks is already ascending, so no sort is needed any more.
+        for (let ti = 0; ti < exp.ticks.length; ti++) arr.push({ t: exp.ticks[ti], v: arrM[base + ti] });
+      }
+    }
     return { varyingKey: axisKey(exp, vAxis), varyingValues: vValues, series: byVarying };
   }
 
   function trajDomain(exp, fixAxis, valueA, valueB, metricKey) {
     let min = Infinity, max = -Infinity;
-    exp.cells.forEach((c) => {
-      const fv = cellField(c, fixAxis);
-      if (Math.abs(fv - valueA) > 1e-9 && Math.abs(fv - valueB) > 1e-9) return;
-      const v = c[metricKey];
-      if (v == null) return;
-      if (v < min) min = v;
-      if (v > max) max = v;
+    const arrM = exp.m[metricKey];
+    const vValues = axisValues(exp, otherAxis(fixAxis));
+    const fValues = axisValues(exp, fixAxis);
+    [valueA, valueB].forEach((fv) => {
+      const fi = fValues.findIndex((v) => Math.abs(v - fv) < 1e-9);
+      if (fi < 0 || !arrM) return;
+      for (let vi = 0; vi < vValues.length; vi++) {
+        const dxi = fixAxis === "x" ? fi : vi, dyi = fixAxis === "x" ? vi : fi;
+        const [rxi, ryi] = realIndices(dxi, dyi);
+        const base = flatIndex(exp, rxi, ryi, 0);
+        for (let ti = 0; ti < exp.ticks.length; ti++) {
+          const v = arrM[base + ti];
+          if (v == null) continue;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+      }
     });
     if (!isFinite(min)) { min = 0; max = 1; }
     if (max - min < 1e-9) max = min + 1e-9;

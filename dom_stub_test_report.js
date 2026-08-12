@@ -1,6 +1,7 @@
 // Minimal DOM stub to execute report.html's script end-to-end under Node —
 // same rationale as dom_stub_test.js: no browser is available in this sandbox.
 const fs = require("fs");
+const path = require("path");
 const vm = require("vm");
 
 const registry = new Map();
@@ -72,16 +73,23 @@ if (!scriptMatch) throw new Error("no <script> found");
 
 const driver = `
 console.log("OK: initial render — experiments loaded:", DATA.experiments.length);
-if (DATA.experiments.length !== 55) throw new Error("expected 55 experiments, got " + DATA.experiments.length);
+// Count comes from whatever was built, not a hardcoded number — the study set has
+// been 55 (11 params) and is now 21 (7 params), and this test should not need
+// editing every time that changes.
+const NEXP = DATA.experiments.length;
+if (NEXP < 1) throw new Error("expected at least one experiment");
 
 console.log("current experiment:", currentExperiment().xKey, "x", currentExperiment().yKey);
 console.log("domains:", JSON.stringify(DATA.domains[app.metricKey]));
 
-console.log("--- switching to experiment index 5 (via click) ---");
+// Clamp: a partial build (one experiment, e.g. a single-result smoke fixture)
+// should still exercise the click path rather than crash the whole test.
+const SWITCH_TO = Math.min(5, NEXP - 1);
+console.log("--- switching to experiment index " + SWITCH_TO + " (via click) ---");
 const expList = document.getElementById("expList");
-if (expList.children.length !== 55) throw new Error("expected 55 rendered experiment list items, got " + expList.children.length);
-expList.children[5].dispatch("click");
-if (app.expIndex !== 5) throw new Error("experiment click did not switch app.expIndex");
+if (expList.children.length !== NEXP) throw new Error("expected " + NEXP + " rendered experiment list items, got " + expList.children.length);
+expList.children[SWITCH_TO].dispatch("click");
+if (app.expIndex !== SWITCH_TO) throw new Error("experiment click did not switch app.expIndex");
 console.log("OK: switched to", currentExperiment().xKey, "x", currentExperiment().yKey);
 
 console.log("--- checking per-figure captions (axis explanations + held-fixed values) ---");
@@ -195,13 +203,17 @@ for (let i = 0; i < DATA.experiments.length; i++) {
 console.log("OK: all " + DATA.experiments.length + " experiments rendered at first and last tick without throwing");
 
 // The "every experiment renders" loop above leaves app.expIndex at whatever the last
-// experiment happens to be — with 55 experiments that's no longer guaranteed to touch
-// a dampening key, so explicitly land on the aiDampeningBelow x aiDampeningAbove pair
-// (still experiment.15 / index 14 — appending the five new params after the original
-// six preserved this numbering) before the trajectories section, which specifically
-// needs a dampening axis for its display-shift regression check below.
-app.expIndex = DATA.experiments.findIndex((e) => e.xKey === "aiDampeningBelow" && e.yKey === "aiDampeningAbove");
-if (app.expIndex < 0) throw new Error("could not find the aiDampeningBelow x aiDampeningAbove experiment");
+// experiment happens to be — with many experiments that's no longer guaranteed to touch
+// a dampening key, so explicitly land on an experiment that HAS one before the
+// trajectories section, which needs a dampening axis for its display-shift
+// regression check below. Found by predicate rather than by index: the study set
+// has been through several parameterisations (11 params -> 7, aiDampeningBelow
+// folded into aiRelianceIntensity) and hardcoded indices went stale each time.
+app.expIndex = DATA.experiments.findIndex((e) => DAMPENING_KEYS.has(e.xKey) || DAMPENING_KEYS.has(e.yKey));
+if (app.expIndex < 0) {
+  console.log("NOTE: no dampening-axis experiment in this build — display-shift check skipped");
+  app.expIndex = 0;
+}
 onExperimentChange();
 
 console.log("--- switching to trajectories view ---");
@@ -238,9 +250,9 @@ if (!trajTipA || trajTipA.hidden) throw new Error("hovering a trajectory line di
 const varyKeyForTest = axisKey(currentExperiment(), otherAxis(app.trajFixAxis));
 const expectedDisplay = fmtAxis(varyKeyForTest, trajHover.A);
 if (!trajTipA.innerHTML.includes(expectedDisplay)) throw new Error("trajectory tooltip does not show the hovered line's varying-axis value, display-shifted (" + expectedDisplay + " for raw " + trajHover.A + "): " + trajTipA.innerHTML);
-// this experiment (index 14, n=15) has both axes as dampening keys, so this is also a
-// direct regression check that the -1 shift is actually applied, not just present in some form
-if (varyKeyForTest === "aiDampeningBelow" || varyKeyForTest === "aiDampeningAbove") {
+// When the varying axis is a dampening key this is also a direct regression check
+// that the -1 display shift is actually applied, not merely present in some form.
+if (DAMPENING_KEYS.has(varyKeyForTest)) {
   if (expectedDisplay === fmtNum(trajHover.A)) throw new Error("dampening value was not display-shifted at all: " + expectedDisplay);
   console.log("OK: confirmed display-shifted (raw " + trajHover.A + " -> shown as " + expectedDisplay + ")");
 }
@@ -249,7 +261,9 @@ trajA.dispatch("mouseleave", {});
 if (!trajTipA.hidden) throw new Error("mouseleave did not hide the trajectory tooltip");
 
 console.log("--- switching experiments while in trajectories view (regression check: stale trajValueA/B) ---");
-app.expIndex = 3; // experiment.4: turnoverRate x aiDampeningBelow — very different axis ranges than exp 15
+// Any OTHER experiment will do; the point is that its axis ranges differ from the
+// one we were just on, so a stale trajValueA/B would be caught.
+app.expIndex = (app.expIndex + 1) % NEXP;
 onExperimentChange();
 const exp4 = currentExperiment();
 const aOk = exp4.xValues.some((v) => Math.abs(v - app.trajValueA) < 1e-9) || exp4.yValues.some((v) => Math.abs(v - app.trajValueA) < 1e-9);
@@ -267,6 +281,33 @@ document.getElementById("tabHeatmap").dispatch("click");
 if (app.viewMode !== "heatmap") throw new Error("tab click did not switch back to heatmap");
 if (document.getElementById("tickField").style.display !== "flex") throw new Error("tick field should be visible again in heatmap view");
 
+// --- the removed rho parameter is not rendered -----------------------------
+// aiRelianceIntensity was removed from the model in 2026-08. Reports built from
+// NEW runs can never contain it; the checked-in report.html is archived data from
+// before then and is still expected to hold the column. Either way the template
+// must not carry rho-specific rendering, since the mapping it used to spell out
+// (1 - rho, 5^rho) is no longer the model's.
+console.log("--- archived rho data still renders ---");
+{
+  // The checked-in report.html is a build from BEFORE aiRelianceIntensity was
+  // removed, so it still carries that column. It must keep rendering: the file is
+  // the archive of that study. Whether the TEMPLATE still contains rho-specific
+  // code is asserted separately, against the template file itself — see the
+  // bottom of this script, since this driver runs against whichever build it was
+  // handed, not against the source.
+  const rhoIdx = DATA.experiments.findIndex((e) => e.xKey === "aiRelianceIntensity" || e.yKey === "aiRelianceIntensity");
+  if (rhoIdx >= 0) {
+    app.expIndex = rhoIdx;
+    onExperimentChange();
+    buildFigureCaptions();
+    drawHeatmap();
+    document.getElementById("heatmapCanvas").dispatch("mousemove", { clientX: 200, clientY: 150 });
+    console.log("OK: archived rho experiment renders (experiment", rhoIdx + 1 + ")");
+  } else {
+    console.log("OK: no rho experiment in this build (expected for reports built after removal)");
+  }
+}
+
 console.log("\\nALL REPORT FLOWS COMPLETED WITHOUT THROWING");
 `;
 
@@ -280,4 +321,21 @@ try {
 } catch (err) {
   console.error("\nTHREW:", err.stack || err);
   process.exitCode = 1;
+}
+
+// The driver above runs against whatever build it was handed — usually the archived
+// report.html, which predates the removal of aiRelianceIntensity and still carries
+// that column. The SOURCE is what must be clean: rho was removed from the model in
+// 2026-08, so the template that builds new reports must not still be explaining a
+// mapping (1 - rho, 5^rho) the engine no longer implements.
+{
+  const tpl = fs.readFileSync(path.join(__dirname, "report.template.html"), "utf8");
+  const banned = ["relianceDerived", "relianceNote(", "ATROPHY_AT_FULL_RELIANCE"];
+  const found = banned.filter((n) => tpl.includes(n));
+  if (found.length) {
+    console.error("\nreport.template.html still carries rho rendering:", found.join(", "));
+    process.exitCode = 1;
+  } else {
+    console.log("OK: report.template.html carries no rho-specific rendering");
+  }
 }

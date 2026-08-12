@@ -350,385 +350,385 @@
   "experiments": [
     {
       "n": 1,
-      "file": "experiments/experiment.1.json",
+      "file": "experiments-ABGraph/experiment.1.json",
       "x": "turnoverRate",
       "y": "learningRateSpread",
       "runs": 4410
     },
     {
       "n": 2,
-      "file": "experiments/experiment.2.json",
+      "file": "experiments-ABGraph/experiment.2.json",
       "x": "turnoverRate",
       "y": "transferRate",
       "runs": 4410
     },
     {
       "n": 3,
-      "file": "experiments/experiment.3.json",
+      "file": "experiments-ABGraph/experiment.3.json",
       "x": "turnoverRate",
       "y": "decayRate",
       "runs": 4410
     },
     {
       "n": 4,
-      "file": "experiments/experiment.4.json",
+      "file": "experiments-ABGraph/experiment.4.json",
       "x": "turnoverRate",
       "y": "aiDampeningBelow",
       "runs": 4410
     },
     {
       "n": 5,
-      "file": "experiments/experiment.5.json",
+      "file": "experiments-ABGraph/experiment.5.json",
       "x": "turnoverRate",
       "y": "aiDampeningAbove",
       "runs": 4410
     },
     {
       "n": 6,
-      "file": "experiments/experiment.6.json",
+      "file": "experiments-ABGraph/experiment.6.json",
       "x": "learningRateSpread",
       "y": "transferRate",
       "runs": 4410
     },
     {
       "n": 7,
-      "file": "experiments/experiment.7.json",
+      "file": "experiments-ABGraph/experiment.7.json",
       "x": "learningRateSpread",
       "y": "decayRate",
       "runs": 4410
     },
     {
       "n": 8,
-      "file": "experiments/experiment.8.json",
+      "file": "experiments-ABGraph/experiment.8.json",
       "x": "learningRateSpread",
       "y": "aiDampeningBelow",
       "runs": 4410
     },
     {
       "n": 9,
-      "file": "experiments/experiment.9.json",
+      "file": "experiments-ABGraph/experiment.9.json",
       "x": "learningRateSpread",
       "y": "aiDampeningAbove",
       "runs": 4410
     },
     {
       "n": 10,
-      "file": "experiments/experiment.10.json",
+      "file": "experiments-ABGraph/experiment.10.json",
       "x": "transferRate",
       "y": "decayRate",
       "runs": 4410
     },
     {
       "n": 11,
-      "file": "experiments/experiment.11.json",
+      "file": "experiments-ABGraph/experiment.11.json",
       "x": "transferRate",
       "y": "aiDampeningBelow",
       "runs": 4410
     },
     {
       "n": 12,
-      "file": "experiments/experiment.12.json",
+      "file": "experiments-ABGraph/experiment.12.json",
       "x": "transferRate",
       "y": "aiDampeningAbove",
       "runs": 4410
     },
     {
       "n": 13,
-      "file": "experiments/experiment.13.json",
+      "file": "experiments-ABGraph/experiment.13.json",
       "x": "decayRate",
       "y": "aiDampeningBelow",
       "runs": 4410
     },
     {
       "n": 14,
-      "file": "experiments/experiment.14.json",
+      "file": "experiments-ABGraph/experiment.14.json",
       "x": "decayRate",
       "y": "aiDampeningAbove",
       "runs": 4410
     },
     {
       "n": 15,
-      "file": "experiments/experiment.15.json",
+      "file": "experiments-ABGraph/experiment.15.json",
       "x": "aiDampeningBelow",
       "y": "aiDampeningAbove",
       "runs": 4410
     },
     {
       "n": 16,
-      "file": "experiments/experiment.16.json",
+      "file": "experiments-ABGraph/experiment.16.json",
       "x": "turnoverRate",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 17,
-      "file": "experiments/experiment.17.json",
+      "file": "experiments-ABGraph/experiment.17.json",
       "x": "turnoverRate",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 18,
-      "file": "experiments/experiment.18.json",
+      "file": "experiments-ABGraph/experiment.18.json",
       "x": "turnoverRate",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 19,
-      "file": "experiments/experiment.19.json",
+      "file": "experiments-ABGraph/experiment.19.json",
       "x": "turnoverRate",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 20,
-      "file": "experiments/experiment.20.json",
+      "file": "experiments-ABGraph/experiment.20.json",
       "x": "turnoverRate",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 21,
-      "file": "experiments/experiment.21.json",
+      "file": "experiments-ABGraph/experiment.21.json",
       "x": "learningRateSpread",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 22,
-      "file": "experiments/experiment.22.json",
+      "file": "experiments-ABGraph/experiment.22.json",
       "x": "learningRateSpread",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 23,
-      "file": "experiments/experiment.23.json",
+      "file": "experiments-ABGraph/experiment.23.json",
       "x": "learningRateSpread",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 24,
-      "file": "experiments/experiment.24.json",
+      "file": "experiments-ABGraph/experiment.24.json",
       "x": "learningRateSpread",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 25,
-      "file": "experiments/experiment.25.json",
+      "file": "experiments-ABGraph/experiment.25.json",
       "x": "learningRateSpread",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 26,
-      "file": "experiments/experiment.26.json",
+      "file": "experiments-ABGraph/experiment.26.json",
       "x": "transferRate",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 27,
-      "file": "experiments/experiment.27.json",
+      "file": "experiments-ABGraph/experiment.27.json",
       "x": "transferRate",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 28,
-      "file": "experiments/experiment.28.json",
+      "file": "experiments-ABGraph/experiment.28.json",
       "x": "transferRate",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 29,
-      "file": "experiments/experiment.29.json",
+      "file": "experiments-ABGraph/experiment.29.json",
       "x": "transferRate",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 30,
-      "file": "experiments/experiment.30.json",
+      "file": "experiments-ABGraph/experiment.30.json",
       "x": "transferRate",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 31,
-      "file": "experiments/experiment.31.json",
+      "file": "experiments-ABGraph/experiment.31.json",
       "x": "decayRate",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 32,
-      "file": "experiments/experiment.32.json",
+      "file": "experiments-ABGraph/experiment.32.json",
       "x": "decayRate",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 33,
-      "file": "experiments/experiment.33.json",
+      "file": "experiments-ABGraph/experiment.33.json",
       "x": "decayRate",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 34,
-      "file": "experiments/experiment.34.json",
+      "file": "experiments-ABGraph/experiment.34.json",
       "x": "decayRate",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 35,
-      "file": "experiments/experiment.35.json",
+      "file": "experiments-ABGraph/experiment.35.json",
       "x": "decayRate",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 36,
-      "file": "experiments/experiment.36.json",
+      "file": "experiments-ABGraph/experiment.36.json",
       "x": "aiDampeningBelow",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 37,
-      "file": "experiments/experiment.37.json",
+      "file": "experiments-ABGraph/experiment.37.json",
       "x": "aiDampeningBelow",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 38,
-      "file": "experiments/experiment.38.json",
+      "file": "experiments-ABGraph/experiment.38.json",
       "x": "aiDampeningBelow",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 39,
-      "file": "experiments/experiment.39.json",
+      "file": "experiments-ABGraph/experiment.39.json",
       "x": "aiDampeningBelow",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 40,
-      "file": "experiments/experiment.40.json",
+      "file": "experiments-ABGraph/experiment.40.json",
       "x": "aiDampeningBelow",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 41,
-      "file": "experiments/experiment.41.json",
+      "file": "experiments-ABGraph/experiment.41.json",
       "x": "aiDampeningAbove",
       "y": "aiAtrophyMultiplier",
       "runs": 4410
     },
     {
       "n": 42,
-      "file": "experiments/experiment.42.json",
+      "file": "experiments-ABGraph/experiment.42.json",
       "x": "aiDampeningAbove",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 43,
-      "file": "experiments/experiment.43.json",
+      "file": "experiments-ABGraph/experiment.43.json",
       "x": "aiDampeningAbove",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 44,
-      "file": "experiments/experiment.44.json",
+      "file": "experiments-ABGraph/experiment.44.json",
       "x": "aiDampeningAbove",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 45,
-      "file": "experiments/experiment.45.json",
+      "file": "experiments-ABGraph/experiment.45.json",
       "x": "aiDampeningAbove",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 46,
-      "file": "experiments/experiment.46.json",
+      "file": "experiments-ABGraph/experiment.46.json",
       "x": "aiAtrophyMultiplier",
       "y": "aiLevelFraction",
       "runs": 4410
     },
     {
       "n": 47,
-      "file": "experiments/experiment.47.json",
+      "file": "experiments-ABGraph/experiment.47.json",
       "x": "aiAtrophyMultiplier",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 48,
-      "file": "experiments/experiment.48.json",
+      "file": "experiments-ABGraph/experiment.48.json",
       "x": "aiAtrophyMultiplier",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 49,
-      "file": "experiments/experiment.49.json",
+      "file": "experiments-ABGraph/experiment.49.json",
       "x": "aiAtrophyMultiplier",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 50,
-      "file": "experiments/experiment.50.json",
+      "file": "experiments-ABGraph/experiment.50.json",
       "x": "aiLevelFraction",
       "y": "expertiseMean",
       "runs": 4410
     },
     {
       "n": 51,
-      "file": "experiments/experiment.51.json",
+      "file": "experiments-ABGraph/experiment.51.json",
       "x": "aiLevelFraction",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 52,
-      "file": "experiments/experiment.52.json",
+      "file": "experiments-ABGraph/experiment.52.json",
       "x": "aiLevelFraction",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 53,
-      "file": "experiments/experiment.53.json",
+      "file": "experiments-ABGraph/experiment.53.json",
       "x": "expertiseMean",
       "y": "entrantExpertiseMean",
       "runs": 4410
     },
     {
       "n": 54,
-      "file": "experiments/experiment.54.json",
+      "file": "experiments-ABGraph/experiment.54.json",
       "x": "expertiseMean",
       "y": "aiGain",
       "runs": 4410
     },
     {
       "n": 55,
-      "file": "experiments/experiment.55.json",
+      "file": "experiments-ABGraph/experiment.55.json",
       "x": "entrantExpertiseMean",
       "y": "aiGain",
       "runs": 4410

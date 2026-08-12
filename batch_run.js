@@ -42,11 +42,35 @@ const path = require("path");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { initSim, tick, mulberry32, DEFAULT_PARAMS } = require(path.join(__dirname, "engine.js"));
 
-const METRIC_KEYS = ["meanE", "meanC", "gap", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert"];
+const METRIC_KEYS = ["meanE", "meanC", "gap", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
+  // occupancy diagnostics — asymmetric mobility drains low-market-index
+  // institutions by design, and a run where these get small is suspect
+  "minOccupancy", "emptyInstitutions", "underOccupiedInstitutions"];
+
+/* ============================== world model (Phase F) ============================== */
+// A loaded world model contains a closure (affinity), so it cannot be passed
+// through worker_threads' structured clone. Each thread therefore loads it
+// itself from the paths in the config and caches it — parsing a 400KB JSON once
+// per worker is negligible against thousands of runs, and it keeps runJob
+// identical in the main thread and in workers.
+let WORLD_MODEL_CACHE = null;
+function resolveWorldModel(spec) {
+  if (!spec) return null;
+  if (WORLD_MODEL_CACHE) return WORLD_MODEL_CACHE;
+  const { loadWorldModel } = require(path.join(__dirname, "world_model.js"));
+  const world = JSON.parse(fs.readFileSync(path.resolve(__dirname, spec.worldModelPath), "utf8"));
+  const costs = JSON.parse(fs.readFileSync(path.resolve(__dirname, spec.mobilityCostsPath), "utf8"));
+  WORLD_MODEL_CACHE = loadWorldModel(world, costs, spec.worldModelOptions || {});
+  return WORLD_MODEL_CACHE;
+}
 
 /* ============================== job execution (shared by main + workers) ============================== */
 function runJob(job) {
   const params = Object.assign({}, job.params, { seed: job.seed });
+  if (params.graphSource === "worldModel") {
+    params.worldModel = resolveWorldModel(job.worldModelSpec);
+    if (!params.worldModel) throw new Error("[batch] graphSource 'worldModel' needs config.worldModel { worldModelPath, mobilityCostsPath }");
+  }
   const sim = initSim(params);
   const rows = [];
   const recordSet = new Set(job.recordAt);
@@ -59,7 +83,20 @@ function runJob(job) {
 }
 
 function buildRow(sim, job, entry) {
-  const row = Object.assign({}, sim.params); // full param provenance for every row
+  // Full param provenance for every row — but scalars only. params.worldModel is
+  // an entire loaded graph (arrays, Sets, and an affinity closure); copying it
+  // into every row would balloon memory and cannot be serialised to CSV. Its
+  // identity is carried by worldModelFingerprint below instead, which is the
+  // thing actually needed to tell two result sets apart.
+  const row = {};
+  for (const k of Object.keys(sim.params)) {
+    const v = sim.params[k];
+    if (v === null || typeof v !== "object") row[k] = v;
+  }
+  if (sim.graph && sim.graph.isWorldModel) {
+    row.worldModelFingerprint = sim.graph.fingerprint;
+    row.M = sim.M; // derived, not configured — record what was actually used
+  }
   row.comboIndex = job.comboIndex;
   row.replicate = job.replicate;
   row.arm = job.arm || "";
@@ -113,10 +150,16 @@ function cartesian(paramSpecs) {
   return combos;
 }
 
-function validateParamKeys(keys, label) {
+function validateParamKeys(keys, label, isWorldModel) {
   const valid = new Set(Object.keys(DEFAULT_PARAMS));
   for (const k of keys) if (!valid.has(k)) {
     throw new Error(`unknown parameter "${k}" in config.${label} (valid keys: ${[...valid].join(", ")})`);
+  }
+  // Only in world-model mode: M is derived from the data there, so setting or
+  // sweeping it is a contradiction rather than a preference. Under BA it stays a
+  // perfectly ordinary parameter, so this must not fire.
+  if (isWorldModel && keys.includes("M")) {
+    throw new Error(`[batch] M cannot be set in config.${label} — it is derived from the world model when graphSource is "worldModel"`);
   }
 }
 
@@ -131,8 +174,15 @@ function buildJobs(config) {
   const baseSeed = config.seed != null ? config.seed : 1;
   const paramSpecs = config.params || {};
 
-  validateParamKeys(Object.keys(fixed), "fixed");
-  validateParamKeys(Object.keys(paramSpecs), "params");
+  const usingWorldModel = (fixed.graphSource || "ba") === "worldModel";
+  validateParamKeys(Object.keys(fixed), "fixed", usingWorldModel);
+  validateParamKeys(Object.keys(paramSpecs), "params", usingWorldModel);
+
+  // Paths, not a loaded object: each worker resolves it itself (see resolveWorldModel).
+  const worldModelSpec = config.worldModel || null;
+  if (worldModelSpec && (!worldModelSpec.worldModelPath || !worldModelSpec.mobilityCostsPath)) {
+    throw new Error("[batch] config.worldModel needs both worldModelPath and mobilityCostsPath");
+  }
 
   const pairWithBaseline = !!config.pairWithBaseline;
   if (pairWithBaseline && ("aiEnabled" in fixed || "aiEnabled" in paramSpecs)) {
@@ -162,10 +212,10 @@ function buildJobs(config) {
       if (pairWithBaseline) {
         // same seed for both arms — that's what makes "baseline vs treatment" a valid
         // paired comparison instead of two independently-noisy runs
-        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "treatment", params: Object.assign({}, fixed, combo, { aiEnabled: true }) });
-        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "baseline", params: Object.assign({}, fixed, combo, { aiEnabled: false }) });
+        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "treatment", worldModelSpec, params: Object.assign({}, fixed, combo, { aiEnabled: true }) });
+        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "baseline", worldModelSpec, params: Object.assign({}, fixed, combo, { aiEnabled: false }) });
       } else {
-        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: null, params: Object.assign({}, fixed, combo) });
+        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: null, worldModelSpec, params: Object.assign({}, fixed, combo) });
       }
     }
   });
@@ -178,12 +228,22 @@ function csvEscape(v) {
   const s = String(v);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
+// Atomic write: build a temp file alongside the target, then rename. Rename is
+// atomic within a filesystem, so a results file is either absent or complete —
+// never a truncated half-write from an interrupted run. run_experiments.sh
+// relies on this to decide what it can safely skip on resume.
+function writeCSVAtomic(filePath, contents) {
+  const tmp = filePath + ".part";
+  fs.writeFileSync(tmp, contents);
+  fs.renameSync(tmp, filePath);
+}
+
 function writeCSV(filePath, rows) {
-  if (!rows.length) { fs.writeFileSync(filePath, ""); return; }
+  if (!rows.length) { writeCSVAtomic(filePath, ""); return; }
   const cols = Object.keys(rows[0]);
   const lines = [cols.join(",")];
   for (const row of rows) lines.push(cols.map((c) => csvEscape(row[c])).join(","));
-  fs.writeFileSync(filePath, lines.join("\n") + "\n");
+  writeCSVAtomic(filePath, lines.join("\n") + "\n");
 }
 
 function summarize(rows) {
