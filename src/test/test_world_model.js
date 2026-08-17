@@ -1,10 +1,11 @@
 // Tests for world_model.js (Phase C) and the engine's world-model mode (Phase D).
-//   node test_world_model.js
+//   node src/test/test_world_model.js
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { loadWorldModel, suggestedN, fnv1a } = require("./world_model.js");
-const { initSim, tick, generateBAGraph, mulberry32, MONTHLY_TICK_PARAMS } = require("./engine.js");
+const { loadWorldModel, suggestedN, fnv1a } = require("../world_model.js");
+const { initSim, tick, generateBAGraph, mulberry32, MONTHLY_TICK_PARAMS } = require("../engine.js");
+const paths = require("../paths.js");
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -12,8 +13,8 @@ function assert(cond, msg) {
   else { console.error("FAIL: " + msg); fail++; }
 }
 
-const WORLD = JSON.parse(fs.readFileSync(path.join(__dirname, "world-model.json"), "utf8"));
-const COSTS = JSON.parse(fs.readFileSync(path.join(__dirname, "mobility-costs.json"), "utf8"));
+const WORLD = JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8"));
+const COSTS = JSON.parse(fs.readFileSync(paths.data("mobility-costs.json"), "utf8"));
 const wm = loadWorldModel(WORLD, COSTS);
 const byLabel = (l) => wm.institutions.findIndex((i) => i.label === l);
 
@@ -211,7 +212,7 @@ assert(maxErr < 1e-12, `affinityAt matches affinity exactly (max err ${maxErr.to
 // The sampler must reproduce the affinity distribution, not merely favour it.
 // Without this, a subtle off-by-one in the binary search would silently bias
 // every world-model run and still look plausible.
-const { mulberry32: mb } = require("./engine.js");
+const { mulberry32: mb } = require("../engine.js");
 let worstDev = 0;
 [0, 77, 200].forEach((src) => {
   const rng = mb(1234 + src), DRAWS = 120000;
@@ -273,7 +274,7 @@ assert(baRun({ institutionSizing: "uniform" }) === baPlain, "explicit uniform si
 // in for: a neutral AI arm must be bit-identical to the no-AI arm.
 console.log("\n--- AI dials set directly, no coupling ---");
 
-const { DEFAULT_PARAMS: DPARAMS } = require("./engine.js");
+const { DEFAULT_PARAMS: DPARAMS } = require("../engine.js");
 assert(!("aiRelianceIntensity" in DPARAMS), "aiRelianceIntensity is gone from DEFAULT_PARAMS");
 
 // E is all there is now — the observed-capability channel was removed with aiGain.
@@ -298,7 +299,7 @@ function throws(fn, why) { try { fn(); return false; } catch (e) { return true; 
 // params and thence into every CSV column, so a stale config would otherwise run on
 // defaults while its results row still named the parameter.
 for (const removed of ["aiAtrophyMultiplier", "mobilityFriction", "entrantExpertiseSkew", "aiGain", "aiResponseMode"]) {
-  assert(!(removed in require("./engine.js").DEFAULT_PARAMS), `${removed} is gone from DEFAULT_PARAMS`);
+  assert(!(removed in require("../engine.js").DEFAULT_PARAMS), `${removed} is gone from DEFAULT_PARAMS`);
   assert(throws(() => initSim({ N: 40, M: 6, [removed]: 1 })), `a config still setting ${removed} is rejected`);
 }
 assert(throws(() => initSim({ aiRelianceIntensity: 0.5 })),
@@ -308,7 +309,7 @@ assert(throws(() => initSim({ aiRelianceIntensity: 0 })),
 
 // --- 13. entrant floor + the lambda default (problems.md P16, P19) --------
 console.log("\n--- entrant floor and the AI level default ---");
-const { EXPERT_THRESHOLD: ET, DEFAULT_PARAMS: DP } = require("./engine.js");
+const { EXPERT_THRESHOLD: ET, DEFAULT_PARAMS: DP } = require("../engine.js");
 
 assert(DP.aiLevelFraction === ET,
   "aiLevelFraction defaults to EXPERT_THRESHOLD, not an arbitrary number — it sits below the saturation plateau");
@@ -377,7 +378,7 @@ console.log("\n--- bundled world-model-data.js is current ---");
   const { execFileSync } = require("child_process");
   let ok = true, detail = "";
   try {
-    execFileSync(process.execPath, [path.join(__dirname, "build_world_model_data.js"), "--check"], { stdio: "pipe" });
+    execFileSync(process.execPath, [paths.src("build_world_model_data.js"), "--check"], { stdio: "pipe" });
   } catch (e) {
     ok = false;
     detail = (e.stderr ? e.stderr.toString() : e.message).trim();

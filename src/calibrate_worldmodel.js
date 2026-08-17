@@ -19,8 +19,8 @@
 // scan puts the individual spread back through aptitudeSpread, which is the lever that acts
 // on people directly rather than through teachers.
 //
-//   node calibrate_worldmodel.js              # the 2-D scan (background it, ~15 min)
-//   node calibrate_worldmodel.js --verify     # one cell at full horizon and 2 seeds
+//   node src/calibrate_worldmodel.js              # the 2-D scan (background it, ~15 min)
+//   node src/calibrate_worldmodel.js --verify     # one cell at full horizon and 2 seeds
 //                                             # (env: CAP, APT)
 //
 // A cell is accepted only if it satisfies ALL FOUR:
@@ -37,6 +37,7 @@ const fs = require("fs");
 const path = require("path");
 const { initSim, tick, EXPERT_THRESHOLD, TICKS_PER_YEAR, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS } = require("./engine.js");
 const { loadWorldModel } = require("./world_model.js");
+const paths = require("./paths.js");
 
 const N = 10500;
 // Overridable so the fallback (teachTopN 8, which costs almost no individual spread to
@@ -83,8 +84,8 @@ const corr = (a, b) => {
 };
 
 const worldFiles = () => [
-  JSON.parse(fs.readFileSync(path.join(__dirname, "world-model.json"), "utf8")),
-  JSON.parse(fs.readFileSync(path.join(__dirname, "mobility-costs.json"), "utf8")),
+  JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8")),
+  JSON.parse(fs.readFileSync(paths.data("mobility-costs.json"), "utf8")),
 ];
 
 function once(extra, seed, horizon, driftFrom) {

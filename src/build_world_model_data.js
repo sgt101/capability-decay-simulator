@@ -7,8 +7,8 @@
 // "null") in every current browser. A classic <script src> is not — which is already
 // how engine.js and world_model.js get in. So the data has to arrive as script text.
 //
-//   node build_world_model_data.js            # regenerate
-//   node build_world_model_data.js --check    # verify it matches its sources (CI/tests)
+//   node src/build_world_model_data.js            # regenerate
+//   node src/build_world_model_data.js --check    # verify it matches its sources (CI/tests)
 //
 // world-model.json is EXPECTED to change — see its fingerprint machinery — so the
 // copy here goes stale by design. test_world_model.js runs the --check path, so a
@@ -16,11 +16,12 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const paths = require("./paths.js");
 
 const SOURCES = { world: "world-model.json", costs: "mobility-costs.json" };
 const OUT = "world-model-data.js";
 
-const read = (f) => JSON.parse(fs.readFileSync(path.join(__dirname, f), "utf8"));
+const read = (f) => JSON.parse(fs.readFileSync(paths.data(f), "utf8"));
 const canonical = (o) => JSON.stringify(o);
 
 function render() {
@@ -42,7 +43,7 @@ function render() {
   ].join("\n");
 }
 
-const outPath = path.join(__dirname, OUT);
+const outPath = paths.data(OUT);
 
 if (process.argv.includes("--check")) {
   let current = null;

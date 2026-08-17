@@ -10,7 +10,7 @@
 // writeup (the amplification-regime artifact, why 0.585 specifically, etc.). Kept
 // runnable so the current value can be re-checked after any change to the dynamics.
 //
-// Run: node expert_threshold_sensitivity.js
+// Run: node src/expert_threshold_sensitivity.js
 
 "use strict";
 const { initSim, tick, DEFAULT_PARAMS } = require("./engine.js");

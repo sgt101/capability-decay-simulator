@@ -3,7 +3,7 @@
 // across many simulation runs and writes per-run + summarized CSVs.
 //
 // Usage:
-//   node batch_run.js --config sweep.json [--out results.csv] [--summary-out results_summary.csv]
+//   node src/batch_run.js --config data/sweep.json [--out results.csv] [--summary-out results_summary.csv]
 //                      [--workers N] [--max-runs 20000] [--force] [--dry-run]
 //
 // Config file (JSON) shape:
@@ -41,6 +41,7 @@ const os = require("os");
 const path = require("path");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { initSim, tick, mulberry32, DEFAULT_PARAMS } = require(path.join(__dirname, "engine.js"));
+const paths = require("./paths.js");
 
 const METRIC_KEYS = ["meanE", "p10E", "p50E", "p90E", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
   // occupancy diagnostics — asymmetric mobility drains low-market-index
@@ -58,8 +59,11 @@ function resolveWorldModel(spec) {
   if (!spec) return null;
   if (WORLD_MODEL_CACHE) return WORLD_MODEL_CACHE;
   const { loadWorldModel } = require(path.join(__dirname, "world_model.js"));
-  const world = JSON.parse(fs.readFileSync(path.resolve(__dirname, spec.worldModelPath), "utf8"));
-  const costs = JSON.parse(fs.readFileSync(path.resolve(__dirname, spec.mobilityCostsPath), "utf8"));
+  // worldModelPath/mobilityCostsPath in a config are relative to data/, so a config
+  // says "world-model.json" and not "../data/world-model.json". Absolute paths still
+  // win, since path.resolve ignores the base for those.
+  const world = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, spec.worldModelPath), "utf8"));
+  const costs = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, spec.mobilityCostsPath), "utf8"));
   WORLD_MODEL_CACHE = loadWorldModel(world, costs, spec.worldModelOptions || {});
   return WORLD_MODEL_CACHE;
 }

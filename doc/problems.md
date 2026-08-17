@@ -82,7 +82,7 @@ would be suppressing a prediction, so it should be a declared intervention.
 
 The calibration must keep the no-AI baseline *stationary*, and only a thin
 diagonal band of (`transferRate`, `decayRate`) does. Scanned against the world
-model (`node calibrate_time_base.js --world-model`), 3 of 25 cells qualified:
+model (`node src/calibrate_time_base.js --world-model`), 3 of 25 cells qualified:
 
 | | `decayRate` 0.016 | 0.020 | 0.024 |
 |---|---|---|---|

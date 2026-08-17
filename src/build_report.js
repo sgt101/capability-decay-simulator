@@ -1,11 +1,12 @@
-// Builds report.html — a self-contained, no-server heatmap browser over every
+// Builds doc/report.html — a self-contained, no-server heatmap browser over every
 // experiment.N.json result. Reads results/experiment.N/results_shortfall.csv
+// (--results is relative to results/, --manifest relative to data/)
 // (already replicate-averaged... no, per-replicate — this script does the
 // averaging), embeds one aggregated grid per experiment as JSON, and injects
 // it into report.template.html. Rerun after any batch of experiments changes:
 //
-//   node build_report.js
-//   node build_report.js --manifest experiments.manifest.json --results results-ba
+//   node src/build_report.js
+//   node src/build_report.js --manifest experiments.manifest.json --results archive/results-ba
 //
 // THE MANIFEST MUST MATCH THE RESULTS. It supplies the x/y axis keys per
 // experiment; results/ only supplies columns. Point the BA manifest at
@@ -17,8 +18,9 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const paths = require("./paths.js");
 
-const ROOT = __dirname;
+const ROOT = paths.ROOT;
 
 function argOf(flag, fallback) {
   const i = process.argv.indexOf(flag);
@@ -27,10 +29,10 @@ function argOf(flag, fallback) {
 // Default to the world-model set: that is what experiments/ holds and what
 // run_experiments.sh writes into results/.
 const MANIFEST_PATH = argOf("--manifest", "experiments.worldmodel.manifest.json");
-const RESULTS_DIR = argOf("--results", "results");
+const RESULTS_DIR = argOf("--results", ".");   // relative to results/
 const OUT_PATH = argOf("--out", "report.html");
 
-const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, MANIFEST_PATH), "utf8"));
+const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, MANIFEST_PATH), "utf8"));
 
 const METRICS = [
   { key: "meanE_shortfall", label: "Mean expertise shortfall (E)" },
@@ -60,7 +62,7 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 const degenerate = [];
 
 function loadExperiment(entry) {
-  const file = path.join(ROOT, RESULTS_DIR, `experiment.${entry.n}`, "results_shortfall.csv");
+  const file = path.resolve(paths.RESULTS, RESULTS_DIR, `experiment.${entry.n}`, "results_shortfall.csv");
   if (!fs.existsSync(file)) {
     console.error(`[build_report] skip experiment.${entry.n}: ${file} not found (run ./run_experiments.sh ${entry.n} first)`);
     return null;
@@ -190,8 +192,8 @@ const meta = {
   domains,
 };
 
-const templatePath = path.join(ROOT, "report.template.html");
-const outPath = path.join(ROOT, OUT_PATH);
+const templatePath = paths.src("report.template.html");
+const outPath = path.resolve(paths.DOC, OUT_PATH);
 const template = fs.readFileSync(templatePath, "utf8");
 const placeholder = "/*__REPORT_DATA__*/";
 if (!template.includes(placeholder)) throw new Error(`report.template.html is missing the ${placeholder} marker`);

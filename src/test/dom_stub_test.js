@@ -6,6 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const paths = require("../paths.js");
 
 const registry = new Map();
 
@@ -838,12 +839,29 @@ console.log("\\nALL FLOWS COMPLETED WITHOUT THROWING");
 // the same vm context, before the page — rather than require()-ing them into their
 // own module scope. Requiring them cannot reproduce a collision, which is how a
 // seven-way one shipped in 2026-08 with every test green.
-const ENGINE_SRC = fs.readFileSync(path.join(__dirname, "engine.js"), "utf8");
-const WORLD_MODEL_SRC = fs.readFileSync(path.join(__dirname, "world_model.js"), "utf8");
+// The src attributes are READ OUT OF THE PAGE and resolved relative to it, exactly
+// as a browser resolves them — not hardcoded here. Hardcoding meant the harness could
+// keep loading a file the page no longer pointed at, so a page with a broken src
+// still passed; the 2026-08 move to src/ + data/ changed one of these three paths and
+// this is what makes that a test failure rather than a silent divergence.
+const HTML_DIR = path.dirname(path.resolve(process.argv[2]));
+const SRC_ATTRS = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+function readPageScript(basename) {
+  const src = SRC_ATTRS.find((s) => path.basename(s) === basename);
+  if (!src) {
+    throw new Error(
+      `${path.basename(process.argv[2])} has no <script src> ending in ${basename} — ` +
+      `found: ${SRC_ATTRS.join(", ") || "(none)"}`
+    );
+  }
+  return fs.readFileSync(path.resolve(HTML_DIR, src), "utf8");
+}
+const ENGINE_SRC = readPageScript("engine.js");
+const WORLD_MODEL_SRC = readPageScript("world_model.js");
 // world-model-data.js is deliberately NOT loaded in the main pass: that keeps the
 // hand-picked-files path under test. A second, minimal pass at the bottom of this file
 // loads it and checks the page boots ready.
-const WORLD_MODEL_DATA_SRC = fs.readFileSync(path.join(__dirname, "world-model-data.js"), "utf8");
+const WORLD_MODEL_DATA_SRC = readPageScript("world-model-data.js");
 
 // Minimal FileReader: the page reads user-chosen files with readAsText.
 class FakeFileReader {
@@ -861,8 +879,8 @@ const sandbox = {
   FileReader: FakeFileReader, Error, Number,
   // Real project data — the browser path is exercised against the same files the
   // batch runner uses, not a synthetic fixture.
-  WORLD_JSON_TEXT: fs.readFileSync(path.join(__dirname, "world-model.json"), "utf8"),
-  COSTS_JSON_TEXT: fs.readFileSync(path.join(__dirname, "mobility-costs.json"), "utf8"),
+  WORLD_JSON_TEXT: fs.readFileSync(paths.data("world-model.json"), "utf8"),
+  COSTS_JSON_TEXT: fs.readFileSync(paths.data("mobility-costs.json"), "utf8"),
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -903,7 +921,7 @@ try {
 // The browser branch of each dual-mode export must publish the same API the Node
 // branch does — otherwise the page and batch_run.js are handed different surfaces.
 {
-  const nodeEngine = Object.keys(require("./engine.js")).sort().join(",");
+  const nodeEngine = Object.keys(require("../engine.js")).sort().join(",");
   const vmEngine = Object.keys(sandbox.Engine).sort().join(",");
   if (nodeEngine !== vmEngine) {
     console.error("\nengine.js publishes a different API to Node than to the browser:\n  node: " +

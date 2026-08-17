@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Runs every experiments/experiment.N.json through batch_run.js and
+# Runs every data/experiments/experiment.N.json through src/batch_run.js and
 # writes each one's three CSVs into results/experiment.N/.
+#
+# Lives in src/ but operates on the REPO ROOT: it cd's one level up, so the paths
+# below read the same as the layout does.
 #
 # Usage:
 #   ./run_experiments.sh                    # all experiment.*.json
@@ -23,7 +26,7 @@ set -eo pipefail
 # (not nounset: this script expands several possibly-empty bash arrays —
 # ARGS/NUMS/WORKER_ARGS — and pre-4.4 bash, notably macOS's stock bash 3.2,
 # treats "${empty_array[@]}" as an unbound-variable error under set -u.)
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 WORKERS=""
 REDO=0
@@ -41,9 +44,9 @@ if [ "$#" -gt 0 ]; then
   NUMS=("$@")
 else
   NUMS=()
-  for f in experiments/experiment.*.json; do
+  for f in data/experiments/experiment.*.json; do
     [ -e "$f" ] || continue
-    n="${f#experiments/experiment.}"; n="${n%.json}"
+    n="${f#data/experiments/experiment.}"; n="${n%.json}"
     NUMS+=("$n")
   done
   IFS=$'\n' NUMS=($(sort -n <<<"${NUMS[*]}")); unset IFS
@@ -56,7 +59,7 @@ mkdir -p results
 SKIPPED=0
 DONE=0
 for n in "${NUMS[@]}"; do
-  cfg="experiments/experiment.${n}.json"
+  cfg="data/experiments/experiment.${n}.json"
   if [ ! -f "$cfg" ]; then
     echo "skip: $cfg not found" >&2
     continue
@@ -73,8 +76,8 @@ for n in "${NUMS[@]}"; do
   # Clear any .part files left by a previous interrupt, so a failed rename can't
   # leave stale fragments lying around.
   rm -f "${outdir}"/*.part
-  echo "=== experiments/experiment.${n}.json -> ${outdir}/ ==="
-  node batch_run.js --config "$cfg" "${WORKER_ARGS[@]}" \
+  echo "=== ${cfg} -> ${outdir}/ ==="
+  node src/batch_run.js --config "$cfg" "${WORKER_ARGS[@]}" \
     --out "${outdir}/results.csv" \
     --summary-out "${outdir}/results_summary.csv" \
     --shortfall-out "${outdir}/results_shortfall.csv"

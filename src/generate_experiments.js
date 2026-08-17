@@ -39,11 +39,12 @@ if (require.main === module) {
 // files are exactly the two parameters that file is about.
 //
 // Regenerate after editing STUDY_PARAMS or BASE_FIXED:
-//   node generate_experiments.js
+//   node src/generate_experiments.js
 
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const paths = require("./paths.js");
 
 function range(lo, hi, step) {
   const values = [];
@@ -225,9 +226,10 @@ for (let i = 0; i < NEW_KEYS.length; i++) {
   for (let j = i + 1; j < NEW_KEYS.length; j++) pairs.push([NEW_KEYS[i], NEW_KEYS[j]]);
 }
 
-// experiments/ now holds the WORLD-MODEL set (generate_worldmodel_experiments.js).
-// The BA set lives here so regenerating either one can never clobber the other.
-fs.mkdirSync(path.join(__dirname, "experiments-ABGraph"), { recursive: true });
+// data/experiments/ holds the WORLD-MODEL set (generate_worldmodel_experiments.js).
+// The BA set lives in data/experiments-ABGraph/ so regenerating either one can
+// never clobber the other.
+fs.mkdirSync(paths.data("experiments-ABGraph"), { recursive: true });
 
 const manifest = [];
 pairs.forEach(([a, b], idx) => {
@@ -249,13 +251,13 @@ pairs.forEach(([a, b], idx) => {
     },
   };
 
-  const file = `experiments-ABGraph/experiment.${n}.json`;
-  fs.writeFileSync(path.join(__dirname, file), JSON.stringify(config, null, 2) + "\n");
+  const file = `data/experiments-ABGraph/experiment.${n}.json`;
+  fs.writeFileSync(paths.data("experiments-ABGraph", `experiment.${n}.json`), JSON.stringify(config, null, 2) + "\n");
   manifest.push({ n, file, x: a, y: b, runs: STUDY_PARAMS[a].values.length * STUDY_PARAMS[b].values.length * REPLICATES * 2 });
 });
 
 fs.writeFileSync(
-  path.join(__dirname, "experiments.manifest.json"),
+  paths.data("experiments.manifest.json"),
   JSON.stringify({ studyParams: STUDY_PARAMS, baseFixed: BASE_FIXED, replicates: REPLICATES, horizon: HORIZON, recordAt: RECORD_AT, experiments: manifest }, null, 2) + "\n"
 );
 
@@ -266,7 +268,7 @@ const totalRuns = manifest.reduce((s, m) => s + m.runs, 0);
 // a prediction — parallel throughput on this box doesn't seem to be reliable run to
 // run (one measurement showed only ~200% CPU used despite 8 workers on an 18-core
 // machine with no cgroup quota set, so something's throttling it beyond core count).
-// Best move: run one experiment first (./run_experiments.sh 1) and time it, rather
+// Best move: run one experiment first (./src/run_experiments.sh 1) and time it, rather
 // than trust this number for planning the full batch.
 const MS_PER_RUN_LOW = 40, MS_PER_RUN_HIGH = 161;
 const estLow = Math.round((totalRuns * MS_PER_RUN_LOW) / 1000);

@@ -20,11 +20,16 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { initSim, tick } = require(path.join(__dirname, "..", "engine.js"));
+const { initSim, tick } = require("./engine.js");
+const paths = require("./paths.js");
+
+// CSVs land in results/steady_state/ — they are regenerable output, not source.
+const OUT_DIR = paths.results("steady_state");
+fs.mkdirSync(OUT_DIR, { recursive: true });
 
 function writeCSV(file, header, rows) {
   const out = [header.join(",")].concat(rows.map((r) => r.join(","))).join("\n") + "\n";
-  fs.writeFileSync(path.join(__dirname, file), out);
+  fs.writeFileSync(path.join(OUT_DIR, file), out);
   console.log(`wrote ${file} (${rows.length} rows)`);
 }
 

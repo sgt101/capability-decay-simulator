@@ -283,8 +283,10 @@
      ready when the page opens. Also optional: without it the sidebar's file inputs
      still work, which is the only route if you want to try edited data. A script tag
      is used rather than fetch() because at file:// a fetch for a sibling file is
-     blocked, and a classic script tag is not. -->
-<script src="world-model-data.js"></script>
+     blocked, and a classic script tag is not. It lives in data/ rather than beside
+     this page because it is generated FROM data/world-model.json; a relative src
+     up one level is fine at file://, where only fetch/XHR is restricted. -->
+<script src="../data/world-model-data.js"></script>
 <script>
 /* ============================== ENGINE ============================== */
 // The model lives in engine.js and is loaded by the <script src> above — this page

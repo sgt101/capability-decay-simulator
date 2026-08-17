@@ -348,147 +348,147 @@
   "experiments": [
     {
       "n": 1,
-      "file": "experiments/experiment.1.json",
+      "file": "data/experiments/experiment.1.json",
       "x": "transferRate",
       "y": "decayRate",
       "runs": 2646
     },
     {
       "n": 3,
-      "file": "experiments/experiment.3.json",
+      "file": "data/experiments/experiment.3.json",
       "x": "transferRate",
       "y": "aiDampeningAbove",
       "runs": 2646
     },
     {
       "n": 4,
-      "file": "experiments/experiment.4.json",
+      "file": "data/experiments/experiment.4.json",
       "x": "transferRate",
       "y": "aiLevelFraction",
       "runs": 2646
     },
     {
       "n": 5,
-      "file": "experiments/experiment.5.json",
+      "file": "data/experiments/experiment.5.json",
       "x": "transferRate",
       "y": "expertiseMean",
       "runs": 2646
     },
     {
       "n": 6,
-      "file": "experiments/experiment.6.json",
+      "file": "data/experiments/experiment.6.json",
       "x": "transferRate",
       "y": "entrantExpertiseMean",
       "runs": 2646
     },
     {
       "n": 8,
-      "file": "experiments/experiment.8.json",
+      "file": "data/experiments/experiment.8.json",
       "x": "decayRate",
       "y": "aiDampeningAbove",
       "runs": 2646
     },
     {
       "n": 9,
-      "file": "experiments/experiment.9.json",
+      "file": "data/experiments/experiment.9.json",
       "x": "decayRate",
       "y": "aiLevelFraction",
       "runs": 2646
     },
     {
       "n": 10,
-      "file": "experiments/experiment.10.json",
+      "file": "data/experiments/experiment.10.json",
       "x": "decayRate",
       "y": "expertiseMean",
       "runs": 2646
     },
     {
       "n": 11,
-      "file": "experiments/experiment.11.json",
+      "file": "data/experiments/experiment.11.json",
       "x": "decayRate",
       "y": "entrantExpertiseMean",
       "runs": 2646
     },
     {
       "n": 16,
-      "file": "experiments/experiment.16.json",
+      "file": "data/experiments/experiment.16.json",
       "x": "aiDampeningAbove",
       "y": "aiLevelFraction",
       "runs": 2646
     },
     {
       "n": 17,
-      "file": "experiments/experiment.17.json",
+      "file": "data/experiments/experiment.17.json",
       "x": "aiDampeningAbove",
       "y": "expertiseMean",
       "runs": 2646
     },
     {
       "n": 18,
-      "file": "experiments/experiment.18.json",
+      "file": "data/experiments/experiment.18.json",
       "x": "aiDampeningAbove",
       "y": "entrantExpertiseMean",
       "runs": 2646
     },
     {
       "n": 19,
-      "file": "experiments/experiment.19.json",
+      "file": "data/experiments/experiment.19.json",
       "x": "aiLevelFraction",
       "y": "expertiseMean",
       "runs": 2646
     },
     {
       "n": 20,
-      "file": "experiments/experiment.20.json",
+      "file": "data/experiments/experiment.20.json",
       "x": "aiLevelFraction",
       "y": "entrantExpertiseMean",
       "runs": 2646
     },
     {
       "n": 21,
-      "file": "experiments/experiment.21.json",
+      "file": "data/experiments/experiment.21.json",
       "x": "expertiseMean",
       "y": "entrantExpertiseMean",
       "runs": 2646
     },
     {
       "n": 22,
-      "file": "experiments/experiment.22.json",
+      "file": "data/experiments/experiment.22.json",
       "x": "transferRate",
       "y": "aiDampeningBelow",
       "runs": 2646
     },
     {
       "n": 23,
-      "file": "experiments/experiment.23.json",
+      "file": "data/experiments/experiment.23.json",
       "x": "decayRate",
       "y": "aiDampeningBelow",
       "runs": 2646
     },
     {
       "n": 24,
-      "file": "experiments/experiment.24.json",
+      "file": "data/experiments/experiment.24.json",
       "x": "aiDampeningAbove",
       "y": "aiDampeningBelow",
       "runs": 2646
     },
     {
       "n": 25,
-      "file": "experiments/experiment.25.json",
+      "file": "data/experiments/experiment.25.json",
       "x": "aiLevelFraction",
       "y": "aiDampeningBelow",
       "runs": 2646
     },
     {
       "n": 26,
-      "file": "experiments/experiment.26.json",
+      "file": "data/experiments/experiment.26.json",
       "x": "expertiseMean",
       "y": "aiDampeningBelow",
       "runs": 2646
     },
     {
       "n": 27,
-      "file": "experiments/experiment.27.json",
+      "file": "data/experiments/experiment.27.json",
       "x": "entrantExpertiseMean",
       "y": "aiDampeningBelow",
       "runs": 2646

@@ -1,4 +1,4 @@
-const { initSim, tick, generateBAGraph, mulberry32, DEFAULT_PARAMS } = require("./engine.js");
+const { initSim, tick, generateBAGraph, mulberry32, DEFAULT_PARAMS } = require("../engine.js");
 
 function assert(cond, msg) {
   if (!cond) { console.error("FAIL:", msg); process.exitCode = 1; }
@@ -225,7 +225,7 @@ for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
 // --- entrant pipeline (learningCap + seniorTenureYears) --------------------
 console.log("\n--- entrant pipeline ---");
 {
-  const { PIPELINE_PARAMS, MONTHLY_TICK_PARAMS, EXPERT_THRESHOLD } = require("./engine.js");
+  const { PIPELINE_PARAMS, MONTHLY_TICK_PARAMS, EXPERT_THRESHOLD } = require("../engine.js");
   const base = { N: 800, M: 40, seed: 7 };
 
   // OFF by default: every archived result was produced without this, so an untouched

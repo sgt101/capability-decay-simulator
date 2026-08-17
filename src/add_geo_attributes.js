@@ -2,8 +2,8 @@
 // world-model.json's Country nodes (plus market_index overrides on the handful of
 // Hub nodes where the city clearly differs from its country average).
 //
-//   node add_geo_attributes.js            # patch world-model.json in place
-//   node add_geo_attributes.js --dry-run  # report what would change
+//   node src/add_geo_attributes.js            # patch world-model.json in place
+//   node src/add_geo_attributes.js --dry-run  # report what would change
 //
 // Idempotent: re-running overwrites the same fields with the same values, and
 // reports anything in the file that this script has no entry for — which is how
@@ -18,8 +18,9 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const paths = require("./paths.js");
 
-const FILE = path.join(__dirname, "world-model.json");
+const FILE = paths.data("world-model.json");
 const DRY = process.argv.includes("--dry-run");
 
 // bloc: grouped by the frictions that actually govern moving — shared language,

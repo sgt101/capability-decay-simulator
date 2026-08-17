@@ -605,7 +605,7 @@ Phases A-G implemented. What landed, and two results that qualify the design.
 
 | File | Purpose |
 |---|---|
-| `calibrate_time_base.js` | Phase A scan. `node calibrate_time_base.js` |
+| `calibrate_time_base.js` | Phase A scan. `node src/calibrate_time_base.js` |
 | `mobility-costs.json` | Model assumptions: geo/sector tiers, bloc matrix, γ, edge bonuses |
 | `add_geo_attributes.js` | Phase B. Adds `bloc` + `market_index` to `world-model.json` (idempotent, `--dry-run`) |
 | `world_model.js` | Phase C loader. fs-free, returns `generateBAGraph`'s shape + `affinity`, `entryWeights`, `fingerprint` |

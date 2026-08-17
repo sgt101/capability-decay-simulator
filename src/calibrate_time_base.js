@@ -1,8 +1,8 @@
 // Phase A of world-model-plan.md — recalibrate the learning/decay parameters for
 // the declared time base (1 tick = 1 month, 40-year career = 480 ticks).
 //
-//   node calibrate_time_base.js            # the scan
-//   node calibrate_time_base.js --verify   # detail on the recommended cell only
+//   node src/calibrate_time_base.js            # the scan
+//   node src/calibrate_time_base.js --verify   # detail on the recommended cell only
 //
 // Why this is needed: DEFAULT_PARAMS was tuned when the tick was dimensionless.
 // At turnoverRate = 1/480 the old transferRate=0.5 drives 98% of the population
@@ -33,14 +33,15 @@
 const fs = require("fs");
 const path = require("path");
 const { initSim, tick, EXPERT_THRESHOLD, DEFAULT_PARAMS } = require("./engine.js");
+const paths = require("./paths.js");
 
 const USE_WM = process.argv.includes("--world-model");
 let WM = null;
 if (USE_WM) {
   const { loadWorldModel } = require("./world_model.js");
   WM = loadWorldModel(
-    JSON.parse(fs.readFileSync(path.join(__dirname, "world-model.json"), "utf8")),
-    JSON.parse(fs.readFileSync(path.join(__dirname, "mobility-costs.json"), "utf8"))
+    JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8")),
+    JSON.parse(fs.readFileSync(paths.data("mobility-costs.json"), "utf8"))
   );
 }
 // Extra params that put the run on whichever graph is being calibrated.

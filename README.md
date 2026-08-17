@@ -1,9 +1,32 @@
 # Capability Decay Simulator
 
 Agent-based model of institutions and humans where reliance on AI erodes the
-real expertise (`E`) behind their output over time. See [spec.html](spec.html)
-for the full design, [simulator.html](simulator.html) for the interactive
+real expertise (`E`) behind their output over time. See [doc/spec.html](doc/spec.html)
+for the full design, [src/simulator.html](src/simulator.html) for the interactive
 visualizer, and this file for running sweeps headlessly.
+
+## Repository layout
+
+```
+src/      the model and every script that drives it
+          engine.js, world_model.js, simulator.html, report.template.html
+          src/test/  the four test suites
+data/     inputs: world-model.json, mobility-costs.json, experiment configs,
+          manifests. Hand-maintained, or generated from hand-maintained files.
+results/  outputs: one directory per experiment, plus archive/ of past studies.
+          Gitignored and regenerable — nothing here is a source of truth.
+doc/      this project's prose, spec.html, and the built report.html
+tmp/      scratch, gitignored
+```
+
+The line that matters is `data/` vs `results/`: everything under `results/` can be
+rebuilt by re-running the study, nothing under `data/` can. The one exception is
+`results/steady_state/`, which is tracked because paper.md cites it.
+
+Scripts resolve these locations through [src/paths.js](src/paths.js) rather than
+from the current directory, so they can be run from anywhere. Open
+`src/simulator.html` straight off the filesystem as before — it reaches its data
+with a relative `<script src>`, which `file://` permits.
 
 The model tracks **one** quantity: latent expertise `E`, what people actually know.
 It answers a narrow question — **how much real expertise does AI reliance destroy,
@@ -26,7 +49,7 @@ drag down institution averages for existing experts too.
 parameter sweep and writes the results to CSV — no browser needed.
 
 ```bash
-node batch_run.js --config sweep.json --out results.csv --summary-out results_summary.csv
+node src/batch_run.js --config data/sweep.json --out results.csv --summary-out results_summary.csv
 ```
 
 ### Worked example: how much does AI obliterate expertise?
@@ -40,7 +63,7 @@ a matched no-AI counterfactual*, not a number that only makes sense in
 isolation:
 
 ```bash
-node batch_run.js --config sweep.example.json --workers 4
+node src/batch_run.js --config data/sweep.example.json --workers 4
 ```
 
 ```
@@ -87,7 +110,7 @@ continuously at once, for exploring a wide space without the combinatorial
 blowup of a full grid. (It doesn't use `pairWithBaseline`; add it the same
 way if you want a wide random sweep to also report shortfalls.)
 
-### Parameter-pair experiment set (`experiments/experiment.N.json`)
+### Parameter-pair experiment set (`data/experiments/experiment.N.json`)
 
 One file per unordered pair of **eight** study parameters, with every other
 parameter pinned identically across all 28 files. Unordered: `A×B` and `B×A`
@@ -149,11 +172,11 @@ the values swept and the fixed baseline.
 Run all of them, or a subset, into `results/experiment.<n>/`:
 
 ```bash
-./run_experiments.sh                    # all 28
-./run_experiments.sh 3 8 16             # just these
-./run_experiments.sh --workers 14       # more worker threads on a bigger machine
-./run_experiments.sh --workers 14 3 7   # both together, any order
-./run_experiments.sh --redo             # re-run even already-completed experiments
+./src/run_experiments.sh                    # all 28
+./src/run_experiments.sh 3 8 16             # just these
+./src/run_experiments.sh --workers 14       # more worker threads on a bigger machine
+./src/run_experiments.sh --workers 14 3 7   # both together, any order
+./src/run_experiments.sh --redo             # re-run even already-completed experiments
 ```
 
 **Resume.** An experiment is skipped if its `results_shortfall.csv` already
@@ -172,11 +195,11 @@ experiment, 55,566 across all 21. Measured on an 18-core box: **645 s per
 experiment at `--workers 14`**, so roughly 3.8 hours wall for the full set and
 ~1.7 GB of CSV. `generate_worldmodel_experiments.js` prints its own estimate,
 but that assumes perfect scaling and came out ~3× optimistic — time
-`./run_experiments.sh 1` on your own machine before committing to the batch.
+`./src/run_experiments.sh 1` on your own machine before committing to the batch.
 
 To change the grid resolution, the values swept, or what's held fixed, edit
 `STUDY_PARAMS` / `BASE_FIXED` at the top of `generate_worldmodel_experiments.js`
-and rerun `node generate_worldmodel_experiments.js` — it regenerates all 21
+and rerun `node src/generate_worldmodel_experiments.js` — it regenerates all 21
 files plus the manifest from those two objects. `GRID` (currently 21) and
 `REPLICATES` (currently 3) are in the same file. Experiment numbers are stable identities, not list positions: the generator
 enumerates pairings over the original parameter order and skips retired ones, so
@@ -243,11 +266,11 @@ experiment 1 against its archived row — `meanE` at t=1440 reproduces bit-for-b
 After `run_experiments.sh` has populated `results/`, build the heatmap browser:
 
 ```bash
-node build_report.js      # reads results/, writes report.html
+node src/build_report.js      # reads results/, writes doc/report.html
 ```
 
 Open `report.html` directly in a browser — no server needed, everything is
-embedded at build time. Rerun `node build_report.js` any time you rerun
+embedded at build time. Rerun `node src/build_report.js` any time you rerun
 experiments; it always reflects whatever's currently in `results/` (and
 tells you if any of the 21 are missing).
 
@@ -261,7 +284,7 @@ manifest-declared sweep axis does not vary in the results, and names the
 mismatch. To build the BA set instead:
 
 ```bash
-node build_report.js --manifest experiments.manifest.json \
+node src/build_report.js --manifest experiments.manifest.json \
                      --results results-ba --out report-ba.html
 ```
 
@@ -393,7 +416,7 @@ run or empirical check behind it, unlike almost every other constant in this
 project. The sensitivity check below is what it looked like at the time, and is why
 the value changed.
 
-**Sensitivity check** (`node expert_threshold_sensitivity.js`): reruns the
+**Sensitivity check** (`node src/expert_threshold_sensitivity.js`): reruns the
 self-renewal scenario from `test_engine.js` (no-AI baseline vs. AI-dampened
 treatment, matched seed, t=1500) and recomputes `shareExpert` directly from the
 final population at candidate thresholds from 0.1 to 0.9, without changing
@@ -432,7 +455,7 @@ set's worst-case backdrop).
 Because `EXPERT_THRESHOLD` is fixed and unexposed, no experiment in the pairwise set
 tests sensitivity to *where* the expert line is drawn — every `shareExpert` result
 in `report.html` reflects whichever threshold was active in `engine.js` when
-`./run_experiments.sh` was last run. Results generated before this change was made
+`./src/run_experiments.sh` was last run. Results generated before this change was made
 used `0.7` and are stale with respect to the current `0.585`.
 
 The upper breakdown isn't an AI effect — it's the no-AI steady state itself (see
@@ -497,7 +520,7 @@ silently ignored).
 Run it like any other config — nothing on the command line changes:
 
 ```bash
-node batch_run.js --config experiments-worldmodel/worldmodel.1.json --workers 8 \
+node src/batch_run.js --config data/experiments-worldmodel/worldmodel.1.json --workers 8 \
   --out results-worldmodel/worldmodel.1/results.csv \
   --summary-out results-worldmodel/worldmodel.1/results_summary.csv \
   --shortfall-out results-worldmodel/worldmodel.1/results_shortfall.csv
@@ -778,8 +801,8 @@ every existing result — checked against an archived world-model row, which rep
 bit-for-bit with the mechanism off.
 
 ```bash
-node calibrate_pipeline.js            # the scan: 6-10y to expert, stationary, and a populated ladder
-node calibrate_pipeline.js --verify   # one cell in detail (env: CAP, DR, TEN)
+node src/calibrate_pipeline.js            # the scan: 6-10y to expert, stationary, and a populated ladder
+node src/calibrate_pipeline.js --verify   # one cell in detail (env: CAP, DR, TEN)
 ```
 
 `engine.js` exports the result as `PIPELINE_PARAMS` (`learningCap` 0.0056,
@@ -842,7 +865,7 @@ nothing measurable to erode.
 published results are untouched.
 
 ```bash
-node calibrate_time_base.js --world-model   # the scan behind those numbers
+node src/calibrate_time_base.js --world-model   # the scan behind those numbers
 ```
 
 `simulator.html` carries its own copy of `MONTHLY_TICK_PARAMS` and layers it over
@@ -932,8 +955,8 @@ opens. Flip `use_world_model` and press **Rebuild**; the file inputs above it ar
 only needed to substitute your own edited data.
 
 ```bash
-node build_world_model_data.js            # regenerate after editing either JSON
-node build_world_model_data.js --check    # is the bundle current? (test_world_model.js runs this)
+node src/build_world_model_data.js            # regenerate after editing either JSON
+node src/build_world_model_data.js --check    # is the bundle current? (test_world_model.js runs this)
 ```
 
 A generated script rather than `fetch()` because the page is opened straight off the
@@ -984,11 +1007,11 @@ result.
 ## Tests
 
 ```bash
-node test_engine.js        # engine unit tests (no DOM)
-node dom_stub_test.js simulator.html          # drives simulator.html's actual UI code end-to-end under a stubbed DOM
+node src/test/test_engine.js        # engine unit tests (no DOM)
+node src/test/dom_stub_test.js src/simulator.html          # drives simulator.html's actual UI code end-to-end under a stubbed DOM
                                               #   (loads engine.js/world_model.js as a browser does — shared global scope)
-node dom_stub_test_report.js report.html      # same, for report.html — build it first
-node test_world_model.js   # world-model loader + engine integration (65 checks)
+node src/test/dom_stub_test_report.js doc/report.html      # same, for report.html — build it first
+node src/test/test_world_model.js   # world-model loader + engine integration (65 checks)
 ```
 
 The ρ→(`γ_below`, `μ_atr`) mapping exists in three places: `engine.js` for batch

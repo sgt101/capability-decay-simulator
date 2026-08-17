@@ -329,7 +329,7 @@ try {
 // 2026-08, so the template that builds new reports must not still be explaining a
 // mapping (1 - rho, 5^rho) the engine no longer implements.
 {
-  const tpl = fs.readFileSync(path.join(__dirname, "report.template.html"), "utf8");
+  const tpl = fs.readFileSync(path.join(__dirname, "..", "report.template.html"), "utf8");
   const banned = ["relianceDerived", "relianceNote(", "ATROPHY_AT_FULL_RELIANCE"];
   const found = banned.filter((n) => tpl.includes(n));
   if (found.length) {

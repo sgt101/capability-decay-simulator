@@ -120,20 +120,26 @@ coverage/
 # Everything below is REPRODUCIBLE from committed source — it is regenerated,
 # not authored. Committing it previously made the working tree 5.3 GB.
 #
-#   results/     ~4.0 GB  — rebuild with ./run_experiments.sh
-#   report.html  ~308 MB  — rebuild with `node build_report.js`
-#                           (report.template.html IS tracked; report.html is
-#                           that template with the results data injected, and
-#                           exceeds GitHub's 100 MB per-file hard limit)
+#   results/         ~4.0 GB  — rebuild with ./src/run_experiments.sh
+#   doc/report.html  ~308 MB  — rebuild with `node src/build_report.js`
+#                               (src/report.template.html IS tracked; report.html
+#                               is that template with the results data injected,
+#                               and exceeds GitHub's 100 MB per-file hard limit)
 #
-# Deliberately still tracked: "steady state/*.csv" (~16 KB), because those are
-# the recorded evidence behind paper.md's steady-state section, not bulk output.
-results/
+# Written as results/* rather than results/ so the one exception below can be
+# re-included: git will not descend into an excluded DIRECTORY, so a negation
+# inside it never takes effect.
+results/*
+# Deliberately still tracked (~16 KB): the recorded evidence behind paper.md's
+# steady-state section, not bulk output. It sits under results/ because it IS
+# generated (by src/run_steady_state.js) — the exception is about size and
+# citability, not about it being a source of truth.
+!results/steady_state/
 report.html
 
-# Archived/renamed result sets (e.g. results_AB_graph_interesting280726/) — same
-# bulk output, kept under a descriptive name. Without this a `git add .` would
-# stage several GB.
+# Archived result sets now live under results/archive/, covered by the rule above.
+# These two patterns are kept for anything restored from an old checkout into the
+# repo root under its original name.
 results_*/
 results-*/
 

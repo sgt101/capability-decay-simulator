@@ -16,8 +16,8 @@
 // of the population was ever below the expert threshold and the rest sat in a blob
 // 0.025 wide.
 //
-//   node calibrate_pipeline.js              # the scan
-//   node calibrate_pipeline.js --verify     # one cell, with the distribution it gives
+//   node src/calibrate_pipeline.js              # the scan
+//   node src/calibrate_pipeline.js --verify     # one cell, with the distribution it gives
 //                                           # (env: CAP, DR, TEN)
 //
 // A cell is accepted only if it satisfies ALL THREE:
