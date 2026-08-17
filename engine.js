@@ -1,4 +1,14 @@
 // Capability Decay Simulator — engine (framework-agnostic, testable under Node)
+//
+// SCOPE: wrapped in an IIFE so this file publishes EXACTLY ONE name — module.exports
+// under Node, globalThis.Engine in a browser. simulator.html loads it with
+// <script src>, and two classic scripts share ONE global lexical scope: anything
+// declared at top level here would collide with an identically-named declaration in
+// the page and throw SyntaxError before either script ran. That is precisely what
+// broke the page in 2026-08 (seven collisions, starting at the RNG). The body below
+// is deliberately NOT re-indented — the wrapper is a scope boundary, not a reason for
+// a whitespace diff over every line in the file.
+(function () {
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -18,6 +28,25 @@ function randNormal(rng) {
 }
 
 function clip01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+
+// An aptitude ceiling, drawn by REJECTION rather than by clipping. Clipping a normal
+// to [0,1] puts an atom at exactly 1.0 — measured, 10% of ceilings landed there, and
+// since ~63% of people sit within 0.02 of their own ceiling that atom propagated
+// straight into the expertise distribution as a wall of extreme experts. Same artefact
+// as the entrant floor's pile-up at exactly 0 (problems.md P19), same fix: don't let
+// the boundary collect mass. Resampling gives a truncated normal, whose density tapers
+// to the edge instead.
+//
+// APTITUDE_FLOOR keeps a ceiling from landing below the level entrants arrive at,
+// which would strand someone below the entrant floor for their whole career.
+const APTITUDE_FLOOR = 0.02;
+function drawAptitude(rng, mean, spread) {
+  for (let k = 0; k < 64; k++) {
+    const v = mean + randNormal(rng) * spread;
+    if (v > APTITUDE_FLOOR && v < 1) return v;
+  }
+  return clip01(mean);      // pathological parameters: fall back rather than loop
+}
 
 // HISTORICAL (removed 2026-08): a single signed dial `aiRelianceIntensity` (rho)
 // used to drive both halves of de-skilling — aiDampeningBelow = 1 - rho and
@@ -84,14 +113,12 @@ function generateBAGraph(M, mAttach, rng) {
   return { M, neighbors, degree, prestige };
 }
 
-// --- AI capability boost shapes: boost(E) at ai_level a ---
-const AI_MODES = {
-  floor: (e, a) => Math.max(0, a - e),
-  flat: (e, a) => a,
-  linear: (e, a) => a * e,
-  amplified: (e, a) => a * e * e,
-  exponential: (e, a) => e * (Math.exp(a * e) - 1),
-};
+// REMOVED 2026-08: the observed-capability channel (C, aiGain, aiResponseMode and the
+// AI_MODES boost shapes). C never touched E — it only fed meanC and the illusion gap —
+// so with the boost dials gone it carried no information. The model is now purely
+// about latent expertise: what people can actually do, and what AI reliance does to it.
+// Reinstating the split means restoring C, the modes, and the meanC/gap metrics
+// together; half of it is worse than neither.
 
 // Chosen to sit roughly in the middle of the range where the self-renewal/collapse
 // contrast reads cleanly (~0.3-0.86) — see expert_threshold_sensitivity.js and the
@@ -112,35 +139,137 @@ const DEFAULT_PARAMS = {
   // is replaced by stuck entrants, institution averages fall further, so even
   // existing experts near them decay faster too (their own gap = Ebar - E gets more
   // negative). See spec.html "Entrant renewal" for the full mechanism.
-  entrantExpertiseMean: 0.05, entrantExpertiseSpread: 0.05, entrantExpertiseSkew: 0,
+  entrantExpertiseMean: 0.05, entrantExpertiseSpread: 0.05,
   // Lower bound on an entrant's draw. The draw is skew-normal clipped to [0,1],
   // so at entrantExpertiseMean = 0.05 with spread 0.05, ~16% of entrants used to
   // arrive at exactly E = 0 — and at a nominal mean of 0, fully half did. That
   // pile-up at the boundary made the bottom of the entrantExpertiseMean axis
   // non-linear in its own parameter (nominal 0 realised as 0.020), and it fed
-  // the absorbing state at aiRelianceIntensity = 1 (problems.md P19).
+  // the absorbing state at maximum de-skilling (problems.md P19/R11 — written
+  // when that was reached via the since-removed aiRelianceIntensity = 1).
   // Set to 0 for the pre-2026-08 behaviour.
   entrantExpertiseFloor: 0.05,
   graphAttachment: 2,
   transferRate: 0.5, decayRate: 0.01, learningRateSpread: 0.4,
-  // Humans at/above their institution's own average don't just decay — being
-  // embedded among strong peers is itself a source of gradual improvement (osmosis,
-  // harder problems, higher-caliber review), scaled by how strong the institution
-  // is. Checked: this has to be anchored to the institution's FOUNDING average
+  // What you learn on your own once there is nobody left to be taught by. Someone who
+  // has reached their institution's teaching level is in the decay branch — the taught
+  // channel needs a positive gap and they have none — so this is the ONLY route by which
+  // they keep improving: slower than being taught, but not zero. Renamed from
+  // ambientGrowthRate (2026-08) because "ambient growth" described where it sat in the
+  // code rather than what it represents, and it now carries the AI contrast for everyone
+  // who has already arrived.
+  //
+  // Scaled by how strong the institution is. Checked: this has to be anchored to the
+  // institution's FOUNDING average
   // (state.startEbar, fixed at init), not its live one — using the live average
   // creates a runaway positive feedback loop (top performers rise -> average rises
-  // -> ambient growth rises further -> ...) that saturates the entire population to
+  // -> personal learning rises further -> ...) that saturates the entire population to
   // E=1 by t~2000-5000 regardless of AI. The fixed anchor still saturates given a
   // long enough horizon (nothing here is a stable equilibrium, only a slow one), but
   // at this default it stays a gentle, non-dominant effect through the model's
   // standard 1000-tick horizon and doesn't meaningfully touch the AI/no-AI contrast
   // under worst-case dampening (see generate_experiments.js's aiDampeningBelow/Above
   // default) — checked directly against the self-renewal scenario.
-  ambientGrowthRate: 0.001,
+  //
+  // Stays at 0.001 here even though the shipped calibration uses 0.005: every archived
+  // experiment omits this key, so DEFAULT_PARAMS is what they resolve to, and moving it
+  // would silently re-run them under a different model. PIPELINE_PARAMS carries the
+  // current value.
+  personalLearningRate: 0.001,
   mobilityMode: "hybrid", jumpProbability: 0.10,
   competitionAversion: 0.5, prestigeWeight: 0.3, baseMoveProb: 0.05,
   turnoverRate: 0.01,
-  aiEnabled: false, aiResponseMode: "floor",
+  // --- entrant pipeline (2026-08) -------------------------------------------
+  // Both default to 0 = OFF, i.e. the dynamics every existing config and every
+  // archived result were produced under. See PIPELINE_PARAMS for the calibrated set.
+  //
+  // The problem they fix: learning is gap-proportional, so it is EXPONENTIAL —
+  // fastest when furthest behind. Measured on the monthly calibration, an entrant
+  // reached the expert threshold in a median of 1.8 years against this project's own
+  // stated assumption of 8 (calibrate_time_base.js, TARGET_YEARS_TO_EXPERT). The
+  // pipeline therefore occupied ~4% of a career, so ~4% of the population was ever on
+  // it and the distribution was a point mass at the institution mean.
+  //
+  // learningCap makes the climb roughly LINEAR in time: the most expertise one tick of
+  // peer learning can add, before the per-person learning rate scales it. Time from
+  // the entrant floor to expert is about (0.585 - floor) / cap months.
+  learningCap: 0,
+  // Who you learn FROM. 0 = the plain institution mean, which includes fellow
+  // trainees — that is why a cap alone collapses the field: a long pipeline drags the
+  // mean down and every target follows it. Above 0, the target is the mean over
+  // members with at least this many YEARS of tenure, so trainees no longer dilute
+  // what they are climbing toward.
+  //
+  // Tenure is deliberately the criterion rather than rank. A rank-based target (the
+  // top half, say) RATCHETS: raising the top half raises the target, which raises the
+  // top half. Measured, that inflates the field by +0.08 per 1,000 ticks toward
+  // saturation — the same runaway documented above for personalLearningRate against a
+  // live average. Tenure does not respond to expertise, so the target stays a balance
+  // point that people above it decay back toward.
+  seniorTenureYears: 0,
+  // --- who becomes what: differentiating careers AFTER training (2026-08) --------
+  // Measured by tenure band, the model was well behaved up to year 8 and a single point
+  // after it: the 8-20y band sat at 0.642 and the 20y+ band at 0.645. Half the field was
+  // indistinguishable, because once you reach your institution's teaching level nothing
+  // can separate one veteran from another.
+  //
+  // aptitude: a person's ceiling, drawn at entry. Asserts that people differ in the
+  // expertise they can ATTAIN, not only in how fast they get there — a claim about
+  // the world, made deliberately. 0 = off, everyone can reach 1.0.
+  // Drawn by rejection, not clipped — see drawAptitude(). A clipped normal put 10% of
+  // ceilings on exactly 1.0, and that atom became a wall of extreme experts.
+  aptitudeMean: 0.75,
+  aptitudeSpread: 0,
+  // Teaching level is the mean of an institution's best N seniors, counted in ABSOLUTE
+  // numbers. A percentile is scale-free and therefore cannot make institutions differ by
+  // size however much size varies; an absolute count can — the best 8 of 1051 people are
+  // outstanding, the best 8 of 19 are most of the staff. 0 = off, the plain senior mean.
+  teachTopN: 0,
+  // --- the brake: learning gets harder the further you are above the field ---------
+  // Slows the LEARNING branch for anyone already above the population mean, by the
+  // factor 1 / (1 + aboveMeanDrag * (E - meanE)). 0 = off, and off is exactly 1.0, so
+  // archived runs reproduce bit-identically.
+  //
+  // This is a BRAKE, not a target and not a decay term. The distinction matters and is
+  // the reason it does not trip the ratchet documented under seniorTenureYears:
+  //   - it never moves anyone down, so it adds no restoring force to argue about;
+  //   - it only ever multiplies delta by something in (0, 1], so it cannot push the
+  //     field up either. The hard caps stay exactly where they were — learning still
+  //     requires gap > 0, so nobody passes min(aptitude, teacher level) by any route.
+  //   - the reference is the live population mean, which does rise as the field learns,
+  //     releasing the brake for those it had slowed. That IS positive feedback, but it
+  //     is bounded by those same caps: the mean cannot chase itself past the ceiling
+  //     distribution. Verified to t=12000 (1,000 years) — see the drift check below.
+  //
+  // What it buys: a populated ladder without needing an implausibly high destination.
+  // The old way to spread the field was to raise the target (a top-quartile teaching
+  // level), which
+  // put everyone's attractor in the top quartile. This spreads it by making the upper
+  // half of the climb slow enough that a 40-year career does not finish it.
+  aboveMeanDrag: 0,
+  // --- critical mass: an institution needs a body of experts to transfer anything ----
+  // Expertise transfer is not one person handing knowledge to another — it needs a
+  // department, a seminar, enough people that the tacit part survives one person
+  // leaving. Below criticalMass experts an institution teaches at reduced efficiency;
+  // 0 = off (every institution teaches at full efficiency regardless of size).
+  //
+  // This is the lever for institutional differentiation. Institution SIZES already span
+  // 50x (measured: 9 to 485 members on the BA graph at N=2000, M=40), but teaching
+  // capability barely varies with them, because Teach is the mean of the top quartile
+  // and a small institution's best quarter is as good as a big one's. Keying transfer
+  // to the absolute expert count is what makes that 50x span matter.
+  criticalMass: 0,
+  // Hill exponent: how abruptly efficiency falls away below criticalMass. ~1 is a gentle
+  // slope, >=8 is effectively a hard cutoff.
+  criticalMassSharpness: 2,
+  // Efficiency scales the RATE of transfer, deliberately, not the target. The obvious
+  // alternative — a thin institution can pass on less, so scale the target itself — was
+  // built and measured, and it is UNCONDITIONALLY UNSTABLE. Expert count sets the
+  // target, the target sets expert count, and nothing anchors the loop: a healthy field
+  // of 1,257 experts collapsed to zero in 10 years, at every (criticalMass, sharpness)
+  // tried. Scaling the rate is stable precisely because the destination stays fixed
+  // while people move toward it. Do not re-derive the target variant; it is a runaway.
+  aiEnabled: false,
   // The AI's reference level, in absolute expertise units (aiLevel =
   // aiLevelFraction x startTopE, and startTopE is 1.0 for any realistic N — see
   // problems.md P17). Defaulted to EXPERT_THRESHOLD deliberately: the natural
@@ -148,9 +277,8 @@ const DEFAULT_PARAMS = {
   // and that is a stated quantity rather than a free choice. It also sits below
   // the saturation plateau that begins around 0.65, where lambda stops mattering
   // and aiDampeningAbove stops governing anybody (P16).
-  aiLevelFraction: EXPERT_THRESHOLD, aiGain: 1.0,
+  aiLevelFraction: EXPERT_THRESHOLD,
   aiDampeningBelow: 0.30, aiDampeningAbove: 0.80,
-  aiAtrophyMultiplier: 1.5,
 
   seed: 1,
 
@@ -160,11 +288,6 @@ const DEFAULT_PARAMS = {
   worldModel: null,            // a loadWorldModel() result, NOT a path — keeps
                                // this file fs-free and browser-compatible
   institutionSizing: "uniform",// "uniform" | "weighted" (intake-proportional)
-  // Mobility friction from the affinity model. Enters the move utility as
-  // mobilityFriction * log(affinity), so under the softmax it multiplies a
-  // candidate's weight by affinity^(mobilityFriction/MOVE_TEMPERATURE).
-  // 0 reproduces the pre-world-model behaviour EXACTLY — asserted in test_engine.js.
-  mobilityFriction: 0,
   // Top-K mobility heuristic. 0 = off (evaluate the full near-neighbour set, the
   // original behaviour). When > 0, an agent considers only its K highest-affinity
   // destinations instead of every neighbour — mobility is ~75% of runtime and its
@@ -206,7 +329,125 @@ const MONTHLY_TICK_PARAMS = {
   transferRate: 0.15,      // equilibrium meanE ~0.63 at world-model scale
   decayRate: 0.020,        // counterweight; sets where that equilibrium sits
 };
+// Parameters this engine used to have. Kept as a rejection list rather than dropped
+// silently: a config written against an older engine should fail loudly, not run on
+// defaults while its CSV row still names the parameter. See README's "Removed
+// parameters" for the measurements behind each.
+const REMOVED_PARAMS = {
+  aiRelianceIntensity: "set aiDampeningBelow directly (the old mapping was 1 - rho)",
+  aiAtrophyMultiplier: "the atrophy branch is gone; AI now acts only by dampening learning",
+  mobilityFriction: "the affinity-priced move penalty is gone (it moved the shortfall by 0.005)",
+  entrantExpertiseSkew: "entrant draws are unskewed; it was pinned at 0 everywhere",
+  aiGain: "the observed-capability channel C was removed, and with it every dial that shaped it",
+  aiResponseMode: "the observed-capability channel C was removed, and with it every dial that shaped it",
+  ambientGrowthRate: "renamed to personalLearningRate (2026-08) — same units and default, but it is now AI-gated by aiDampeningBelow/Above, so a run using it is not the run this engine would produce",
+  // Removed 2026-08 after an ablation from the calibrated configuration. Per-person
+  // teacher assignment is gone entirely: everyone learns from Teach[j], their
+  // institution's teaching level. The three went together because they were one
+  // mechanism — a pool, a draw from it, and a cap on the draw.
+  teachPercentile: "teachTopN replaced it — an absolute count, not a percentile. Measured INERT once teachTopN was on: max |dE| exactly 0",
+  teacherTermYears: "per-person teachers are gone; teachTopN left the pool too small and too alike for a persistent draw to carry any variance (IQR moved 0.297 -> 0.313 without it)",
+  teachCapacity: "measured to do nothing at the shipped setting (mean 0.566 -> 0.569, IQR unchanged); it only ever rationed a pool that is no longer drawn from",
+};
+
 const TICKS_PER_YEAR = 12;
+
+// Calibrated entrant pipeline — see calibrate_pipeline.js for the scan, and
+// DEFAULT_PARAMS.learningCap for what the two mechanisms do and why.
+//
+// Layered over MONTHLY_TICK_PARAMS, not folded into it, for the same reason that set
+// is kept separate from DEFAULT_PARAMS: the 15 completed world-model experiments and
+// every archived result were produced WITHOUT it, and stay reproducible.
+//
+// Measured at N=2000, M=40, no AI, 3 seeds, drift over t=2000..4800:
+//
+//                      before        after
+//   years to expert     1.8          7.8      (stated assumption: 8)
+//   meanE               0.61         0.61
+//   p25 - p75           0.010        0.303    <- a populated distribution, not a spike
+//   below expert         5%           38%
+//   at E >= 0.85         0%            0%     (21% before ceilings were drawn by
+//                                              rejection rather than clipped)
+//   never reach expert   0%           19%     (ceiling below the threshold, by design)
+//   drift               -0.012       +0.003   (both stationary)
+//
+// It also restores shareExpert as a metric. It used to sit at ~0.95 with no downward
+// range (README, "Time base"); under AI it now moves 0.647 -> 0.408.
+//
+// Drift is measured from t=2000 because this mechanism's transient runs for several
+// careers: the field has to reach a stationary tenure structure and replace everyone
+// who was in it at t=0. meanE is still rising at t=1200 and level from t=2000. The
+// LADDER, which is the point, forms much sooner — by year 10.
+//
+// Scale-robust in a way the old decay-rate tuning was not, because the cap fixes the
+// climb rate in absolute terms rather than relative to institution size: at 5, 13, 25
+// and 50 people per institution the ladder holds at 18-19% below expert.
+//
+// It also repairs a known measurement problem. README's "Time base" notes that
+// baseline shareExpert sat at ~0.95 with little downward range, making it a poor
+// metric. With the pipeline the baseline sits near the threshold, so shareExpert
+// discriminates in both directions again.
+const PIPELINE_PARAMS = {
+  learningCap: 0.0056,        // ~8 years from the entrant floor to expert
+  seniorTenureYears: 8,       // learn from those past the pipeline, not from fellow trainees
+  decayRate: 0.027,           // re-fitted: a longer pipeline shifts where decay balances
+  // Careers differentiate after training as well as during it.
+  aptitudeSpread: 0.20,       // ceilings ~N(0.75, 0.20), clipped to [0,1]
+  // 0.005, not the older 0.001, because the slider grid is 0.005 and a default the
+  // control cannot represent would snap to 0 the moment anyone touched it. Measured at
+  // N=10500 over 200 years with no AI, the move costs nothing: meanE 0.571 -> 0.569,
+  // IQR 0.316 -> 0.326, share below expert 43% -> 44%.
+  personalLearningRate: 0.005,
+  // Teaching selection. This set used to get it from teachPercentile (the top quarter of
+  // seniors); with that gone, teachTopN is the only thing standing between the model and
+  // a plain senior mean — which includes everyone still climbing and collapses the field
+  // (measured: meanE 0.59 -> 0.42 with no selection at all).
+  teachTopN: 8,
+  // Learning slows the further you are above the field. Scanned k = 4/8/16/32 at
+  // N=1500, M=40, 3 seeds: k=16 clears the E >= 0.80 band (24% -> 0%) and pulls p99
+  // from 0.84 to 0.79, while leaving time-to-expert at 7.8y, the share below expert at
+  // 37% and the IQR at 0.276. Stationary: meanE moves +0.0039 between t=2000 and
+  // t=12000, i.e. over 830 years.
+  aboveMeanDrag: 16,
+};
+
+// The DEPLOYMENT calibration: the configuration this model is actually run in, fitted by
+// calibrate_worldmodel.js on the world-model graph at N=10500. Layered over
+// MONTHLY_TICK_PARAMS and PIPELINE_PARAMS for the usual reason — the archived batch results
+// predate it and stay reproducible because none of them names it.
+//
+// Why N belongs in a parameter set: below 10500 the people-per-institution distribution
+// stops matching the world model's own. At N=2000 across 245 institutions the median
+// institution holds 5 people, which is not a department, and every institution-level
+// mechanism here is then measuring noise.
+//
+// Verified at the full horizon, 2 seeds, 1000 years:
+//
+//   median years to expert     7.7      (assumption: 8)
+//   interquartile range       0.312     (0.279 before; the ladder)
+//   share below expert        42.9%
+//   institutional spread      0.119     (0.099 before)
+//   corr(size, institution E)  0.336     (0.280 before)
+//   drift over 1000 years   -0.0015     (stationary)
+//
+// Re-verified after per-person teacher assignment was removed (teachPercentile,
+// teacherTermYears, teachCapacity — see REMOVED_PARAMS). Everyone now learns from
+// Teach[j] directly. IQR rose 0.301 -> 0.312 and corrSize fell 0.373 -> 0.336; both
+// still pass, and the configuration is simpler by three parameters.
+//
+// learningRateSpread does the work aptitudeSpread could not. Both widen the individual
+// distribution, but ceilings widen it from BELOW — they add people who never reach expert,
+// which drove the below-expert share to 57-68% and diluted the between-institution signal
+// back to baseline. Varying learning SPEED smears people along the climb instead: slow
+// learners still arrive, so no permanent underclass forms inside each institution and the
+// institutional signal survives. See README, "Making institutions differ".
+const WORLD_MODEL_PARAMS = {
+  N: 10500,                   // matches the world model's own size distribution
+  baseMoveProb: 0.01,         // a move every ~7 years, not every 20 months
+  learningCap: 0.0048,
+  learningRateSpread: 1.0,
+  teachTopN: 8,               // absolute pool, so institution size buys teaching quality
+};
 
 const MOVE_TEMPERATURE = 0.12;
 const UNCONSTRAINED_CANDIDATE_CAP = 25;
@@ -235,13 +476,13 @@ function sampleInstitution(state, rng) {
 function initSim(userParams) {
   const params = Object.assign({}, DEFAULT_PARAMS, userParams || {});
 
-  // Rejected, not ignored: initSim merges unknown keys straight into params and from
-  // there into every CSV column, so a stale config would otherwise run DEFAULT
-  // dampening while its results rows still advertised a reliance intensity.
-  if (userParams && userParams.aiRelianceIntensity != null) {
-    throw new Error(
-      "[engine] aiRelianceIntensity was removed — set aiDampeningBelow and " +
-      "aiAtrophyMultiplier directly (the old mapping was 1 - rho and 5^rho)");
+  // Rejected, not ignored. initSim merges unknown keys straight into params and from
+  // there into every CSV column, so a stale config would otherwise run on defaults
+  // while its results rows advertised a parameter that no longer does anything.
+  if (userParams) {
+    for (const [key, why] of Object.entries(REMOVED_PARAMS)) {
+      if (userParams[key] != null) throw new Error(`[engine] ${key} was removed — ${why}`);
+    }
   }
 
   const rng = mulberry32(params.seed >>> 0 || 1);
@@ -265,9 +506,22 @@ function initSim(userParams) {
 
   const N = params.N;
   const E = new Float32Array(N);
-  const C = new Float32Array(N);
   const L = new Float32Array(N);
   const inst = new Int32Array(N);
+  // Months served. Drawn across a whole career at t=0 rather than starting everyone at
+  // zero: a real field is a mix of tenures, and starting them all "new" would leave no
+  // seniors to learn from for the first several years.
+  //
+  // Drawn from its OWN generator, not the main one. Taking N draws from rng() here
+  // would shift every downstream draw and silently change every result the model has
+  // ever produced — checked against an archived world-model row, which stopped
+  // reproducing until this was separated out.
+  const tenure = new Int32Array(N);
+  // Aptitude ceilings. Drawn from tenureRng for the same
+  // reason tenure is: taking draws from the main stream would shift every downstream
+  // value and change every result the model has ever produced.
+  const aptitude = new Float32Array(N);
+  const tenureRng = mulberry32(((params.seed >>> 0 || 1) ^ 0x9e3779b9) >>> 0);
 
   // Built before placement so init and turnover draw from the same distribution.
   let institutionCDF = null;
@@ -283,8 +537,10 @@ function initSim(userParams) {
   for (let i = 0; i < N; i++) {
     E[i] = sampleSkewNormalClipped(rng, params.expertiseMean, params.expertiseSpread, params.expertiseSkew);
     L[i] = sampleLognormal(rng, params.learningRateSpread);
+    aptitude[i] = params.aptitudeSpread > 0
+      ? drawAptitude(tenureRng, params.aptitudeMean, params.aptitudeSpread) : 1;
+    tenure[i] = Math.floor(tenureRng() / Math.max(params.turnoverRate, 1e-9));
     inst[i] = sampleInstitution(placer, rng);
-    C[i] = E[i];
   }
 
   // Fixed for the whole run, set once from the t=0 population: "the greatest human
@@ -297,7 +553,7 @@ function initSim(userParams) {
   for (let i = 0; i < N; i++) if (E[i] > startTopE) startTopE = E[i];
 
   // Each institution's OWN founding average, fixed at init — the anchor for ambient
-  // growth (see ambientGrowthRate above). Deliberately not recomputed per tick: an
+  // growth (see personalLearningRate above). Deliberately not recomputed per tick: an
   // institution's live average is itself moved by the very effect this anchors, so
   // using it directly would create unbounded positive feedback.
   const startEbar = new Float32Array(params.M);
@@ -308,7 +564,7 @@ function initSim(userParams) {
   return {
     params, rng, graph,
     N, M: params.M,
-    E, C, L, inst,
+    E, L, tenure, aptitude, inst,
     // Reusable mobility scratch (problems.md O1). Bounded by M+1: a candidate set
     // can never hold more than every institution plus the current one. ~2KB at
     // M=245. Allocated once per run, not once per moving agent per tick.
@@ -317,6 +573,11 @@ function initSim(userParams) {
     institutionCDF,
     startTopE, startEbar,
     t: 0,
+    // Cumulative turnover events since t=0. One event is one retirement AND one
+    // entrant — the population is conserved by construction, so the two counts are
+    // equal. Kept as a running total rather than re-summed from history, so scrubbing
+    // to an earlier tick reads the value as of that tick.
+    turnoverTotal: 0,
     history: [],
     snapshots: [],
     lastAiLevel: null,
@@ -327,10 +588,77 @@ function institutionStats(state) {
   const { M, inst, E } = state;
   const sumE = new Float64Array(M);
   const count = new Int32Array(M);
-  for (let i = 0; i < state.N; i++) { sumE[inst[i]] += E[i]; count[inst[i]]++; }
+  // Experts per institution, in ABSOLUTE numbers — the input to critical mass below.
+  const experts = new Int32Array(M);
+  for (let i = 0; i < state.N; i++) {
+    sumE[inst[i]] += E[i]; count[inst[i]]++;
+    if (E[i] >= EXPERT_THRESHOLD) experts[inst[i]]++;
+  }
   const Ebar = new Float32Array(M);
   for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
-  return { Ebar, count };
+
+  // Teaching capability: the mean over members past seniorTenureYears, which is what
+  // trainees actually learn from when the pipeline mechanism is on. Falls back to the
+  // plain mean per institution wherever there are no seniors — otherwise a young
+  // institution would have nothing to teach with and its members would decay to zero.
+  const senior = state.params.seniorTenureYears;
+  let Teach = Ebar;
+  if (senior > 0 && state.tenure) {
+    const minMonths = senior * TICKS_PER_YEAR;
+    const sSum = new Float64Array(M), sCount = new Int32Array(M);
+    for (let i = 0; i < state.N; i++) {
+      if (state.tenure[i] >= minMonths) { sSum[inst[i]] += E[i]; sCount[inst[i]]++; }
+    }
+    Teach = new Float32Array(M);
+    for (let j = 0; j < M; j++) Teach[j] = sCount[j] > 0 ? sSum[j] / sCount[j] : Ebar[j];
+
+    // teachTopN: what a place can teach is the mean of its best N seniors in ABSOLUTE
+    // numbers, not its best quarter. This is the whole point — a percentile is
+    // scale-free, so a 9-person institution's best quarter is as good as a 1426-person
+    // one's, and institutions cannot differ by size no matter how much size varies. An
+    // absolute count makes the top of a big place genuinely deeper: the best 8 of 1426
+    // are far above the best 8 of 9, who are simply most of the institution.
+    //
+    // Anchored to real individuals' expertise, exactly as the plain senior mean is, so
+    // it carries no feedback loop of its own — unlike scaling the target by expert
+    // count, which was measured to collapse the field unconditionally.
+    if (state.params.teachTopN > 0) {
+      const nTop = state.params.teachTopN;
+      const byInst = Array.from({ length: M }, () => []);
+      for (let i = 0; i < state.N; i++) if (state.tenure[i] >= minMonths) byInst[inst[i]].push(E[i]);
+      for (let j = 0; j < M; j++) {
+        const a = byInst[j];
+        if (!a.length) continue;                 // no seniors: keep the Ebar fallback
+        a.sort((x, y) => y - x);
+        const k = Math.min(nTop, a.length);
+        let s = 0;
+        for (let q = 0; q < k; q++) s += a[q];
+        Teach[j] = s / k;
+      }
+    }
+  }
+  // Critical mass: how well an institution can transfer expertise at all, as a function
+  // of how many experts it actually has. A Hill function, so ONE pair of parameters
+  // spans both natural readings of the idea:
+  //
+  //   sharpness ~1   a smooth falloff — big places teach better, small ones still teach
+  //   sharpness >=8  effectively a hard threshold at criticalMass experts
+  //
+  // Deliberately keyed to the ABSOLUTE expert count, not to size rank. Rank re-creates
+  // the ratchet documented under seniorTenureYears — the biggest institution would hold
+  // full efficiency however few experts it had left, so the measure would say nothing
+  // about capability and could never register the whole field thinning out.
+  let transferEff = null;
+  const n0 = state.params.criticalMass;
+  if (n0 > 0) {
+    const h = state.params.criticalMassSharpness;
+    transferEff = new Float32Array(M);
+    for (let j = 0; j < M; j++) {
+      const n = Math.pow(experts[j], h), d = Math.pow(n0, h);
+      transferEff[j] = n / (n + d);
+    }
+  }
+  return { Ebar, count, Teach, experts, transferEff };
 }
 
 // Fills state.scratchCand with the candidate institution indices for this human
@@ -410,11 +738,15 @@ function softmaxPick(rng, ids, utils, n, temperature) {
 
 function tick(state) {
   const p = state.params;
-  const { N, M, E, C, L, inst, rng, graph } = state;
-  const { Ebar, count } = institutionStats(state);
+  const { N, M, E, L, tenure, aptitude, inst, rng, graph } = state;
+  const { Ebar, count, Teach, transferEff } = institutionStats(state);
 
-  let topE = 0;
-  for (let i = 0; i < N; i++) if (E[i] > topE) topE = E[i];
+  let topE = 0, sumE0 = 0;
+  for (let i = 0; i < N; i++) { if (E[i] > topE) topE = E[i]; sumE0 += E[i]; }
+  // Reference for the above-mean brake: the population mean as it stands at the START
+  // of this tick, so every person in this tick is braked against the same number and
+  // the sweep order does not matter.
+  const refE = sumE0 / N;
   // aiLevel is a fraction of the fixed t=0 top performer (state.startTopE), not of the
   // live/current one — a stable benchmark, not a moving target. topE above is the
   // live current top performer, still tracked and reported as its own metric, just
@@ -422,37 +754,55 @@ function tick(state) {
   const aiLevel = p.aiEnabled ? p.aiLevelFraction * state.startTopE : null;
   state.lastAiLevel = aiLevel;
 
-  const boostFn = AI_MODES[p.aiResponseMode] || AI_MODES.floor;
 
   for (let i = 0; i < N; i++) {
     const j = inst[i];
-    const gap = Ebar[j] - E[i];
+    // What you are climbing toward: your institution's teaching capability — the mean
+    // of its best teachTopN seniors — and never past your own ceiling.
+    const source = Teach[j];
+    const gap = (aptitude[i] < source ? aptitude[i] : source) - E[i];
     const below = p.aiEnabled && E[i] < aiLevel;
     let delta;
     if (gap > 0) {
       // learning: peers are stronger than you. AI reliance crowds this out —
       // below the AI's level, dampen it; the growth you would have had, you don't.
       delta = p.transferRate * gap * L[i];
+      // Linear rather than exponential climb — see learningCap in DEFAULT_PARAMS.
+      if (p.learningCap > 0) { const lim = p.learningCap * L[i]; if (delta > lim) delta = lim; }
+      // Above the field, every further step costs more. Applied AFTER the cap, so the
+      // cap stays the ceiling on a tick's learning and this only ever reduces it.
+      if (p.aboveMeanDrag > 0 && E[i] > refE) delta /= 1 + p.aboveMeanDrag * (E[i] - refE);
+      // An institution without a body of experts transfers less of what it knows.
+      if (transferEff) delta *= transferEff[j];
       if (p.aiEnabled) delta *= below ? p.aiDampeningBelow : p.aiDampeningAbove;
     } else {
       // decay: peers are weaker than you, or you're idle relative to them. This is
       // never dampened by AI — reliance on AI actively accelerates it instead, since
       // it's the "use it or lose it" half of de-skilling, not the "didn't get to learn" half.
-      let decay = p.decayRate * gap * L[i];
-      if (below) decay *= p.aiAtrophyMultiplier;
-      // Countered by ambient growth: even at/above the local ceiling, people keep
+      const decay = p.decayRate * gap * L[i];
+      // Countered by personal learning: even at/above the local ceiling, people keep
       // learning from being embedded in a strong institution — not gap-closing (there's
       // no local gap left to close) but general osmosis, scaled by how strong the
-      // institution was to begin with. Not AI-gated: unlike the learning branch above,
-      // this isn't something AI reliance crowds out, so it applies identically in both
-      // arms and only affects the SIZE of the shared floor both start from, not the
-      // AI/no-AI contrast itself.
-      const ambient = p.ambientGrowthRate * state.startEbar[j] * L[i] * (1 - E[i]);
+      // institution was to begin with.
+      // Ambient growth respects the ceiling too, or it walks people straight past it.
+      const headroom = (aptitude[i] < 1 ? aptitude[i] : 1) - E[i];
+      let ambient = p.personalLearningRate * state.startEbar[j] * L[i] * (headroom > 0 ? headroom : 0);
+      // AI-gated on the same below/above split as taught learning (2026-08). Organic
+      // improvement IS learning — slower than being taught, but the same kind of thing —
+      // so it is the channel by which someone who has already reached their institution's
+      // teaching level can still get better, and the only one AI can act on for them.
+      // Without this, gamma_above was a no-op for everyone who had arrived: they sit in
+      // this branch with gap <= 0, which the learning multiplier never reaches.
+      //
+      // This REVERSES an earlier decision to leave ambient un-gated on the grounds that
+      // it only sized a shared floor. That was true while it was the same in both arms;
+      // it stopped being the right call once gamma_above was the dial people reached for
+      // to preserve held expertise. Note this changes AI-on results — no-AI runs are
+      // untouched, since the multiplier is only applied when aiEnabled.
+      if (p.aiEnabled) ambient *= below ? p.aiDampeningBelow : p.aiDampeningAbove;
       delta = decay + ambient;
     }
-    const newE = clip01(E[i] + delta);
-    E[i] = newE;
-    C[i] = p.aiEnabled ? clip01(newE + p.aiGain * boostFn(newE, aiLevel)) : newE;
+    E[i] = clip01(E[i] + delta);
   }
 
   for (let i = 0; i < N; i++) {
@@ -460,21 +810,11 @@ function tick(state) {
     const from = inst[i];
     const cands = state.scratchCand, utils = state.scratchUtil;
     const nc = fillCandidates(state, i, rng);
-    const useFriction = p.mobilityFriction !== 0 && !!graph.affinity;
-    const affAt = graph.affinityAt || graph.affinity;
     for (let k = 0; k < nc; k++) {
       const j = cands[k];
       const growth = Math.max(0, Ebar[j] - E[i]);
       const status = E[i] - Ebar[j];
       let u = (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
-      // Mobility friction. affinity <= 1 so the log is <= 0 — always a penalty,
-      // never a bonus. Under the softmax this scales the candidate's weight by
-      // affinity^(mobilityFriction / MOVE_TEMPERATURE). At mobilityFriction = 0
-      // the term vanishes and behaviour is bit-for-bit identical to before.
-      if (useFriction && j !== from) {
-        const a = affAt(from, j);
-        u += p.mobilityFriction * Math.log(a > 1e-12 ? a : 1e-12);
-      }
       utils[k] = u;
     }
     inst[i] = softmaxPick(rng, cands, utils, nc, MOVE_TEMPERATURE);
@@ -483,26 +823,57 @@ function tick(state) {
   let removed = 0;
   for (let i = 0; i < N; i++) {
     if (rng() < p.turnoverRate) {
-      const draw = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, p.entrantExpertiseSkew);
+      const draw = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, 0);
       E[i] = draw < p.entrantExpertiseFloor ? p.entrantExpertiseFloor : draw;
       L[i] = sampleLognormal(rng, p.learningRateSpread);
+      if (state.tenure) state.tenure[i] = 0;      // a replacement starts from scratch
+      if (state.aptitude) {
+        state.aptitude[i] = p.aptitudeSpread > 0
+          ? drawAptitude(rng, p.aptitudeMean, p.aptitudeSpread) : 1;
+      }
       // Same sampler as initial placement — see sampleInstitution(). Placing
       // entrants uniformly here is what used to wash out any weighted sizing.
       inst[i] = sampleInstitution(state, rng);
-      C[i] = E[i];
       removed++;
     }
   }
 
+  if (state.tenure) for (let i = 0; i < N; i++) state.tenure[i]++;
+
+  state.turnoverTotal += removed;
+
   state.t++;
 
-  let sumE = 0, sumC = 0, belowCount = 0, expertCount = 0;
+  // Percentiles are taken from a fixed 1000-bin histogram over [0,1] rather than by
+  // sorting. A sort is O(N log N) per tick and would cost roughly a third of tick time
+  // at N=10500 — paid by every batch run, not just the page. Bucketing rides along in
+  // the loop that already walks E, so the extra cost is one array write per person plus
+  // a 1000-element scan. The price is resolution: percentiles are exact to 0.001, which
+  // is finer than any use they have here.
+  const PCTL_BINS = 1000;
+  const eHist = new Int32Array(PCTL_BINS);
+  let sumE = 0, belowCount = 0, expertCount = 0;
   for (let i = 0; i < N; i++) {
-    sumE += E[i]; sumC += C[i];
+    sumE += E[i];
     if (p.aiEnabled && E[i] < aiLevel) belowCount++;
     if (E[i] >= EXPERT_THRESHOLD) expertCount++;
+    let b = (E[i] * PCTL_BINS) | 0;
+    if (b < 0) b = 0; else if (b >= PCTL_BINS) b = PCTL_BINS - 1;
+    eHist[b]++;
   }
-  const meanE = sumE / N, meanC = sumC / N;
+  const meanE = sumE / N;
+
+  // Nearest-rank percentiles, read off the cumulative histogram in one pass.
+  const wantAt = [Math.ceil(0.10 * N), Math.ceil(0.50 * N), Math.ceil(0.90 * N)];
+  const pctls = [0, 0, 0];
+  {
+    let cum = 0, k = 0;
+    for (let b = 0; b < PCTL_BINS && k < 3; b++) {
+      cum += eHist[b];
+      while (k < 3 && cum >= wantAt[k]) { pctls[k] = (b + 0.5) / PCTL_BINS; k++; }
+    }
+  }
+  const p10E = pctls[0], p50E = pctls[1], p90E = pctls[2];
 
   let activeCount = 0, sumEbar = 0;
   for (let j = 0; j < M; j++) if (count[j] > 0) { activeCount++; sumEbar += Ebar[j]; }
@@ -528,11 +899,15 @@ function tick(state) {
   }
 
   const entry = {
-    t: state.t, meanE, meanC, gap: meanC - meanE,
+    t: state.t, meanE,
+    // The shape of the distribution, not just its centre — a mean alone cannot tell a
+    // field that is uniformly mediocre from one that is split into experts and novices.
+    p10E, p50E, p90E,
     divergence: varEbar, topE, aiLevel,
     shareBelowAI: p.aiEnabled ? belowCount / N : null,
     shareExpert: expertCount / N,
     turnover: removed,
+    turnoverTotal: state.turnoverTotal,
     minOccupancy: minOcc === Infinity ? 0 : minOcc,
     emptyInstitutions: emptyInst,
     underOccupiedInstitutions: underOcc,
@@ -543,8 +918,8 @@ function tick(state) {
 
 const API = {
   mulberry32, randNormal, sampleSkewNormalClipped, sampleLognormal, clip01,
-  generateBAGraph, AI_MODES, DEFAULT_PARAMS, EXPERT_THRESHOLD,
-  MONTHLY_TICK_PARAMS, TICKS_PER_YEAR, MIN_MEANINGFUL_OCCUPANCY,
+  generateBAGraph, DEFAULT_PARAMS, EXPERT_THRESHOLD,
+  MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS, TICKS_PER_YEAR, MIN_MEANINGFUL_OCCUPANCY,
   initSim, institutionStats, tick, sampleInstitution,
 };
 
@@ -562,3 +937,5 @@ if (typeof module !== "undefined" && module.exports) {
 } else if (typeof globalThis !== "undefined") {
   globalThis.Engine = API;
 }
+
+})();

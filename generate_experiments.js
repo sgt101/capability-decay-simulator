@@ -1,3 +1,19 @@
+// HISTORICAL — DO NOT REGENERATE.
+//
+// This generated the 55-experiment Barabasi-Albert set under experiments-ABGraph/,
+// whose results are archived. It sweeps parameters the engine no longer has
+// (aiGain, aiAtrophyMultiplier) and pins others that are gone (aiResponseMode,
+// mobilityFriction, entrantExpertiseSkew), so running it now would produce configs
+// that initSim rejects. Regenerating would also renumber the set and orphan its
+// results, which is why it is frozen rather than updated.
+//
+// The current set is generate_worldmodel_experiments.js. For the BA graph's own
+// question, start a new set with its own numbering rather than editing this.
+if (require.main === module) {
+  console.error("[generate_experiments] frozen: this set is historical — see the header comment.");
+  process.exit(1);
+}
+
 // Generates experiments-ABGraph/experiment.1.json ... experiment.N.json — one
 // file per UNORDERED pair of the eleven parameters under study (11 choose 2 = 55
 // pairs; A x B and B x A would be the same grid transposed, not new information, so
@@ -178,7 +194,7 @@ const BASE_FIXED = {
   // not the live one) exists to avoid. Listed explicitly rather than left to the
   // engine default so it's visible here alongside everything else this experiment set
   // holds fixed.
-  ambientGrowthRate: 0.001,
+  personalLearningRate: 0.001,
 };
 
 const REPLICATES = 5;

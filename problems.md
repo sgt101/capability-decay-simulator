@@ -248,7 +248,9 @@ above λ≈0.65 is still a property of the model worth knowing when reading the
 **Severity when open: qualifying** — affected 15 of 21 experiments
 
 λ is a *threshold*: agents below it get AI dampening and atrophy, agents above
-get neither. Measured at the pinned `aiRelianceIntensity = 0.25`, the shortfall
+get neither. Measured at the pinned de-skilling setting of the time (`aiRelianceIntensity = 0.25`,
+which derived `aiDampeningBelow = 0.75`, `aiAtrophyMultiplier ≈ 1.495` — the values now
+pinned directly), the shortfall
 rises smoothly with λ and then flattens:
 
 ```
@@ -280,7 +282,7 @@ the pin — at λ=0.01 it drives a 0.74 spread in shortfall.
 > *identically zero* below λ≈0.65. That was measured on the old 11-parameter
 > set, where `aiDampeningBelow` was pinned at 1.0 — with no learning dampening
 > the only AI channel was atrophy on below-λ agents, and at low λ there are
-> none. Now that `aiRelianceIntensity` sweeps `aiDampeningBelow`, a learning
+> none. Once `aiDampeningBelow` was no longer pinned at 1.0, a learning
 > channel is always present and the low-λ region is live. The shape is
 > saturation above the threshold, not a dead zone below it.
 
@@ -301,8 +303,9 @@ product (rank-R² 0.134) while λ alone gives 0.685.
 ### P18. Four of the seven study parameters move the baseline, not just the AI arm
 **Severity: affects how the headline metric should be read**
 
-`aiRelianceIntensity`, `aiDampeningAbove` and `aiLevelFraction` appear only
-behind `aiEnabled`, so the no-AI arm is mathematically independent of them.
+The AI-only parameters — `aiDampeningBelow`, `aiDampeningAbove`,
+`aiAtrophyMultiplier` and `aiLevelFraction` — appear only behind `aiEnabled`, so the
+no-AI arm is mathematically independent of them.
 `transferRate`, `decayRate`, `expertiseMean` and `entrantExpertiseMean` move
 both arms. Baseline `meanE` across each grid, measured at t=1440:
 
@@ -324,8 +327,10 @@ Two collapses worth knowing, both measured as rank-R² of a 1-D reduction:
 decay in the AI arm is `δα − δ`), and `β × δ` onto `δ/β` at **0.937** (the
 equilibrium-setting ratio).
 
-### ~~P19. `aiRelianceIntensity = +1` is an absorbing state~~ — RESOLVED
-See R11.
+### ~~P19. Maximum de-skilling is an absorbing state~~ — RESOLVED
+See R11. (Written when this was reached via `aiRelianceIntensity = +1`; that
+parameter was removed in 2026-08 and the regression test now states the same
+endpoint directly as `aiDampeningBelow = 0`, `aiAtrophyMultiplier = 5`.)
 
 ---
 
@@ -493,7 +498,12 @@ implementation, so there is nothing to drift. If the file is not alongside the
 page, the controls disable themselves and the simulator still runs in BA mode.
 `dom_stub_test.js` exercises the whole path against the real project data.
 
-### R11. The rho = +1 absorbing state, and the lambda pin that made it worse
+### R11. The maximum-de-skilling absorbing state, and the lambda pin that made it worse
+
+> **Historical.** Written while `aiRelianceIntensity` (ρ) existed. It was removed in
+> 2026-08 — see README's "Retired: coupled reliance". Read ρ below as shorthand for
+> `aiDampeningBelow = 1 − ρ` together with `aiAtrophyMultiplier = 5^ρ`, both of which
+> are recorded as their own columns in the CSVs this section cites.
 Two changes, which turned out to interact.
 
 `aiLevelFraction` now defaults to `EXPERT_THRESHOLD` (0.585) rather than 0.70.

@@ -217,5 +217,5 @@ if (usable.length) {
   const best = usable[0];
   console.log(`\nrecommended: transferRate=${best.tr}, decayRate=${best.dr}, turnoverRate=${TURNOVER.toFixed(6)}`);
 } else {
-  console.log("\nNO USABLE CELL — widen the grid or revisit ambientGrowthRate.");
+  console.log("\nNO USABLE CELL — widen the grid or revisit personalLearningRate.");
 }

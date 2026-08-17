@@ -263,46 +263,44 @@ function baRun(extra) {
   return st.history.map((h) => h.meanE.toFixed(10)).join(",");
 }
 const baPlain = baRun({});
-assert(baRun({ mobilityFriction: 0 }) === baPlain, "mobilityFriction: 0 is identical to omitting it");
-assert(baRun({ mobilityFriction: 5 }) === baPlain,
-  "mobilityFriction cannot fire on a BA graph (no affinity function) — friction is world-model-only");
 assert(baRun({ institutionSizing: "uniform" }) === baPlain, "explicit uniform sizing matches the default");
 
 // --- 12. the AI dials are independent (rho removed 2026-08) --------------
-// rho used to derive aiDampeningBelow and aiAtrophyMultiplier from one cause. It
-// is gone; the two are set directly. What still has to hold is the behaviour the
-// old rho=0 case stood in for — a neutral AI arm must be bit-identical to the
-// no-AI arm — plus the two dials being genuinely independent, and stale configs
-// failing loudly instead of running something else.
+// rho used to derive aiDampeningBelow and aiAtrophyMultiplier from one cause. Both
+// are gone now — rho in 2026-08, and aiAtrophyMultiplier with it once measurement
+// showed it moved the shortfall by 0.005 on its own and collapsed onto decayRate at
+// rank-R2 0.946 (problems.md). What still has to hold is the behaviour rho=0 stood
+// in for: a neutral AI arm must be bit-identical to the no-AI arm.
 console.log("\n--- AI dials set directly, no coupling ---");
 
 const { DEFAULT_PARAMS: DPARAMS } = require("./engine.js");
 assert(!("aiRelianceIntensity" in DPARAMS), "aiRelianceIntensity is gone from DEFAULT_PARAMS");
 
-// E-only comparison: C still differs between arms because aiGain inflates observed
-// capability even when the E dynamics are untouched.
+// E is all there is now — the observed-capability channel was removed with aiGain.
 function eTrace(extra) {
   const st = initSim(Object.assign({ N: 300, M: 20, seed: 9 }, extra));
   for (let i = 0; i < 150; i++) tick(st);
   return st.history.map((h) => h.meanE.toFixed(10)).join(",");
 }
 
-assert(eTrace({ aiEnabled: true, aiDampeningBelow: 1, aiDampeningAbove: 1, aiAtrophyMultiplier: 1 }) === eTrace({ aiEnabled: false }),
-  "all three dials neutral leaves expertise identical to the no-AI baseline (what rho=0 used to assert)");
+assert(eTrace({ aiEnabled: true, aiDampeningBelow: 1, aiDampeningAbove: 1 }) === eTrace({ aiEnabled: false }),
+  "both dampening dials neutral leaves expertise identical to the no-AI baseline (what rho=0 used to assert)");
 
-// Independence, in both directions: moving one must not move the other's effect.
-const atrophyOnly = eTrace({ aiEnabled: true, aiDampeningBelow: 1, aiDampeningAbove: 1, aiAtrophyMultiplier: 3 });
-const learningOnly = eTrace({ aiEnabled: true, aiDampeningBelow: 0.2, aiDampeningAbove: 1, aiAtrophyMultiplier: 1 });
-assert(atrophyOnly !== eTrace({ aiEnabled: false }), "atrophy alone changes the run (mu_atr is live without any dampening)");
-assert(learningOnly !== eTrace({ aiEnabled: false }), "dampening alone changes the run (gamma_below is live without any atrophy)");
-assert(atrophyOnly !== learningOnly, "the two channels are distinct, not two names for one effect");
-
-// The ablation the coupling forbade: learning blocked, atrophy untouched. Not an
-// incoherent state — it is how you isolate one channel from the other.
-assert(eTrace({ aiEnabled: true, aiDampeningBelow: 0, aiDampeningAbove: 1, aiAtrophyMultiplier: 1 }).length > 0,
-  "learning-blocked / no-atrophy is expressible (mechanism ablation)");
+// The learning channel is now the ONLY channel: with aiAtrophyMultiplier gone, AI
+// acts solely by crowding out the learning people would otherwise have had.
+const learningOnly = eTrace({ aiEnabled: true, aiDampeningBelow: 0.2, aiDampeningAbove: 1 });
+assert(learningOnly !== eTrace({ aiEnabled: false }), "dampening learning changes the run");
+assert(eTrace({ aiEnabled: true, aiDampeningBelow: 0, aiDampeningAbove: 1 }).length > 0,
+  "fully blocked learning is expressible");
 
 function throws(fn, why) { try { fn(); return false; } catch (e) { return true; } }
+// Removed parameters must be REJECTED, not ignored: initSim merges unknown keys into
+// params and thence into every CSV column, so a stale config would otherwise run on
+// defaults while its results row still named the parameter.
+for (const removed of ["aiAtrophyMultiplier", "mobilityFriction", "entrantExpertiseSkew", "aiGain", "aiResponseMode"]) {
+  assert(!(removed in require("./engine.js").DEFAULT_PARAMS), `${removed} is gone from DEFAULT_PARAMS`);
+  assert(throws(() => initSim({ N: 40, M: 6, [removed]: 1 })), `a config still setting ${removed} is rejected`);
+}
 assert(throws(() => initSim({ aiRelianceIntensity: 0.5 })),
   "a config still setting rho is REJECTED — silently ignoring it would land the key in every CSV row while the run used defaults");
 assert(throws(() => initSim({ aiRelianceIntensity: 0 })),
@@ -320,7 +318,7 @@ assert(DP.entrantExpertiseFloor === 0.05, "entrantExpertiseFloor defaults to 0.0
 function minEntrantAfterTurnover(floor, mean) {
   const st = initSim({ N: 2000, M: 20, seed: 5, turnoverRate: 0.5,
     entrantExpertiseMean: mean, entrantExpertiseFloor: floor,
-    transferRate: 0, decayRate: 0, ambientGrowthRate: 0 });   // freeze learning so only the draw shows
+    transferRate: 0, decayRate: 0, personalLearningRate: 0 });   // freeze learning so only the draw shows
   tick(st);
   let min = Infinity;
   for (let i = 0; i < st.N; i++) if (st.E[i] < min) min = st.E[i];
@@ -351,21 +349,40 @@ assert(minEntrantAfterTurnover(0, 0.0) < 0.05,
 
 // P19 regression: maximum de-skilling must not be a discontinuity. The failure it
 // guards was a 70x step in meanE across the last step of the old rho sweep, so it is
-// compared as a RATIO between adjacent points. Stated directly now that rho is gone —
-// these are the values rho = 0.9 and rho = 1.0 used to derive.
+// compared as a RATIO between adjacent points. With rho and the atrophy branch both
+// gone, maximum de-skilling is simply gamma_below = 0 and the endpoint is stated as
+// that alone.
 {
-  const wmRunAI = (gammaBelow, muAtr) => {
+  const wmRunAI = (gammaBelow) => {
     const st = initSim({ N: 2500, seed: 3, graphSource: "worldModel", worldModel: wm,
       institutionSizing: "weighted", transferRate: 0.15, decayRate: 0.020,
       turnoverRate: 1 / 480, aiEnabled: true, aiDampeningAbove: 1,
-      aiLevelFraction: ET, aiDampeningBelow: gammaBelow, aiAtrophyMultiplier: muAtr });
+      aiLevelFraction: ET, aiDampeningBelow: gammaBelow });
     for (let i = 0; i < 600; i++) tick(st);
     return st.history[st.history.length - 1].meanE;
   };
-  const nearMax = wmRunAI(0.1, Math.pow(5, 0.9));   // learning almost blocked
-  const atMax = wmRunAI(0.0, 5);                    // learning fully blocked
+  const nearMax = wmRunAI(0.1);   // learning almost blocked
+  const atMax = wmRunAI(0.0);     // learning fully blocked
   const ratio = nearMax / atMax;
   assert(ratio < 3, `fully-blocked learning is a smooth endpoint, not an absorbing state (meanE ratio is ${ratio.toFixed(2)}x, was ~70x)`);
+}
+
+// --- 14. the bundled copy of the data must match its sources -----------------
+// simulator.html loads world-model-data.js so the graph is ready on open. That file
+// is generated, and world-model.json is EXPECTED to change (hence its fingerprint),
+// so a stale bundle would quietly serve an older world to anyone using the page while
+// batch_run.js used the current one.
+console.log("\n--- bundled world-model-data.js is current ---");
+{
+  const { execFileSync } = require("child_process");
+  let ok = true, detail = "";
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, "build_world_model_data.js"), "--check"], { stdio: "pipe" });
+  } catch (e) {
+    ok = false;
+    detail = (e.stderr ? e.stderr.toString() : e.message).trim();
+  }
+  assert(ok, "world-model-data.js matches world-model.json + mobility-costs.json" + (ok ? "" : " — " + detail));
 }
 
 console.log(`\n${fail === 0 ? "ALL CHECKS PASSED" : fail + " CHECK(S) FAILED"}  (${pass} passed, ${fail} failed)`);

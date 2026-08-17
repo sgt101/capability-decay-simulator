@@ -17,7 +17,7 @@
 //     "fixed": { "N": 500, "M": 40 },   // params held constant across every run
 //     "pairWithBaseline": true,         // default false — see below
 //     "params": {                       // params being swept — any key from engine.js DEFAULT_PARAMS
-//       "aiAtrophyMultiplier": { "range": [1, 4], "steps": 4 },
+//       "aiDampeningBelow": { "range": [0, 2], "steps": 5 },
 //       "aiLevelFraction": { "range": [0.4, 0.9], "steps": 4 },   // grid mode: linspace, inclusive
 //       "turnoverRate": { "range": [0, 1] }                       // random mode: continuous uniform draw
 //     }
@@ -42,7 +42,7 @@ const path = require("path");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { initSim, tick, mulberry32, DEFAULT_PARAMS } = require(path.join(__dirname, "engine.js"));
 
-const METRIC_KEYS = ["meanE", "meanC", "gap", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
+const METRIC_KEYS = ["meanE", "p10E", "p50E", "p90E", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
   // occupancy diagnostics — asymmetric mobility drains low-market-index
   // institutions by design, and a run where these get small is suspect
   "minOccupancy", "emptyInstitutions", "underOccupiedInstitutions"];
@@ -272,7 +272,8 @@ function summarize(rows) {
   return out;
 }
 
-const SHORTFALL_KEYS = ["meanE", "shareExpert", "meanC"];
+// meanC was dropped with the observed-capability channel in 2026-08.
+const SHORTFALL_KEYS = ["meanE", "shareExpert"];
 
 function computeShortfall(rows) {
   const byPair = new Map(); // "comboIndex|replicate|t" -> { baseline, treatment }

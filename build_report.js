@@ -35,12 +35,10 @@ const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, MANIFEST_PATH), "utf
 const METRICS = [
   { key: "meanE_shortfall", label: "Mean expertise shortfall (E)" },
   { key: "shareExpert_shortfall", label: "Expert-share shortfall" },
-  { key: "meanC_shortfall", label: "Mean capability shortfall (C, observed)" },
   { key: "meanE_baseline", label: "Mean E — no-AI baseline" },
   { key: "meanE_treatment", label: "Mean E — with AI" },
   { key: "shareExpert_baseline", label: "Expert share — no-AI baseline" },
   { key: "shareExpert_treatment", label: "Expert share — with AI" },
-  { key: "meanC_treatment", label: "Mean C — with AI (observed, AI-inflated)" },
 ];
 const NUMERIC_METRIC_KEYS = METRICS.map((m) => m.key);
 

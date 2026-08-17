@@ -340,7 +340,7 @@ present as "the heatmaps are flat."
 
 ### Phase A — Time recalibration (no new code, do first)
 
-Scan `transferRate` × `decayRate` × `ambientGrowthRate` at `turnoverRate = 0.002083`
+Scan `transferRate` × `decayRate` × `personalLearningRate` at `turnoverRate = 0.002083`
 on the existing BA model. Target: no-AI baseline with `shareExpert` in a
 *measurable* band (roughly 0.5-0.9), negligible mass above `E = 0.95`, and a
 plausible time-to-expert. Record in `paper.md` alongside the existing steady-state
@@ -694,5 +694,5 @@ prediction — but a run should be judged on them, not assumed sound.
 
 - Career length as a swept parameter with `N` following (§6, open question 2). Still blocking — `N`, `turnoverRate` and career length are one identity, and sweeping the rate without moving `N` describes a fixed-size system with different attrition, not a different demography.
 - `aiLevelFraction` is pinned at 0.70 in the 15 files that do not sweep it, which is inside the saturated plateau, so those figures report an upper bound with respect to λ rather than a typical value (`problems.md` P16).
-- `aiRelianceIntensity = +1` is an absorbing state that collapses the population, discontinuously, at the top of the swept range (`problems.md` P19). It affects one full edge of the grid in the 6 experiments that sweep ρ, and it sets the report's global colour scale. The cheapest fix is to stop the range at 0.95.
+- Maximum de-skilling (then expressed as `aiRelianceIntensity = +1`; that parameter was removed in 2026-08) is an absorbing state that collapses the population, discontinuously, at the top of the swept range (`problems.md` P19). It affects one full edge of the grid in the 6 experiments that sweep ρ, and it sets the report's global colour scale. The cheapest fix is to stop the range at 0.95.
 - The bloc toggle, γ, and the sector-family cost tiers are model assumptions in `mobility-costs.json` that are never swept — they are fixed inputs, not studied parameters.

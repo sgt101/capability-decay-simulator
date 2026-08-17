@@ -613,19 +613,13 @@
   const PRETTY = {
     turnoverRate: "turnover rate", learningRateSpread: "learning-rate spread",
     transferRate: "transfer rate", decayRate: "decay rate",
-    aiDampeningBelow: "AI dampening (below)", aiDampeningAbove: "AI dampening (above)",
-    aiAtrophyMultiplier: "AI atrophy multiplier", aiLevelFraction: "AI level fraction",
+    aiDampeningBelow: "AI dampening (below)", aiDampeningAbove: "AI dampening (above)", aiLevelFraction: "AI level fraction",
     expertiseMean: "expertise mean (start)", entrantExpertiseMean: "entrant expertise mean",
-    aiGain: "AI gain",
-    mobilityFriction: "mobility friction",
   };
   const SYMBOL = {
     turnoverRate: "r", learningRateSpread: "σ_L", transferRate: "β", decayRate: "δ",
-    aiDampeningBelow: "γ_below", aiDampeningAbove: "γ_above",
-    aiAtrophyMultiplier: "μ_atr", aiLevelFraction: "λ",
+    aiDampeningBelow: "γ_below", aiDampeningAbove: "γ_above", aiLevelFraction: "λ",
     expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
-    aiGain: "κ",
-    mobilityFriction: "φ",
   };
   // These two are stored (in every config/CSV) as a raw multiplier on the learning
   // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
@@ -648,6 +642,10 @@
   // 1 - rho and aiAtrophyMultiplier = 5^rho; both are recorded as their own columns
   // in those same files, so a historical CSV reads correctly without it. This
   // template no longer renders rho — see engine.js for why it was removed.
+  // Removed 2026-08 with the observed-capability channel and the atrophy branch:
+  // aiGain, aiResponseMode, aiAtrophyMultiplier, mobilityFriction,
+  // entrantExpertiseSkew, and the meanC / gap metrics. Archived reports still carry
+  // those columns; they simply render through the generic path now.
   const DAMPENING_KEYS = new Set(["aiDampeningBelow", "aiDampeningAbove"]);
   function pretty(key) { return PRETTY[key] || key.replace(/([A-Z])/g, " $1").toLowerCase(); }
   function sym(key) { return SYMBOL[key] || ""; }
@@ -736,12 +734,9 @@
     decayRate: "how quickly a human's expertise moves toward their institution's average, for humans at or above that average.",
     aiDampeningBelow: "how much AI use reduces learning, for humans below the AI's reference level.",
     aiDampeningAbove: "how much AI use reduces learning, for humans at or above the AI's reference level.",
-    aiAtrophyMultiplier: "how much faster expertise is lost, for humans below the AI's reference level, when AI use is active.",
     aiLevelFraction: "the AI's reference level, expressed as a fraction of the starting population's median expertise.",
-    mobilityFriction: "how strongly the cost of a move (distance, sector, market gradient) discourages humans from taking it.",
     expertiseMean: "the average starting expertise of the population at the beginning of the simulation.",
     entrantExpertiseMean: "the average starting expertise of new entrants who replace departing humans during the simulation.",
-    aiGain: "the strength of the boost applied to observed, not real, capability when AI is enabled.",
   };
 
   function buildFigureCaptions() {

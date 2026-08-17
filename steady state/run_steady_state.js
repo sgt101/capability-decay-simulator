@@ -8,8 +8,8 @@
 //      the same band from very different starting populations?
 //   2. seed_variance_at_steady_state.csv — across many seeds, at a tick well past
 //      normal horizon, how tight is the spread around that band? Run both with the
-//      current ambientGrowthRate default and with it at 0, to separate "is there an
-//      equilibrium at all" from "did ambientGrowthRate specifically create it."
+//      current personalLearningRate default and with it at 0, to separate "is there an
+//      equilibrium at all" from "did personalLearningRate specifically create it."
 //   3. long_horizon_trace.csv — averaged across several seeds, does the aggregate
 //      keep climbing indefinitely (as it would if ambient growth's positive feedback
 //      loop weren't bounded) or genuinely hold flat out to 50,000 ticks?
@@ -59,7 +59,7 @@ function runTo(overrides, ticks, marks) {
   const rows = [];
   for (const seed of seeds) {
     const withAmbient = runTo({ seed }, 10000, [10000])[0];
-    const noAmbient = runTo({ seed, ambientGrowthRate: 0 }, 10000, [10000])[0];
+    const noAmbient = runTo({ seed, personalLearningRate: 0 }, 10000, [10000])[0];
     rows.push([seed, withAmbient.meanE.toFixed(6), withAmbient.shareExpert.toFixed(6), noAmbient.meanE.toFixed(6), noAmbient.shareExpert.toFixed(6)]);
   }
   writeCSV(

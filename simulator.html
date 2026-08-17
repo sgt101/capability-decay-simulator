@@ -128,6 +128,7 @@
   .field label output { font-family: ui-monospace, monospace; color: var(--ink-muted); }
   .field input[type="range"] { width: 100%; }
   .field select, .field input[type="number"] { width: 100%; }
+  .kv-note { color: var(--ink-faint); font-weight: 400; }
   .field .hint { font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; }
   /* Anything carrying a plain-language description on hover advertises it: the
      dotted underline on the name is the only cue that the tooltip is there. */
@@ -138,6 +139,7 @@
 
   .switch-row { display: flex; align-items: center; justify-content: space-between; }
   .switch-row .field-label { font-size: 0.85rem; }
+  .switch-row .field-label .sym { color: var(--accent2); font-family: ui-monospace, monospace; margin-right: 0.3rem; }
   .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .switch .track { position: absolute; inset: 0; background: var(--rule); border-radius: 999px; transition: background 0.15s; }
@@ -145,7 +147,18 @@
   .switch input:checked + .track { background: var(--accent); }
   .switch input:checked + .track::before { transform: translateX(16px); }
   .switch input:focus-visible + .track { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  /* A switch that cannot do anything yet says so by being visibly inert, rather than
+     accepting the click and springing back with no explanation. */
+  .switch input:disabled + .track { opacity: 0.4; cursor: not-allowed; }
+  .switch-row.is-disabled .field-label { color: var(--ink-faint); }
+  /* Structural edits don't take effect until Rebuild, which is easy to miss when the
+     only feedback is a line of grey hint text. */
+  .btn.needs-rebuild { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .btn.needs-rebuild::after { content: " •"; }
 
+  .preset-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
+  .preset-row .btn { flex: none; }
+  .preset-note { font-size: 0.7rem; color: var(--ink-faint); font-family: ui-monospace, monospace; line-height: 1.3; }
   .reset-note { font-size: 0.72rem; color: var(--ink-faint); padding: 0.7rem 1rem; border-top: 1px solid var(--rule); }
   .reset-note b { color: var(--ink-muted); }
 
@@ -161,7 +174,12 @@
   .network-legend .ramp { width: 90px; height: 8px; border-radius: 3px; margin: 0.3rem 0; background: linear-gradient(90deg, #cde2fb, #0d366b); }
   .row { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.9rem; }
   @media (max-width: 780px) { .row { grid-template-columns: 1fr; } }
-  .dist-panel canvas, .mini-chart canvas { width: 100%; height: 150px; display: block; }
+  .mini-chart canvas { width: 100%; height: 150px; display: block; }
+  /* 2.5x the mini-charts. A log axis spanning 1..N compresses the body of the
+     distribution into a narrow band, so height is what makes the shape readable — and
+     the Timeline panel beside it already stacks two 150px charts, so this squares the
+     row rather than stretching it. */
+  .dist-panel canvas { width: 100%; height: 375px; display: block; }
   .timeline-panel .mini-chart { padding: 0 0.85rem 0.6rem; }
   .timeline-panel .mini-chart h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; margin-bottom: 0.2rem; }
   .chart-tooltip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-family: ui-monospace, monospace; font-size: 0.7rem; line-height: 1.5; border-radius: 4px; padding: 0.4rem 0.6rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); white-space: nowrap; z-index: 5; }
@@ -189,8 +207,7 @@
       <button class="btn btn-primary btn-icon" id="btnPlay" title="Play / pause">▶</button>
       <div class="speed-field">
         <span>speed</span>
-        <input type="range" id="speedRange" min="1" max="30" value="6" step="1" />
-        <output id="speedOut" class="tabular">6 months/s</output>
+        <input type="range" id="speedRange" step="1" />
       </div>
       <button class="btn" id="btnRebuild" title="Rebuild with current N / M / m / seed">Rebuild</button>
     </div>
@@ -224,7 +241,7 @@
         <section class="panel dist-panel">
           <div class="panel-head">
             <h2>Expertise distribution</h2>
-            <span class="sub">bars = E · line = C (when AI on)</span>
+            <span class="sub" id="distCounters">entrants 0 · retirements 0</span>
           </div>
           <canvas id="distCanvas"></canvas>
         </section>
@@ -235,16 +252,12 @@
             <span class="sub">dashed = AI toggled</span>
           </div>
           <div class="mini-chart">
-            <h3>Share of population that is expert (E ≥ 0.7)</h3>
-            <canvas id="expertCanvas"></canvas>
+            <h3>Expertise over time — mean, median, top &amp; bottom decile</h3>
+            <canvas id="spreadCanvas"></canvas>
           </div>
           <div class="mini-chart">
             <h3>Center–periphery divergence (var of Ē across institutions)</h3>
             <canvas id="divCanvas"></canvas>
-          </div>
-          <div class="mini-chart">
-            <h3>Illusion gap (mean C − mean E — how much AI inflates apparent output)</h3>
-            <canvas id="gapCanvas"></canvas>
           </div>
         </section>
       </div>
@@ -266,6 +279,12 @@
      alongside this page, window.WorldModel stays undefined and the world-model
      controls disable themselves — the simulator still runs in BA mode. -->
 <script src="world_model.js"></script>
+<!-- The world-model data itself, bundled by build_world_model_data.js so the graph is
+     ready when the page opens. Also optional: without it the sidebar's file inputs
+     still work, which is the only route if you want to try edited data. A script tag
+     is used rather than fetch() because at file:// a fetch for a sibling file is
+     blocked, and a classic script tag is not. -->
+<script src="world-model-data.js"></script>
 <script>
 /* ============================== ENGINE ============================== */
 // The model lives in engine.js and is loaded by the <script src> above — this page
@@ -287,8 +306,8 @@ if (typeof Engine === "undefined" || !Engine || typeof Engine.initSim !== "funct
   throw new Error("[simulator] engine.js is required and was not loaded");
 }
 const {
-  mulberry32, clip01, DEFAULT_PARAMS, MONTHLY_TICK_PARAMS, TICKS_PER_YEAR,
-  institutionStats, tick,
+  mulberry32, clip01, DEFAULT_PARAMS, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS,
+  TICKS_PER_YEAR, EXPERT_THRESHOLD, institutionStats, tick,
 } = Engine;
 
 // Boot on the calibrated monthly set (1 tick = 1 month, 40-year career). engine.js
@@ -300,12 +319,50 @@ const {
 // The two recording structures the batch engine has no use for — a per-institution
 // Ebar history for the inspector sparkline, and the snapshot ring the scrub bar
 // rewinds through — are attached here and filled by doTick(), NOT by engine.tick().
-function initSim(userParams) {
-  const sim = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, userParams || {}));
+// Named createSim, NOT initSim: engine.js exports an initSim of its own, and a page
+// function sharing that name would shadow it for every later reader of this file even
+// though function-vs-function redeclaration is legal. Distinct names, no ambiguity
+// about which one a call site means.
+function createSim(userParams) {
+  // Monthly calibration + the entrant pipeline. The pipeline is what gives the page a
+  // population spread across a ladder rather than a point mass at the institution
+  // mean: without it an entrant reaches expert in 1.8 years, so only ~4% of people are
+  // ever climbing. engine.js keeps both as overlays so the archived batch results,
+  // produced without either, stay reproducible.
+  // WORLD_MODEL_PARAMS last of the three: it is the calibration fitted at the
+  // configuration this page now boots into, and it overrides the two BA-scale sets it
+  // re-fits (learningCap in particular). userParams still wins over all of them, so a
+  // slider or a structural field always beats a default.
+  const sim = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS,
+    WORLD_MODEL_PARAMS, userParams || {}));
   sim.instHistory = Array.from({ length: sim.M }, () => []);
   sim.snapshots = [];
   sim.aiToggleEvents = [];
   return sim;
+}
+
+// Decay rate that holds the no-AI baseline FLAT at a given institution size, so the
+// AI contrast is read against a level line rather than a drifting one.
+//
+// Measured on the BA graph by bisecting decay_rate for zero drift between t=480 and
+// t=3000, then checked at the default scale over 6,000 ticks with six seeds:
+//
+//     people per institution   5      8     12.5    25     50    100
+//     flat decay_rate       0.0279 0.0232 0.0245 0.0230 0.0219 0.0212
+//
+// Learning runs on the gap to your institution's mean, so a bigger institution pulls
+// harder and needs more decay to balance — hence the dependence, though it is weak: a
+// 20x change in size moves the answer by about 0.007. Seed variation at the default
+// scale is +/-0.006 on the drift, the same size as the gap between 0.024 and 0.025,
+// so this is a good starting point rather than a precise value.
+//
+// MONTHLY_TICK_PARAMS keeps 0.020 because that was calibrated on the WORLD-MODEL
+// graph at N=10,504 — different topology, intake-weighted institution sizes, and
+// stationary to +0.0002 there. This rule is for the BA graph the page boots on.
+function steadyStateDecayRate(N, M) {
+  const perInstitution = Math.max(2, N / Math.max(M, 1));
+  const d = 0.0293 * Math.pow(perInstitution, -0.071);
+  return Math.round(d * 1000) / 1000;      // slider resolution
 }
 
 const REPULSION_SAMPLE = 60;
@@ -315,7 +372,8 @@ const SNAPSHOT_CAP = 4000, SNAPSHOT_EVICT = 800;
 const app = {
   sim: null,
   playing: false,
-  ticksPerSec: 6,
+  speedPos: 5,            // slider position; tickPauseMs is derived from it
+  tickPauseMs: 0,
   following: true,
   viewT: 0,
   selectedInst: null,
@@ -342,31 +400,42 @@ const PARAM_FIELDS = [
     hint: "every turnover replacement (mid-run), not t=0 — novices who must earn expertise via peer transfer" },
   { key: "entrantExpertiseSpread", group: "init", label: "entrant_expertise_spread", sym: "ω_ent", min: 0.01, max: 0.3, step: 0.01,
     desc: "How much recruits differ from each other. Low = every intake looks the same; high = the odd exceptional hire alongside the usual novices." },
-  { key: "entrantExpertiseSkew", group: "init", label: "entrant_expertise_skew", sym: "α_ent", min: -6, max: 6, step: 0.5,
-    desc: "Which way the recruit distribution leans — positive puts most recruits below their own average with a few strong outliers." },
   // Exposed as a dial because entrant_expertise_mean is not interpretable without it:
   // the draw is clipped at this floor, so below it the mean stops meaning the mean.
   { key: "entrantExpertiseFloor", group: "init", label: "entrant_expertise_floor", sym: "E_min", min: 0, max: 0.2, step: 0.01,
     desc: "The least skilled a recruit is allowed to be. Above 0 it stops a pile-up of people arriving at exactly zero, who can never recover once AI reliance blocks their learning. Set 0 for the pre-2026-08 behaviour.",
     hint: "when entrant_expertise_mean sits within a spread of this floor, a large share of recruits land exactly ON it and the realised mean is higher than the nominal one" },
   { key: "learningRateSpread", group: "learn", label: "learning_rate_spread", sym: "σ_L", min: 0, max: 1, step: 0.02,
-    desc: "How much people differ in how quickly they pick things up. 0 = everyone learns (and forgets, and moves) at the same speed; high = a few very fast learners carry the field." },
+    desc: "Spread in how fast individuals learn, forget and move. 0 = everyone identical." },
   // Ranged for the monthly tick: the usable band (0.11-0.20, calibrated 0.15) sits
   // mid-slider, and the swept range 0.08-0.26 is fully reachable. Deliberately does
   // NOT reach the legacy dimensionless 0.5 — under a monthly reading that pins the
   // whole population near the ceiling.
   { key: "transferRate", group: "learn", label: "transfer_rate", sym: "β", min: 0, max: 0.3, step: 0.001,
-    desc: "How fast someone absorbs skill from stronger colleagues each month. This is the only way a novice becomes an expert, so it is the main engine of renewal.",
-    hint: "usable band is roughly 0.11–0.20 (0.15 calibrated): below it the population cannot renew itself, above it everyone pins near the ceiling" },
+    desc: "Monthly fraction of the gap to your teaching level that you close." },
   { key: "decayRate", group: "learn", label: "decay_rate", sym: "δ", min: 0, max: 0.05, step: 0.001,
-    desc: "How fast skill erodes each month when you are already stronger than the people around you — the use-it-or-lose-it half of the model.",
-    hint: "calibrated to 0.020 against transfer_rate 0.15; the swept range is 0.005–0.040" },
+    desc: "Monthly rate skill erodes when you are above your institution's teaching level." },
+  { key: "learningCap", group: "learn", label: "learning_cap", sym: "c", min: 0, max: 0.02, step: 0.0002,
+    fmtOut: (v) => (v > 0 ? v.toFixed(4) + " \u00b7 " + ((0.585 - 0.05) / v / 12).toFixed(1) + "y to expert" : "0 \u00b7 uncapped"),
+    desc: "Ceiling on expertise gained per month from colleagues. Makes the climb linear, not exponential." },
+  { key: "seniorTenureYears", group: "learn", label: "senior_tenure_years", sym: "T_s", min: 0, max: 20, step: 1,
+    fmtOut: (v) => (v > 0 ? v.toFixed(0) + "y" : "0 \u00b7 everyone"),
+    desc: "Years in the field before you count towards what newcomers learn from." },
   // NOT re-ranged for the monthly tick, unlike its neighbours: this range comes from a
   // saturation check, not from the calibration scan, so narrowing it would imply a scan
   // that has not been run. 0.001/month is the checked default.
-  { key: "ambientGrowthRate", group: "learn", label: "ambient_growth_rate", sym: "μ_amb", min: 0, max: 0.02, step: 0.0005,
-    desc: "Slow improvement you get just from working somewhere strong, even with nobody left to learn from. Applies equally with and without AI, so it lifts the floor rather than changing the AI contrast.",
-    hint: "growth for humans already at/above their institution's founding average — scales with how strong that institution was at t=0, tapers to 0 near the ceiling. Checked past this range it saturates the whole population to E=1 well within typical run lengths." },
+  { key: "personalLearningRate", group: "learn", label: "personal_learning_rate", sym: "μ_p", min: -0.1, max: 0.1, step: 0.005,
+    fmtOut: (v) => (v > 0 ? "+" + v.toFixed(3) : v < 0 ? v.toFixed(3) + " · skills fade" : "0 · no change on your own"),
+    desc: "Monthly self-improvement once nobody is left to learn from. Negative means skills fade." },
+  { key: "aptitudeSpread", group: "learn", label: "aptitude_spread", sym: "ω_a", min: 0, max: 0.4, step: 0.01,
+    fmtOut: (v) => (v > 0 ? v.toFixed(2) : "0 · everyone can reach 1.0"),
+    desc: "Spread of per-person ceilings on attainable expertise, drawn at entry. 0 = no ceiling." },
+  { key: "teachTopN", group: "learn", label: "teach_top_n", sym: "n_t", min: 0, max: 40, step: 1,
+    fmtOut: (v) => (v > 0 ? "best " + v.toFixed(0) + " seniors" : "0 · off, use teach_percentile"),
+    desc: "Number of top seniors whose mean sets an institution's teaching level." },
+  { key: "aboveMeanDrag", group: "learn", label: "above_mean_drag", sym: "k_d", min: 0, max: 40, step: 1,
+    fmtOut: (v) => (v > 0 ? "÷" + (1 + v * 0.1).toFixed(1) + " at +0.10 above the mean" : "0 · off"),
+    desc: "Divides learning by 1 + k x (your expertise - population mean). 0 = off." },
   { key: "competitionAversion", group: "mobility", label: "competition_aversion", sym: "ρ", min: 0, max: 1, step: 0.02,
     desc: "Big fish or small pond. 0 = people chase the strongest institution they can get into and learn there; 1 = they prefer places where they outrank everyone, which is comfortable and stops them learning." },
   { key: "prestigeWeight", group: "mobility", label: "prestige_weight", sym: "η", min: 0, max: 1, step: 0.02,
@@ -378,9 +447,6 @@ const PARAM_FIELDS = [
     hint: "scaled per-person by their learning rate, so fast learners also move more" },
   { key: "jumpProbability", group: "mobility", label: "jump_probability", sym: "ε", min: 0, max: 1, step: 0.02,
     desc: "In hybrid mobility, the share of moves that ignore the network and can land anywhere — the cold-application route rather than the who-you-know one. No effect in the other two mobility modes." },
-  { key: "mobilityFriction", group: "mobility", label: "mobility_friction", sym: "φ", min: 0, max: 1, step: 0.01,
-    desc: "How strongly people stay near their own sector and region. 0 = a move across the world into an unrelated field is as easy as one next door.",
-    hint: "prices moves by affinity: adds φ·log(affinity) to the move utility, so distant cross-sector moves get rarer. Only has any effect when the world-model graph is loaded — the BA graph has no affinity. 0 = off." },
   // step = 1/4800 so the calibrated 1/480 (a 40-year career) is exactly representable
   // and lands on step 10 of 96 — no decimal step can hit it. Max cut from 0.05, which
   // under a monthly tick was a 20-month career. Reads out as a career length in years,
@@ -392,20 +458,12 @@ const PARAM_FIELDS = [
   { key: "aiLevelFraction", group: "ai", label: "ai_level_fraction", sym: "λ", min: 0.01, max: 1, step: 0.005,
     desc: "How good the AI is, on the same skill scale as the humans. Everybody below this line is the one who leans on it, stops learning from colleagues, and atrophies. 0.585 = as good as a human we would call an expert.",
     hint: "fraction of the t=0 population's single greatest human expert, not of the current top performer" },
-  { key: "aiGain", group: "ai", label: "ai_gain", sym: "κ", min: 0, max: 2, step: 0.05,
-    desc: "How much the AI flatters measured output. It moves what the field appears able to do, never the underlying human skill — which is the gap this simulator exists to show." },
   { key: "aiDampeningBelow", group: "ai", label: "ai_dampening_below", sym: "γ_below", min: 0, max: 2, step: 0.05, display: (v) => v - 1,
     desc: "What AI does to the learning of people BELOW its level: negative = it crowds out the learning they would have got from colleagues, positive = it teaches them faster than colleagues alone would.",
     hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
   { key: "aiDampeningAbove", group: "ai", label: "ai_dampening_above", sym: "γ_above", min: 0, max: 2, step: 0.05, display: (v) => v - 1,
     desc: "The same, for people ALREADY better than the AI. Only bites when there are such people — at a high ai_level_fraction it governs almost nobody.",
     hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
-  // Range is symmetric in log space about 1 (1/5 .. 5): an equal-and-opposite
-  // optimistic case is reachable, so the model can express AI preserving skill
-  // rather than only eroding it.
-  { key: "aiAtrophyMultiplier", group: "ai", label: "ai_atrophy_multiplier", sym: "μ_atr", min: 0.2, max: 5, step: 0.05,
-    desc: "How much faster rusty skills fade for people leaning on AI. 1 = no change; 5 = five times faster; below 1 = the AI keeps their hand in.",
-    hint: "1 = no change. Below 1 is AI keeping a rusty hand in; the range is symmetric in log space, so 0.2 is the exact opposite of 5" },
 ];
 
 function fmt(v) { return Math.abs(v) < 1 ? v.toFixed(v === 0 ? 0 : 3).replace(/0+$/, "").replace(/\.$/, "") : v.toFixed(2); }
@@ -413,9 +471,29 @@ function fmt(v) { return Math.abs(v) < 1 ? v.toFixed(v === 0 ? 0 : 3).replace(/0
 // something a reader can place against a career rather than as a bare tick count.
 function fmtElapsed(t) { return Math.floor(t / TICKS_PER_YEAR) + "y " + (t % TICKS_PER_YEAR) + "m"; }
 function fmtTickLabel(t) { return "t = " + t + " · " + fmtElapsed(t); }
-// Some fields (currently just the AI dampening pair) are stored/fed to the engine as a
-// raw 0..2 multiplier but shown to a human on a -1..+1 scale instead — f.display converts
-// for display only; the slider's own min/max/step/value and app.sim.params stay raw 0..2.
+
+// On the world-model graph a node is a real organisation, so say which one. On the
+// generated BA graph there is nothing to name — an index is all a node has.
+function institutionOf(j) {
+  const wm = app.sim && app.sim.graph && app.sim.graph.institutions;
+  return wm && wm[j] ? wm[j] : null;
+}
+function institutionTooltip(j) {
+  const x = institutionOf(j);
+  if (!x) return "institution " + j;
+  const where = x.hubCities.length ? " — " + x.hubCities.join(", ") : "";
+  return x.label + where;
+}
+function institutionName(j) {
+  const x = institutionOf(j);
+  return x ? x.label : "Institution " + j;
+}
+function escapeHTML(t) {
+  return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+// Some fields (the AI dampening pair) are stored and fed to the engine as a raw 0..2
+// multiplier but shown to a human on a -1..+1 scale instead — f.display converts for
+// display only; the slider's own min/max/step/value and app.sim.params stay raw 0..2.
 function fmtField(f, v) {
   // f.fmtOut takes over the readout entirely — used where the raw number is not the
   // quantity a human thinks in (turnover_rate, which is really a career length).
@@ -430,11 +508,18 @@ function buildSidebar() {
   const sidebar = document.getElementById("sidebar");
   sidebar.innerHTML = "";
 
+  // desc is short enough to read at a glance, so when a field has no separate hint the
+  // desc becomes the VISIBLE line rather than a hover-only title. A title attribute is
+  // the wrong home for the only explanation a control has: it takes about a second to
+  // appear, never appears on touch, and is invisible to anyone scanning the panel.
+  // Where a hint does exist it stays the visible line and desc stays the tooltip.
   function fieldHTML(f) {
-    return `<div class="field" data-key="${f.key}"${f.desc ? ` title="${f.desc}"` : ""}>
+    const shown = f.hint || f.desc;
+    const tip = f.hint ? f.desc : null;      // no point repeating the visible text on hover
+    return `<div class="field" data-key="${f.key}"${tip ? ` title="${tip}"` : ""}>
       <label>&nbsp;<span><span class="sym">${f.sym}</span>${f.label}</span><output>${fmtField(f, app.sim.params[f.key])}</output></label>
       <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${app.sim.params[f.key]}" />
-      ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}
+      ${shown ? `<div class="hint">${shown}</div>` : ""}
     </div>`;
   }
   function group(id, title, bodyHTML, open) {
@@ -444,7 +529,7 @@ function buildSidebar() {
   const structuralHTML = `
     <div class="field" title="How many people are in the simulated field. Larger populations give smoother curves and slower ticks.">
       <label>&nbsp;<span><span class="sym">N</span>humans</span></label>
-      <input type="number" id="fieldN" min="20" max="4000" step="10" value="${app.sim.params.N}" /></div>
+      <input type="number" id="fieldN" min="20" max="20000" step="10" value="${app.sim.params.N}" /></div>
     <div class="field" title="How many organisations they are spread across. Fewer, bigger institutions means more colleagues to learn from in each one.">
       <label>&nbsp;<span><span class="sym">M</span>institutions</span></label>
       <input type="number" id="fieldM" min="4" max="400" step="1" value="${app.sim.params.M}" /></div>
@@ -463,12 +548,18 @@ function buildSidebar() {
   // topology under a different calibration.
   const wmDisabled = !worldModelState.available ? "disabled" : "";
   const wmReady = !!worldModelState.loaded;
+  // The two files come FIRST and the switch that consumes them second: you cannot
+  // switch to a graph you have not loaded, and a control that reverts on click with
+  // no explanation reads as broken. While nothing is loaded the switch is disabled
+  // and says what it is waiting for.
+  const wmRunning = app.sim.params.graphSource === "worldModel";
+  const wmSwitchNote = !worldModelState.available
+    ? "world_model.js is not next to this page"
+    : !wmReady ? "load both files above first"
+    : wmRunning ? `running on the world model — ${worldModelState.loaded.M} real institutions`
+    : "ready — turn on, then press <b>Rebuild</b>";
   const worldModelHTML = `
-    <div class="field">
-      <label style="width:100%">&nbsp;<span><span class="sym">g</span>graph_source</span></label>
-      <label class="wm-check"><input type="checkbox" id="fieldUseWorldModel" ${wmDisabled} ${wmReady && app.sim.params.graphSource === "worldModel" ? "checked" : ""} />
-        use world model instead of the generated BA graph</label>
-    </div>
+    <div class="hint" style="margin-bottom:.4rem">replace the bundled data with your own files (optional):</div>
     <div class="field">
       <label>&nbsp;<span><span class="sym">1</span>world-model.json</span></label>
       <input type="file" id="fileWorldModel" accept=".json,application/json" ${wmDisabled} />
@@ -477,11 +568,18 @@ function buildSidebar() {
       <label>&nbsp;<span><span class="sym">2</span>mobility-costs.json</span></label>
       <input type="file" id="fileMobilityCosts" accept=".json,application/json" ${wmDisabled} />
     </div>
-    <div class="field">
+    <div class="hint" id="worldModelStatus">${worldModelStatusText()}</div>
+
+    <div class="switch-row${wmReady ? "" : " is-disabled"}" title="Run on the real institution graph built from world-model.json instead of the generated Barabasi-Albert one. Needs both files above. Structural, so it applies on Rebuild.">
+      <span class="field-label"><span class="sym">g</span>use_world_model</span>
+      <label class="switch"><input type="checkbox" id="fieldUseWorldModel" ${wmReady ? "" : "disabled"} ${wmReady && app.sim.params.graphSource === "worldModel" ? "checked" : ""} /><span class="track"></span></label>
+    </div>
+    <div class="hint" id="worldModelSwitchNote">${wmSwitchNote}</div>
+
+    <div class="field" style="margin-top:.6rem">
       <label class="wm-check"><input type="checkbox" id="fieldWeightedSizing" ${wmDisabled} ${app.sim.params.institutionSizing === "weighted" ? "checked" : ""} />
         size institutions by intake (entrants placed proportionally)</label>
     </div>
-    <div class="hint" id="worldModelStatus">${worldModelStatusText()}</div>
     <div class="hint">when on, <b>M</b> is derived from the data and the M field above is ignored. Use <b>mobility_friction</b> (mobility group) to price moves by affinity.</div>
   `;
 
@@ -502,20 +600,24 @@ function buildSidebar() {
       <span class="field-label">ai_enabled</span>
       <label class="switch"><input type="checkbox" id="fieldAiEnabled" /><span class="track"></span></label>
     </div>
-    <div class="field" title="The shape of the help AI gives: floor = it lifts everyone to its own level and no further; flat = the same boost for everyone; linear = more for those already skilled; amplified = strongly favours the already-skilled; exponential = runaway advantage at the top.">
-      <label>&nbsp;<span>ai_response_mode</span></label>
-      <select id="fieldAiMode">
-        <option value="floor">floor</option>
-        <option value="flat">flat</option>
-        <option value="linear">linear</option>
-        <option value="amplified">amplified</option>
-        <option value="exponential">exponential</option>
-      </select>
-    </div>
     <div class="hint">γ_below and μ_atr are the two halves of de-skilling for people below the AI's level — learning crowded out, and skill already held eroding faster. They are set independently: nothing ties one to the other, so a run that dampens learning without accelerating atrophy is expressible, and is a mechanism ablation rather than a scenario.</div>
     ` + PARAM_FIELDS.filter((f) => f.group === "ai").map(fieldHTML).join("");
 
+  const steadyDelta = app.sim.params.learningCap > 0 ? PIPELINE_PARAMS.decayRate : steadyStateDecayRate(app.sim.N, app.sim.M);
+  const steadyNote = `\u03b2 0.15 \u00b7 \u03b4 ${fmt(steadyDelta)} \u00b7 r 1/480 \u00b7 AI off`;
+  const presetHTML = `
+    <div class="preset-row">
+      <button class="btn" id="btnSteadyState" title="Set the learning dials so the no-AI baseline holds level instead of drifting, then rebuild. Decay is derived from the current N/M, because bigger institutions pull harder and need more decay to balance. Turns AI off — a steady state is the baseline you measure AI against.">Steady state</button>
+      <span class="preset-note" id="steadyNote">${steadyNote}</span>
+    </div>
+    <div class="preset-row">
+      <button class="btn" id="btnStoreSnapshot" title="Save every setting needed to reproduce this run — all live parameters, N, M, seed, graph source, AI state — to a .json file you name.">Store settings…</button>
+      <button class="btn" id="btnLoadSnapshot" title="Open a settings .json and rebuild from t=0. Same settings and same seed reproduce the run exactly.">Load settings…</button>\n      <input type="file" id="fileSnapshot" accept="application/json,.json" style="display:none" />
+      <span class="preset-note" id="snapshotNote">saves every dial, N, M and the seed</span>
+    </div>`;
+
   sidebar.innerHTML =
+    presetHTML +
     group("structural", "Scale &amp; graph", structuralHTML, true) +
     group("worldmodel", "World model graph", worldModelHTML, false) +
     group("init", "Initial & entrant expertise", initHTML, false) +
@@ -545,11 +647,16 @@ function buildSidebar() {
     app.sim.aiToggleEvents.push({ t: app.sim.t, enabled: e.target.checked });
     updateAiChip();
   });
-  document.getElementById("fieldAiMode").value = app.sim.params.aiResponseMode;
-  document.getElementById("fieldAiMode").addEventListener("change", (e) => { app.sim.params.aiResponseMode = e.target.value; updateAiChip(); });
 
   document.getElementById("btnRandSeed").addEventListener("click", () => {
     document.getElementById("fieldSeed").value = Math.floor(Math.random() * 1e9);
+    markRebuildPending(true);
+  });
+  // Same for the plain structural numbers — they are as invisible until Rebuild as
+  // the graph source is.
+  ["fieldN", "fieldM", "fieldAttach", "fieldSeed"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => markRebuildPending(true));
   });
 
   // ---- world-model file inputs ----
@@ -570,12 +677,17 @@ function buildSidebar() {
           worldModelState.error = id + ": " + err.message;
         }
         tryBuildWorldModel();
-        const status = document.getElementById("worldModelStatus");
-        if (status) status.textContent = worldModelStatusText();
+        // Rebuild the sidebar rather than patching the status line: loading the second
+        // file ENABLES the switch, and that state has to be re-rendered, not just
+        // described. buildSidebar() re-reads worldModelState, so the switch comes back
+        // live, pre-checked, with its note updated.
+        const wantOn = !!worldModelState.loaded;
+        buildSidebar();
         const toggle = document.getElementById("fieldUseWorldModel");
         // Loading both files is the natural moment to want it on, but never flip
         // it silently on a failed parse.
-        if (toggle && worldModelState.loaded && !toggle.checked) toggle.checked = true;
+        if (toggle && wantOn && !toggle.checked) toggle.checked = true;
+        markRebuildPending(wantOn);
       };
       reader.onerror = () => {
         worldModelState.error = "could not read " + file.name;
@@ -585,26 +697,202 @@ function buildSidebar() {
       reader.readAsText(file);
     });
   }
-  wireJsonInput("fileWorldModel", (json) => { worldModelState.worldJson = json; });
-  wireJsonInput("fileMobilityCosts", (json) => { worldModelState.costsJson = json; });
+  wireJsonInput("fileWorldModel", (json) => { worldModelState.worldJson = json; worldModelState.source = "picked"; });
+  wireJsonInput("fileMobilityCosts", (json) => { worldModelState.costsJson = json; worldModelState.source = "picked"; });
+
+  const steadyBtn = document.getElementById("btnSteadyState");
+  if (steadyBtn) steadyBtn.addEventListener("click", () => {
+    const p = app.sim.params;
+    p.transferRate = 0.15;
+    p.turnoverRate = 1 / 480;
+    p.personalLearningRate = PIPELINE_PARAMS.personalLearningRate;
+    p.expertiseMean = 0.28;            // only bites at init, hence the rebuild below
+    p.aiEnabled = false;
+    if (p.learningCap > 0) {
+      // Pipeline on: use the set calibrate_pipeline.js fitted, which balances a
+      // ~8-year climb against a level baseline. A longer pipeline moves where decay
+      // balances, so its decay rate is not the one the no-pipeline rule gives.
+      Object.assign(p, PIPELINE_PARAMS);
+    } else {
+      p.decayRate = steadyStateDecayRate(app.sim.N, app.sim.M);
+    }
+    // Rebuild rather than apply live: the starting population is drawn once, at init,
+    // so a steady state has to start from a fresh draw.
+    rebuild(true);
+    const note = document.getElementById("steadyNote");
+    if (note) note.textContent = "applied \u00b7 settles by ~year 10, then holds";
+  });
+
+  const snapNote = (msg) => { const el = document.getElementById("snapshotNote"); if (el) el.textContent = msg; };
+
+  const storeBtn = document.getElementById("btnStoreSnapshot");
+  if (storeBtn) storeBtn.addEventListener("click", () => {
+    // Async, but nothing waits on it — the note line is the only feedback, so a promise
+    // chain rather than an async handler keeps the click cheap.
+    saveSnapshotToFile()
+      .then((name) => snapNote("saved " + name))
+      .catch((err) => {
+        // AbortError is the user closing the dialog. That is not a failure and must not
+        // be reported as one.
+        if (err && err.name === "AbortError") { snapNote("save cancelled"); return; }
+        snapNote("could not save: " + err.message);
+      });
+  });
+
+  const snapInput = document.getElementById("fileSnapshot");
+  const loadBtn = document.getElementById("btnLoadSnapshot");
+  if (loadBtn && snapInput) loadBtn.addEventListener("click", () => {
+    // Reset first, so choosing the SAME file twice still fires change the second time.
+    snapInput.value = "";
+    snapInput.click();
+  });
+  if (snapInput) snapInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { stale } = applySnapshotText(reader.result);
+        snapNote(stale
+          ? "loaded " + file.name + " — WORLD MODEL DIFFERS from when it was saved"
+          : "loaded " + file.name + " · rebuilt from t=0");
+      } catch (err) {
+        // Most likely a parameter this engine has since removed. Name it, and leave the
+        // current run untouched rather than half-applying the snapshot.
+        snapNote("could not load " + file.name + ": " + err.message);
+      }
+    };
+    reader.onerror = () => snapNote("could not read " + file.name);
+    reader.readAsText(file);
+  });
 
   const wmToggle = document.getElementById("fieldUseWorldModel");
   if (wmToggle) wmToggle.addEventListener("change", () => {
-    const status = document.getElementById("worldModelStatus");
-    if (wmToggle.checked && !worldModelState.loaded) {
-      wmToggle.checked = false;   // nothing to switch to yet
-      if (status) status.textContent = worldModelStatusText();
-      return;
-    }
-    // Structural, like N/M/seed — takes effect on Rebuild, not mid-run.
-    if (status) status.textContent = worldModelStatusText() + " · press Rebuild to apply";
+    // The switch is disabled until both files parse, so there is no revert-on-click
+    // case left to handle — an unusable control now looks unusable instead of
+    // accepting the click and silently springing back.
+    markRebuildPending(true);
+    const note = document.getElementById("worldModelSwitchNote");
+    if (note) note.innerHTML = wmToggle.checked
+      ? "world model selected — press <b>Rebuild</b> to apply"
+      : "back to the generated BA graph — press <b>Rebuild</b> to apply";
   });
+  const weightedToggle = document.getElementById("fieldWeightedSizing");
+  if (weightedToggle) weightedToggle.addEventListener("change", () => markRebuildPending(true));
 }
 
 function updateAiChip() {
   const chip = document.getElementById("aiChip");
-  if (app.sim.params.aiEnabled) { chip.textContent = "AI on · " + app.sim.params.aiResponseMode; chip.classList.add("on"); }
+  if (app.sim.params.aiEnabled) { chip.textContent = "AI on"; chip.classList.add("on"); }
   else { chip.textContent = "AI off"; chip.classList.remove("on"); }
+}
+
+/* ---- settings snapshot: store a run to a file so its outcome can be reproduced ------
+ * Reproduction needs the SEED and the structural fields as well as the live dials — the
+ * starting population is drawn once at init, so the same parameters with a different
+ * seed are a different run. Loading therefore rebuilds from t=0 rather than applying
+ * live, which is the only way the stored settings and the resulting trajectory match.
+ *
+ * The world-model GRAPH is not stored: it is a large derived object, and world-model.json
+ * carries its own fingerprint. What is stored is the graph SOURCE plus that fingerprint,
+ * so loading a snapshot taken against different data says so instead of silently running
+ * on whatever is loaded now.
+ *
+ * Saving uses showSaveFilePicker where it exists (Chromium), which is the only API that
+ * offers a real Save-As dialog with an editable filename. Firefox and Safari do not have
+ * it, so the fallback is an <a download> with the same suggested name — that gives the
+ * browser's download flow rather than a dialog, which is the best available there.
+ * Loading is a plain <input type="file">, which works everywhere including file://, and
+ * is already how this page takes world-model.json.
+ */
+const SNAPSHOT_STRUCTURAL = ["N", "M", "seed", "graphAttachment", "graphSource",
+  "institutionSizing", "mobilityMode", "aiEnabled"];
+
+function captureSnapshot() {
+  const p = app.sim.params;
+  const params = {};
+  // Live dials come from PARAM_FIELDS, so a parameter added to the panel is captured
+  // automatically rather than being forgotten in a hand-maintained list here.
+  PARAM_FIELDS.forEach((f) => { params[f.key] = p[f.key]; });
+  SNAPSHOT_STRUCTURAL.forEach((k) => { params[k] = p[k]; });
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    worldModelFingerprint: worldModelState.loaded ? worldModelState.loaded.fingerprint : null,
+    params,
+  };
+}
+
+function snapshotJSON() { return JSON.stringify(captureSnapshot(), null, 2); }
+
+function defaultSnapshotName() {
+  const p = app.sim.params;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const graph = p.graphSource === "worldModel" ? "world" : "ba";
+  return `capdecay-${graph}-N${p.N}-seed${p.seed}-${stamp}.json`;
+}
+
+// Applies a snapshot and rebuilds. Unknown keys are passed through to initSim rather
+// than filtered: engine.js rejects removed parameters by name, so a snapshot written
+// against an older engine fails loudly here instead of running on defaults while
+// claiming to be that older configuration.
+function applySnapshot(snap) {
+  if (!snap || !snap.params) throw new Error("not a settings file (no params)");
+  const p = Object.assign({}, snap.params);
+  if (p.graphSource === "worldModel") {
+    if (!worldModelState.loaded) throw new Error("this snapshot needs the world-model graph, which is not loaded");
+    p.worldModel = worldModelState.loaded;
+    delete p.M;                          // derived from the data; stating it throws
+  } else {
+    p.worldModel = null;
+  }
+  app.sim = createSim(p);
+  app.following = true;
+  app.viewT = 0;
+  app.selectedInst = null;
+  app.layout = null;
+  buildSidebar();
+  updateAiChip();
+  renderInspectorPlaceholder();
+  refreshAll();
+  markRebuildPending(false);
+  return snap;
+}
+
+// Parse-then-apply, kept separate so the file path and any future paste path share one
+// implementation — and so the round trip is testable without a file dialog.
+function applySnapshotText(text) {
+  let snap;
+  try { snap = JSON.parse(text); }
+  catch (err) { throw new Error("not valid JSON: " + err.message); }
+  const stale = snap.worldModelFingerprint && worldModelState.loaded &&
+    snap.worldModelFingerprint !== worldModelState.loaded.fingerprint;
+  applySnapshot(snap);
+  return { snap, stale };
+}
+
+async function saveSnapshotToFile() {
+  const text = snapshotJSON();
+  const suggested = defaultSnapshotName();
+  if (typeof globalThis.showSaveFilePicker === "function") {
+    const handle = await globalThis.showSaveFilePicker({
+      suggestedName: suggested,
+      types: [{ description: "Simulator settings", accept: { "application/json": [".json"] } }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+    return handle.name || suggested;
+  }
+  // No Save-As dialog in this browser: hand it to the download flow instead.
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = suggested;
+  a.click();
+  URL.revokeObjectURL(url);
+  return suggested;
 }
 
 // ---- world model (graphSource toggle, mirrors batch_run.js's config.worldModel) ----
@@ -613,7 +901,22 @@ function updateAiChip() {
 const worldModelState = {
   available: typeof WorldModel !== "undefined" && !!(WorldModel && WorldModel.loadWorldModel),
   worldJson: null, costsJson: null, loaded: null, error: null,
+  // Where the current data came from, so the status line can say so and a hand-picked
+  // file is visibly distinguishable from the bundled default.
+  source: null,
 };
+
+// Bundled data, if build_world_model_data.js has been run and the file is alongside
+// this page. Loading it here — before the first buildSidebar() — is what lets the
+// world-model switch render live at boot instead of waiting on two file pickers.
+// The graph source itself still defaults to BA: having the data ready is not the same
+// as changing what the simulator runs when you open it.
+if (worldModelState.available && typeof WORLD_MODEL_DATA !== "undefined" && WORLD_MODEL_DATA) {
+  worldModelState.worldJson = WORLD_MODEL_DATA.world;
+  worldModelState.costsJson = WORLD_MODEL_DATA.costs;
+  worldModelState.source = "bundled";
+  tryBuildWorldModel();
+}
 
 function worldModelStatusText() {
   if (!worldModelState.available) return "world_model.js not found next to this page — BA only";
@@ -621,7 +924,8 @@ function worldModelStatusText() {
   if (worldModelState.loaded) {
     const wm = worldModelState.loaded;
     let deg = 0; for (let i = 0; i < wm.M; i++) deg += wm.degree[i];
-    return `loaded — ${wm.M} institutions, mean near-degree ${(deg / wm.M).toFixed(1)}, fingerprint ${wm.fingerprint}`;
+    const from = worldModelState.source === "bundled" ? "bundled with this page" : "from your files";
+    return `loaded ${from} — ${wm.M} institutions, mean near-degree ${(deg / wm.M).toFixed(1)}, fingerprint ${wm.fingerprint}`;
   }
   const need = [];
   if (!worldModelState.worldJson) need.push("world-model.json");
@@ -643,15 +947,43 @@ function tryBuildWorldModel() {
   }
 }
 
+// Structural edits (N, M, m, seed, graph source, sizing) don't take effect until
+// Rebuild. That is deliberate — rebuilding resets the run to t=0, so it should never
+// happen behind your back — but "nothing happened" and "nothing happened YET" look
+// identical unless the button says so.
+function markRebuildPending(pending) {
+  const btn = document.getElementById("btnRebuild");
+  if (!btn) return;
+  if (pending) {
+    btn.classList.add("needs-rebuild");
+    btn.title = "Structural changes are waiting — press to apply them (resets the run to t=0)";
+  } else {
+    btn.classList.remove("needs-rebuild");
+    btn.title = "Rebuild with current N / M / m / seed";
+  }
+}
+
 function readStructuralFields() {
   // Guarded: on the very first call the sidebar hasn't been built yet (buildSidebar()
   // runs later in rebuild()), so these fields don't exist in the DOM. Fall back to defaults.
   const val = (id, fallback) => { const el = document.getElementById(id); return el ? parseInt(el.value, 10) || fallback : fallback; };
   const toggle = document.getElementById("fieldUseWorldModel");
-  const useWM = !!(toggle && toggle.checked && worldModelState.loaded);
+  // The FIRST call decides what the page boots into, and it defaults to the world model
+  // whenever the data is there: the calibration this page ships with (WORLD_MODEL_PARAMS)
+  // was fitted on that graph at N=10500, so booting on the BA graph would show numbers
+  // that were never fitted for it. Afterwards the checkbox is authoritative, so unticking
+  // it still gets you the BA graph.
+  //
+  // Keyed on app.sim rather than on the toggle being absent from the DOM. rebuild() calls
+  // this before assigning app.sim, so null means "first boot" in every environment. The
+  // DOM test pre-registers element ids, so there the toggle exists before the sidebar is
+  // built while in a browser it does not — reading its absence would have made the test
+  // and the real page disagree about what the simulator runs.
+  const firstBoot = app.sim === null;
+  const useWM = !!worldModelState.loaded && (firstBoot || !!(toggle && toggle.checked));
   const weighted = document.getElementById("fieldWeightedSizing");
   const out = {
-    N: val("fieldN", DEFAULT_PARAMS.N),
+    N: val("fieldN", WORLD_MODEL_PARAMS.N),
     M: val("fieldM", DEFAULT_PARAMS.M),
     graphAttachment: val("fieldAttach", DEFAULT_PARAMS.graphAttachment),
     seed: val("fieldSeed", DEFAULT_PARAMS.seed),
@@ -675,7 +1007,7 @@ function rebuild(preserveLive) {
   // engine copy this page used to carry reconciled a stale M silently instead — which
   // is the class of drift that copy existed to enable.)
   if (params.graphSource === "worldModel") delete params.M;
-  app.sim = initSim(params);
+  app.sim = createSim(params);
   app.following = true;
   app.viewT = 0;
   app.selectedInst = null;
@@ -684,6 +1016,7 @@ function rebuild(preserveLive) {
   updateAiChip();
   renderInspectorPlaceholder();
   refreshAll();
+  markRebuildPending(false);
 }
 
 /* ---- transport ---- */
@@ -695,10 +1028,31 @@ function setPlaying(v) {
 document.getElementById("btnPlay").addEventListener("click", () => setPlaying(!app.playing));
 document.getElementById("btnStep").addEventListener("click", () => { setPlaying(false); doTick(); });
 document.getElementById("btnRebuild").addEventListener("click", () => rebuild(true));
-document.getElementById("speedRange").addEventListener("input", (e) => {
-  app.ticksPerSec = parseInt(e.target.value, 10);
-  document.getElementById("speedOut").textContent = app.ticksPerSec + " months/s";
-});
+// The speed slider sets a PAUSE PER MONTH, not a rate: full left is a one-second pause
+// between ticks, full right is no pause at all. app.speedPos (the slider position) is
+// the single source of truth and app.tickPauseMs is derived from it, so the position,
+// the bounds and the behaviour cannot drift apart the way they did when the value, the
+// bounds and the readout were separate literals.
+//
+// Halving rather than linear. Linear in milliseconds would spend most of the travel
+// between 1000ms and 500ms — both indistinguishably slow — and cram every useful speed
+// into the last few pixels. Each step of 2 halves the pause, so the slider is roughly
+// uniform in perceived speed.
+const SPEED_POS_MAX = 20;                 // 0 = one second per month, 20 = no pause
+function pauseForPos(pos) {
+  if (pos >= SPEED_POS_MAX) return 0;     // no sleep in the loop
+  return 1000 / Math.pow(2, pos / 2);
+}
+function setSpeed(pos) {
+  let n = parseInt(pos, 10);
+  if (!Number.isFinite(n)) n = 0;
+  app.speedPos = Math.min(SPEED_POS_MAX, Math.max(0, n));
+  app.tickPauseMs = pauseForPos(app.speedPos);
+  const el = document.getElementById("speedRange");
+  if (el) { el.min = "0"; el.max = String(SPEED_POS_MAX); el.value = String(app.speedPos); }
+}
+document.getElementById("speedRange").addEventListener("input", (e) => setSpeed(e.target.value));
+setSpeed(app.speedPos);
 
 const scrubRange = document.getElementById("scrubRange");
 const scrubLabel = document.getElementById("scrubLabel");
@@ -727,7 +1081,7 @@ function doTick() {
   const { Ebar, count } = institutionStats(app.sim);
   const sim = app.sim;
   for (let j = 0; j < sim.M; j++) sim.instHistory[j].push(Ebar[j]);
-  sim.snapshots.push({ t: sim.t, E: sim.E.slice(), C: sim.C.slice(), inst: sim.inst.slice(), Ebar, count });
+  sim.snapshots.push({ t: sim.t, E: sim.E.slice(), inst: sim.inst.slice(), Ebar, count });
   if (sim.snapshots.length > SNAPSHOT_CAP) sim.snapshots.splice(0, SNAPSHOT_EVICT);
   if (app.following) app.viewT = app.sim.t;
   scrubRange.max = app.sim.t;
@@ -742,13 +1096,27 @@ function frame(ts) {
   app.lastFrameTime = ts;
 
   if (app.playing) {
-    app.tickAccumulator += dt;
-    const interval = 1000 / app.ticksPerSec;
-    let guard = 0;
-    while (app.tickAccumulator >= interval && guard < 10) {
-      doTick();
-      app.tickAccumulator -= interval;
-      guard++;
+    // Two limits, both needed. The TIME budget is what keeps "no pause" from freezing the
+    // tab: at 0 sleep the loop would otherwise run until the frame never returned, and
+    // nothing would repaint. The ITERATION cap is the backstop for when the clock does not
+    // advance — a fast machine, a coarse timer, or the test harness, where every tick
+    // completes inside one millisecond and a purely time-based loop never exits.
+    const FRAME_BUDGET_MS = 12;           // of a ~16.7ms frame, leaving room to render
+    const MAX_TICKS_PER_FRAME = 200;
+    const started = Date.now();
+    let n = 0;
+    if (app.tickPauseMs <= 0) {
+      do { doTick(); n++; } while (n < MAX_TICKS_PER_FRAME && Date.now() - started < FRAME_BUDGET_MS);
+    } else {
+      app.tickAccumulator += dt;
+      while (app.tickAccumulator >= app.tickPauseMs && n < MAX_TICKS_PER_FRAME &&
+             Date.now() - started < FRAME_BUDGET_MS) {
+        doTick(); n++;
+        app.tickAccumulator -= app.tickPauseMs;
+      }
+      // If a budget or cap cut the loop short, drop the arrears rather than banking them:
+      // otherwise easing off the slider would be followed by a burst of catch-up ticks.
+      if (app.tickAccumulator > app.tickPauseMs) app.tickAccumulator = app.tickPauseMs;
     }
   }
   relaxLayout();
@@ -761,9 +1129,13 @@ function ensureLayout() {
   if (app.layout) return app.layout;
   const M = app.sim.M;
   const layout = [];
+  // Radius grows with sqrt(M) so the starting ring has the same node density at any
+  // scale. A fixed 120 put 245 world-model institutions ~3 units apart, and repulsion
+  // goes as 1/d^2 — the first step alone was enough to fling them past 1e6.
+  const radius = 120 * Math.sqrt(M / 40);
   for (let j = 0; j < M; j++) {
     const a = (j / M) * Math.PI * 2;
-    layout.push({ x: Math.cos(a) * 120, y: Math.sin(a) * 120, vx: 0, vy: 0 });
+    layout.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius, vx: 0, vy: 0 });
   }
   app.layout = layout;
   return layout;
@@ -796,10 +1168,24 @@ function relaxLayout() {
       fx += (dx / d) * force; fy += (dy / d) * force;
     });
     fx += -layout[i].x * 0.01; fy += -layout[i].y * 0.01;
-    layout[i].vx = (layout[i].vx + fx * 0.02) * 0.82;
-    layout[i].vy = (layout[i].vy + fy * 0.02) * 0.82;
+    let vx = (layout[i].vx + fx * 0.02) * 0.82;
+    let vy = (layout[i].vy + fy * 0.02) * 0.82;
+    // Temperature: never move further than one natural edge length in a step. This is
+    // what keeps the d^2 attraction from running away on a dense graph — the world
+    // model averages 12.2 neighbours per node against the BA graph's ~4, so the
+    // summed attractive force is several times larger for the same geometry.
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    if (speed > k) { vx = (vx / speed) * k; vy = (vy / speed) * k; }
+    // Belt and braces: a non-finite value would poison the layout permanently, since
+    // every later step reads these positions back.
+    layout[i].vx = isFinite(vx) ? vx : 0;
+    layout[i].vy = isFinite(vy) ? vy : 0;
   }
-  for (let i = 0; i < M; i++) { layout[i].x += layout[i].vx; layout[i].y += layout[i].vy; }
+  for (let i = 0; i < M; i++) {
+    layout[i].x += layout[i].vx; layout[i].y += layout[i].vy;
+    if (!isFinite(layout[i].x)) { layout[i].x = 0; layout[i].vx = 0; }
+    if (!isFinite(layout[i].y)) { layout[i].y = 0; layout[i].vy = 0; }
+  }
 }
 
 function seqColor(t, isDark) {
@@ -872,8 +1258,26 @@ function drawNetwork() {
   let maxCount = 1;
   for (let j = 0; j < app.sim.M; j++) if (count[j] > maxCount) maxCount = count[j];
 
-  const cx = w / 2, cy = h / 2, scale = Math.min(w, h) / 320;
+  // Fit the view to what the layout actually occupies, rather than assuming it lives
+  // inside a fixed +/-160. A 245-institution world model settles around +/-300 even
+  // once it is stable, so a fixed scale drew most of the graph off-canvas — which
+  // looks exactly like the institutions having flown away.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let j = 0; j < app.sim.M; j++) {
+    const p = layout[j];
+    if (!isFinite(p.x) || !isFinite(p.y)) continue;
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  if (!isFinite(minX)) { minX = -160; maxX = 160; minY = -160; maxY = 160; }
+  const pad = 26;                                    // room for the biggest node radius
+  const spanX = Math.max(maxX - minX, 1), spanY = Math.max(maxY - minY, 1);
+  const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanY);
+  const cx = w / 2 - ((minX + maxX) / 2) * scale, cy = h / 2 - ((minY + maxY) / 2) * scale;
   const px = (x) => cx + x * scale, py = (y) => cy + y * scale;
+  // Node radius shrinks as the graph gets crowded, so 245 institutions read as a
+  // network rather than as one solid disc.
+  const nodeScale = Math.min(1, Math.sqrt(60 / Math.max(app.sim.M, 1)));
 
   ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
   for (let i = 0; i < app.sim.M; i++) {
@@ -885,7 +1289,7 @@ function drawNetwork() {
   ctx.globalAlpha = 1;
 
   for (let j = 0; j < app.sim.M; j++) {
-    const r = 4 + 16 * Math.sqrt(count[j] / maxCount);
+    const r = (4 + 16 * Math.sqrt(count[j] / maxCount)) * nodeScale;
     ctx.beginPath();
     ctx.arc(px(layout[j].x), py(layout[j].y), r, 0, Math.PI * 2);
     ctx.fillStyle = seqColor(Ebar[j], theme === "dark");
@@ -911,7 +1315,7 @@ function hitTestNetwork(canvas, evt) {
 }
 
 const netCanvas = document.getElementById("networkCanvas");
-netCanvas.addEventListener("mousemove", (e) => { hoveredInst = hitTestNetwork(netCanvas, e); netCanvas.title = hoveredInst != null ? `institution ${hoveredInst}` : ""; });
+netCanvas.addEventListener("mousemove", (e) => { hoveredInst = hitTestNetwork(netCanvas, e); netCanvas.title = hoveredInst != null ? institutionTooltip(hoveredInst) : ""; });
 netCanvas.addEventListener("click", (e) => {
   const j = hitTestNetwork(netCanvas, e);
   if (j != null) { app.selectedInst = j; renderInspector(); }
@@ -926,43 +1330,133 @@ function drawHistogram() {
   const snap = currentSnapshot();
   const N = snap.E.length;
   const bins = 20;
-  const eCounts = new Array(bins).fill(0), cCounts = new Array(bins).fill(0);
+  // Cumulative turnover as of the tick being VIEWED, not the live one, so the counters
+  // agree with the histogram when you scrub back. Entrants and retirements are the same
+  // event seen from two sides — a replacement — so the two numbers are equal by
+  // construction; both are shown because "has anyone left yet" and "has anyone arrived
+  // yet" are different questions to ask of a run.
+  const counters = document.getElementById("distCounters");
+  if (counters) {
+    const viewed = app.sim.history[Math.max(0, Math.min(app.viewT, app.sim.history.length) - 1)];
+    const n = viewed ? viewed.turnoverTotal : 0;
+    const years = (app.viewT / TICKS_PER_YEAR).toFixed(0);
+    counters.textContent = `entrants ${n.toLocaleString()} · retirements ${n.toLocaleString()}` +
+      (app.viewT > 0 ? ` · ${years}y in, ${(n / app.sim.N).toFixed(2)}x the population replaced` : "");
+  }
+
+  const eCounts = new Array(bins).fill(0);
   for (let i = 0; i < N; i++) {
     eCounts[Math.min(bins - 1, Math.floor(snap.E[i] * bins))]++;
-    cCounts[Math.min(bins - 1, Math.floor(snap.C[i] * bins))]++;
   }
-  const maxCount = Math.max(...eCounts, ...cCounts, 1);
-  const pad = { l: 30, r: 10, t: 10, b: 22 };
+  // LOG y axis, fixed from 0 to N. Fixed rather than rescaled to the tallest bin: a
+  // moving axis makes every frame look the same shape, so the distribution appears not
+  // to change while the population is in fact piling up. With the axis pinned to N, bar
+  // heights mean the same thing at every tick and across runs.
+  //
+  // log1p, not log: a plain log has no value at 0, and empty bins are the norm at both
+  // ends of this distribution. log(1+c)/log(1+N) maps an empty bin to zero height and a
+  // bin holding everyone to full height, with no special case.
+  //
+  // The trade is that a log axis flattens the shape — the difference between 800 and
+  // 1,300 people is a sliver — in exchange for making the tails visible at all. On a
+  // linear axis a bin of 2 people is under half a pixel.
+  const yFrac = (c) => (c > 0 ? Math.log1p(c) / Math.log1p(N) : 0);
+  // Room for the widest decade label at this N ("10,000" is six characters).
+  const pad = { l: 14 + String(N).length * 7, r: 10, t: 10, b: 22 };
   const bw = (w - pad.l - pad.r) / bins;
   const seq = seqColor(0.55, currentTheme() === "dark");
+  const plotH = h - pad.t - pad.b;
 
-  ctx.fillStyle = cssVar("--ink-faint");
-  ctx.strokeStyle = cssVar("--rule");
   ctx.font = "10px ui-monospace, monospace";
-  ctx.textAlign = "center";
-  [0, 0.5, 1].forEach((v) => { ctx.fillText(v.toFixed(1), pad.l + v * (w - pad.l - pad.r), h - 6); });
+  ctx.strokeStyle = cssVar("--rule");
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  // Gridlines at decades — the readable ticks on a log axis — plus N itself at the top.
+  const decades = [];
+  for (let d = 1; d <= N; d *= 10) decades.push(d);
+  decades.push(N);
+  decades.forEach((c, k) => {
+    const y = h - pad.b - yFrac(c) * plotH;
+    // Skip a decade that would collide with the N label sitting just above it.
+    if (k < decades.length - 1 && yFrac(N) - yFrac(c) < 0.07) return;
+    ctx.fillStyle = cssVar("--ink-faint");
+    ctx.fillText(c.toLocaleString(), pad.l - 5, y);
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
 
   for (let b = 0; b < bins; b++) {
-    const bh = (eCounts[b] / maxCount) * (h - pad.t - pad.b);
+    const bh = yFrac(eCounts[b]) * plotH;
+    if (bh <= 0) continue;
     ctx.fillStyle = seq;
-    ctx.fillRect(pad.l + b * bw + 1, h - pad.b - bh, bw - 2, bh);
+    ctx.fillRect(pad.l + b * bw + 1, h - pad.b - bh, bw - 2, Math.max(1, bh));
   }
 
-  if (app.sim.params.aiEnabled) {
-    ctx.strokeStyle = cssVar("--accent");
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let b = 0; b < bins; b++) {
-      const x = pad.l + (b + 0.5) * bw;
-      const y = h - pad.b - (cCounts[b] / maxCount) * (h - pad.t - pad.b);
-      if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  // Headcount on each bar. Rotated to read upwards, because at 20 bins a bar is about
+  // 20px wide and a four-figure count is wider than that — printed horizontally the
+  // labels would overlap their neighbours. Empty bins are skipped: there is no bar to
+  // label and twenty zeroes is noise.
+  ctx.font = "8px ui-monospace, monospace";
+  ctx.textBaseline = "middle";
+  for (let b = 0; b < bins; b++) {
+    const c = eCounts[b];
+    if (c <= 0) continue;
+    const bh = Math.max(1, yFrac(c) * plotH);
+    const barTop = h - pad.b - bh;
+    const label = c.toLocaleString();
+    const tw = ctx.measureText(label).width;
+    ctx.save();
+    ctx.rotate(-Math.PI / 2);
+    // After rotating, +x runs UP the screen and +y runs right. Prefer the gap above the
+    // bar; if the bar reaches too near the top of the plot, print inside it instead so
+    // the number never escapes the panel.
+    if (barTop - tw - 4 >= pad.t) {
+      ctx.fillStyle = cssVar("--ink-muted");
+      ctx.textAlign = "left";
+      ctx.translate(-(barTop - 4), pad.l + b * bw + bw / 2);
+    } else {
+      ctx.fillStyle = cssVar("--panel");        // reads against the filled bar
+      ctx.textAlign = "right";
+      ctx.translate(-(barTop + 4), pad.l + b * bw + bw / 2);
     }
-    ctx.stroke();
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
   }
+  ctx.textBaseline = "alphabetic";
+
+  ctx.fillStyle = cssVar("--ink-faint");
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "center";
+  [0, 0.5, 1].forEach((v) => { ctx.fillText(v.toFixed(1), pad.l + v * (w - pad.l - pad.r), h - 6); });
+  ctx.textAlign = "left";
+  ctx.fillText("people (log)", pad.l + 2, h - pad.b - plotH + 3);
 }
 
 /* ============================== TIMELINE ============================== */
+// One series, kept as the common case. Everything below is drawSeriesChart.
+// The distribution over time: mean and median for the centre, the two deciles for the
+// spread. Plotted together on one scale because the gap between them is the quantity of
+// interest — it is what says whether a field is uniformly mediocre or split.
+function drawSpreadChart() {
+  const dark = currentTheme() === "dark";
+  drawSeriesChart("spreadCanvas", [
+    { key: "p90E", color: seqColor(0.85, dark), label: "top 10%", width: 1.5 },
+    { key: "meanE", color: seqColor(0.55, dark), label: "mean", width: 2.5 },
+    { key: "p50E", color: seqColor(0.55, dark), label: "median", width: 1.5, dash: [3, 2] },
+    { key: "p10E", color: seqColor(0.25, dark), label: "bottom 10%", width: 1.5 },
+  ], { zeroFloor: true, fixedMax: 1, legend: true, threshold: EXPERT_THRESHOLD });
+}
+
 function drawMiniChart(canvasId, key, color, options) {
+  return drawSeriesChart(canvasId, [{ key, color, width: 2 }], options);
+}
+
+// series: [{ key, color, label, width, dash }] — all plotted on ONE shared y scale, so
+// the lines are comparable by eye. That matters here: the point of the spread chart is
+// the DISTANCE between the deciles, which a per-series autoscale would destroy.
+function drawSeriesChart(canvasId, series, options) {
   options = options || {};
   const canvas = document.getElementById(canvasId);
   const { ctx, w, h } = setupCanvasDPR(canvas);
@@ -970,15 +1464,19 @@ function drawMiniChart(canvasId, key, color, options) {
   const hist = app.sim.history;
   if (!hist.length) return;
   const pad = { l: 34, r: 10, t: 8, b: 16 };
+  const pad2 = options.legend ? 12 : 0;      // room for the legend strip
   let minV = Infinity, maxV = -Infinity;
-  hist.forEach((e) => { const v = e[key]; if (v == null) return; if (v < minV) minV = v; if (v > maxV) maxV = v; });
+  hist.forEach((e) => series.forEach((sr) => {
+    const v = e[sr.key]; if (v == null) return;
+    if (v < minV) minV = v; if (v > maxV) maxV = v;
+  }));
   if (!isFinite(minV)) { minV = 0; maxV = 1; }
   if (options.zeroFloor) minV = Math.min(0, minV);
   if (options.fixedMax != null) maxV = options.fixedMax;
   if (maxV - minV < 1e-6) maxV = minV + 1e-6;
   const t0 = hist[0].t, t1 = hist[hist.length - 1].t;
   const toX = (t) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * (w - pad.l - pad.r);
-  const toY = (v) => (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad.b);
+  const toY = (v) => (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad2 - pad.b);
 
   ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
   ctx.fillStyle = cssVar("--ink-faint"); ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "right";
@@ -1007,9 +1505,42 @@ function drawMiniChart(canvasId, key, color, options) {
   });
   ctx.setLineDash([]);
 
-  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
-  hist.forEach((e, i) => { const v = e[key]; if (v == null) return; const x = toX(e.t), y = toY(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
-  ctx.stroke();
+  // Expert threshold, where asked for: the deciles only mean something against it.
+  if (options.threshold != null && options.threshold >= minV && options.threshold <= maxV) {
+    ctx.strokeStyle = cssVar("--ink-faint"); ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.7;
+    const y = toY(options.threshold);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+
+  series.forEach((sr) => {
+    ctx.strokeStyle = sr.color; ctx.lineWidth = sr.width || 1.5;
+    if (sr.dash) ctx.setLineDash(sr.dash);
+    ctx.beginPath();
+    let started = false;
+    hist.forEach((e) => {
+      const v = e[sr.key]; if (v == null) return;
+      const x = toX(e.t), y = toY(v);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  if (options.legend) {
+    ctx.font = "9px ui-monospace, monospace";
+    ctx.textAlign = "left";
+    let x = pad.l;
+    series.forEach((sr) => {
+      if (!sr.label) return;
+      ctx.strokeStyle = sr.color; ctx.lineWidth = sr.width || 1.5;
+      ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x + 10, 6); ctx.stroke();
+      ctx.fillStyle = cssVar("--ink-muted");
+      ctx.fillText(sr.label, x + 13, 9);
+      x += 16 + ctx.measureText(sr.label).width + 8;
+    });
+  }
 
   if (!app.following) {
     const x = toX(app.viewT);
@@ -1031,8 +1562,17 @@ function renderInspector() {
   const theme = currentTheme();
   const dot = `<span class="inst-dot" style="background:${seqColor(Ebar[j], theme === "dark")}"></span>`;
   const el = document.getElementById("inspector");
+  const inst = institutionOf(j);
+  // Sourced from world-model.json: label and hub_city (resolved through LOCATED_IN to
+  // the hub nodes' own labels, falling back to the organisation's own hub_city).
+  const identity = inst ? `
+    <div class="kv"><span>city</span><b>${escapeHTML(inst.hubCities.join(", ") || "—")}</b></div>
+    <div class="kv"><span>country</span><b>${escapeHTML(inst.country || "—")}</b></div>
+    <div class="kv"><span>sector</span><b>${escapeHTML(inst.sector || "—")}</b></div>
+    <div class="kv"><span>annual intake</span><b>${inst.intake} <span class="kv-note">(${escapeHTML(inst.sizeBand || "?")})</span></b></div>` : "";
   el.innerHTML = `
-    <h2>${dot}Institution ${j}</h2>
+    <h2>${dot}${escapeHTML(institutionName(j))}</h2>
+    ${identity}
     <div class="kv"><span>population</span><b>${count[j]}</b></div>
     <div class="kv"><span>avg. latent expertise (Ē)</span><b>${Ebar[j].toFixed(3)}</b></div>
     <div class="kv"><span>degree</span><b>${app.sim.graph.degree[j]}</b></div>
@@ -1065,16 +1605,14 @@ function refreshAll() {
   document.getElementById("statM").textContent = app.sim.M;
   if (app.following) scrubLabel.textContent = fmtTickLabel(app.sim.t);
   drawHistogram();
-  drawMiniChart("expertCanvas", "shareExpert", seqColor(0.6, currentTheme() === "dark"), { zeroFloor: true, fixedMax: 1 });
+  drawSpreadChart();
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
-  drawMiniChart("gapCanvas", "gap", cssVar("--accent"), { zeroFloor: true });
   if (app.selectedInst != null) renderInspector();
 }
 function renderSnapshotViews() {
   drawHistogram();
-  drawMiniChart("expertCanvas", "shareExpert", seqColor(0.6, currentTheme() === "dark"), { zeroFloor: true, fixedMax: 1 });
+  drawSpreadChart();
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
-  drawMiniChart("gapCanvas", "gap", cssVar("--accent"), { zeroFloor: true });
   if (app.selectedInst != null) renderInspector();
 }
 

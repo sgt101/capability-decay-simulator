@@ -48,15 +48,15 @@ equilibrium, not two different systems that both happen to be stable.
 ### 2. The equilibrium is tight and reproducible across seeds, not a coincidence of one run
 
 10 seeds, each run to t=10,000 (10× normal horizon), no-AI. Repeated with the current
-`ambientGrowthRate` default (0.001) and with it forced to 0, to separate "is there an
+`personalLearningRate` default (0.001) and with it forced to 0, to separate "is there an
 equilibrium at all" from "did ambient growth specifically create it."
 
 Data: [`steady state/seed_variance_at_steady_state.csv`](steady%20state/seed_variance_at_steady_state.csv)
 
 |                                               | meanE (mean ± sd across 10 seeds) | shareExpert (mean ± sd) |
 | --------------------------------------------- | --------------------------------- | ----------------------- |
-| `ambientGrowthRate` = 0.001 (current default) | 0.871 ± 0.008                     | 0.959 ± 0.010           |
-| `ambientGrowthRate` = 0                       | 0.832 ± 0.014                     | 0.958 ± 0.010           |
+| `personalLearningRate` = 0.001 (current default) | 0.871 ± 0.008                     | 0.959 ± 0.010           |
+| `personalLearningRate` = 0                       | 0.832 ± 0.014                     | 0.958 ± 0.010           |
 
 Both configurations land in a tight band (standard deviation under 0.015 on a [0,1]
 scale, across independently-seeded runs). The equilibrium **predates** ambient growth
@@ -96,7 +96,7 @@ low, see "Entrant renewal" in `spec.html` §7). These entrants land below their
 institution's average, so they're pulled upward by `transferRate` (default 0.5,
 tuned specifically to be fast enough for this to work — see §7). Meanwhile everyone
 already at or above their institution's average is pulled down slightly by
-`decayRate` and up slightly by `ambientGrowthRate`. The steady state is the point
+`decayRate` and up slightly by `personalLearningRate`. The steady state is the point
 where the constant inflow of novices (dragging the population average down) balances
 the rate at which they catch up and the rest of the population's slower drift — the
 same shape as a demographic equilibrium (births vs. deaths), not a static population
@@ -123,7 +123,7 @@ equilibrium instead of a still-climbing snapshot, at the cost of longer runs.
 
 **Note:** this equilibrium is specific to the model's current fixed/default
 parameters (`turnoverRate`, `transferRate`, `entrantExpertiseMean`, `decayRate`,
-`ambientGrowthRate`, etc.) — it is not a universal constant of the model structure.
+`personalLearningRate`, etc.) — it is not a universal constant of the model structure.
 Different values of those parameters settle at different equilibria; that's exactly
 what the parameter-pair heatmaps in `report.html` are measuring, just read at t=1,000
 rather than at full convergence.
@@ -496,8 +496,8 @@ read.
 
 ### The parameters split into baseline-movers and AI-only
 
-`aiRelianceIntensity`, `aiDampeningAbove` and `aiLevelFraction` appear only
-behind `aiEnabled`. The no-AI arm is *mathematically* independent of them, so
+The AI-only parameters — `aiDampeningBelow`, `aiDampeningAbove`,
+`aiAtrophyMultiplier` and `aiLevelFraction` — appear only behind `aiEnabled`. The no-AI arm is *mathematically* independent of them, so
 the baseline holds still while they sweep. The rest move both arms:
 
 | experiment | baseline `meanE` across the grid | spread |

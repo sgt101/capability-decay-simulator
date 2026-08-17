@@ -14,7 +14,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { EXPERT_THRESHOLD } = require("./engine.js");
+const { EXPERT_THRESHOLD, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS } = require("./engine.js");
 
 const OUT_DIR = path.join(__dirname, "experiments");
 const TICKS_PER_YEAR = 12;
@@ -38,6 +38,14 @@ function linspace(lo, hi, n) {
   return out;
 }
 
+// For multipliers, where equal RATIOS are the equal steps. With lo and hi reciprocal
+// about 1 this puts neutral exactly at the midpoint of the axis.
+function logspace(lo, hi, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(+Math.exp(Math.log(lo) + (Math.log(hi) - Math.log(lo)) * (i / (n - 1))).toFixed(6));
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Study parameters. SEVEN, giving C(7,2) = 21.
 //
@@ -45,15 +53,18 @@ function linspace(lo, hi, n) {
 // because they moved nothing worth a pairing (turnoverRate, learningRateSpread,
 // mobilityFriction — see problems.md P1 for the last).
 //
-// 2026-08: aiRelianceIntensity (rho) was removed from the model, taking the study
-// from seven parameters to six and from 21 pairings to 15. It was a constraint over
-// aiDampeningBelow and aiAtrophyMultiplier (1 - rho, 5^rho), not a mechanism, and
-// its base 5 was an untested exchange rate between the two channels. The pair is now
-// PINNED here at what rho = 0.25 derived, so the 15 surviving experiments are
-// unchanged. The six that swept rho as an axis are archived under results/ — a lock-
-// step path through two parameters is not expressible as a grid, and adding a lock-
-// step feature would only re-create rho under another name. For independent sweeps
-// of that pair see the BA set (generate_experiments.js), which has always had them.
+// 2026-08: aiRelianceIntensity (rho) was removed from the model. It was a constraint
+// over aiDampeningBelow and aiAtrophyMultiplier (1 - rho, 5^rho), not a mechanism,
+// and its base 5 was an untested exchange rate between the two channels — holding the
+// learning half at rho = 0.5 and varying only that base from 2 to 8 moves
+// meanE_shortfall from 0.213 to 0.346.
+//
+// Its six pairings (2, 7, 12-15) are retired and archived under results/: a rho sweep
+// is a lockstep path through two parameters, which grid mode cannot express, and a
+// lockstep feature would only rebuild rho under another name. In their place the two
+// parameters rho used to derive are now swept INDEPENDENTLY, as they always were in
+// the BA set — 13 new pairings, numbered 22-34. Net: eight study parameters, 28
+// experiments. The 15 that predate the change are untouched and did not need re-running.
 //
 // TWO CORRECTIONS applied for this run, both measured — see problems.md P16/P19.
 //
@@ -86,13 +97,22 @@ const STUDY_PARAMS = {
   // Centred on the calibrated 0.020. The edges are sharp — at transferRate 0.15,
   // decayRate 0.020 -> 0.024 moves equilibrium meanE 0.66 -> 0.62, and because
   // sd(E) is only ~0.06 that is enough to swing shareExpert substantially.
-  decayRate: { values: linspace(0.005, 0.040, GRID), default: 0.020 },
+  decayRate: { values: linspace(0.012, 0.047, GRID), default: PIPELINE_PARAMS.decayRate },
 
   // Raw [0,2]: 0 = max dampening, 1 = neutral, >1 = amplification. Governs the
   // ABOVE-threshold population, and whether it governs anybody at all depends
   // entirely on aiLevelFraction (measured: it drives a 0.74 spread in shortfall at
   // lambda=0.01 and 0.003 at lambda=0.70), so it is swept in its own right.
   aiDampeningAbove: { values: linspace(0, 2, GRID), default: 1.0 },
+
+  // The below-AI learning channel. Same raw [0,2] shape as gamma_above: 0 = learning
+  // zeroed out, 1 = neutral, >1 = AI teaching faster than peers alone would. This is
+  // the dial the model's central claim runs on — AI crowding out the peer transfer
+  // that turns entrants into experts — so pinning it while sweeping its above-level
+  // counterpart had it backwards. Default 0.75 is what the removed rho = 0.25
+  // derived, so the 15 experiments that pin it are unchanged.
+  aiDampeningBelow: { values: linspace(0, 2, GRID), default: 0.75 },
+
 
   // The AI's reference level. startTopE is 1.0 for any realistic N (P17), so this
   // is an absolute expertise threshold despite the name. Range floors at 0.01
@@ -104,7 +124,7 @@ const STUDY_PARAMS = {
   // 0.65. The old pin sat inside that plateau, where lambda stops mattering and
   // aiDampeningAbove governs almost nobody (measured: 0.0037 spread at 0.70 vs
   // 0.1158 at 0.60). Moving it here makes aiDampeningAbove a live parameter in
-  // the 15 files that pin lambda.
+  // the files that pin lambda.
   aiLevelFraction: { values: linspace(0.01, 1, GRID), default: EXPERT_THRESHOLD },
 
   // Checked, not assumed: this does NOT wash out over the 1440-tick horizon
@@ -126,40 +146,45 @@ const STUDY_PARAMS = {
   entrantExpertiseMean: { values: linspace(0.05, 0.5, GRID), default: 0.05 },
 };
 
-// Everything not under study, pinned identically across all 15 files.
+// Everything not under study, pinned identically across all 28 files.
 //
 // NOTE on the three demoted from study: each was measured on the 21x21 x 55 run
 // and moved the primary metrics little relative to the ones kept. They are
 // pinned at the values that set was run with, so the two sets remain comparable.
-const BASE_FIXED = {
+// Everything held fixed across all pairings. Built ON TOP of the engine's calibration
+// overlays rather than restating their values, so this set cannot drift away from the
+// model the simulator runs — which is exactly what happened before 2026-08: these
+// experiments named none of the entrant-pipeline parameters, so every one of them
+// resolved to its DEFAULT_PARAMS value of 0 and the whole study ran the pre-pipeline
+// model. An entrant reached expert in 1.8 years and ~4% of the field was ever below the
+// threshold, which is not the system the rest of the repo describes.
+//
+// MONTHLY_TICK_PARAMS -> the monthly time base
+// PIPELINE_PARAMS     -> learningCap, seniorTenureYears, aptitudeSpread, teachTopN,
+//                        aboveMeanDrag, decayRate, personalLearningRate
+// WORLD_MODEL_PARAMS  -> N, baseMoveProb, learningRateSpread, teachTopN (the deployment
+//                        calibration, fitted by calibrate_worldmodel.js at N=10500)
+//
+// Anything a STUDY axis sweeps is overwritten per-cell, so a value here is only the
+// pinned setting for the pairings that do not sweep it.
+const BASE_FIXED = Object.assign({
   graphSource: "worldModel",
   institutionSizing: "weighted",
-  turnoverRate: 1 / 480,        // 40-year career; see problems.md P5
-  learningRateSpread: 0.4,
-  mobilityFriction: 0,          // measured: an 8x change moved shortfall 0.005 (P1)
-  // 40 years x (52,514 annual intake / 200). M is NOT set — it is derived from
-  // the world model (245) and setting it throws.
-  N: 10504,
   expertiseSpread: 0.30,
   expertiseSkew: 3,
   entrantExpertiseSpread: 0.05,
-  entrantExpertiseSkew: 0,
   entrantExpertiseFloor: 0.05,  // no entrant arrives at exactly 0 — see P19
-  ambientGrowthRate: 0.001,
   mobilityMode: "hybrid",
   jumpProbability: 0.10,
   competitionAversion: 0.5,
   prestigeWeight: 0.3,
-  baseMoveProb: 0.05,
-  aiResponseMode: "floor",
-  aiGain: 1.0,
-  // The two halves of de-skilling below the AI's level, set directly. These are
-  // exactly what the removed aiRelianceIntensity = 0.25 derived (1 - 0.25 and
-  // 5^0.25), so the 15 experiments that pinned rho simulate precisely what they
-  // did before — checked against the recorded columns in results/experiment.1/.
-  aiDampeningBelow: 0.75,
-  aiAtrophyMultiplier: 1.4953487812212205,
-};
+}, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS, {
+  // N stays at the intake-derived figure rather than the round 10500 the calibration
+  // was fitted at: 40 years x (52,514 annual intake / 200). The 4-person difference is
+  // immaterial and this number is traceable to the data. M is NOT set — it is derived
+  // from the world model (245) and setting it throws.
+  N: 10504,
+});
 
 const WORLD_MODEL = {
   worldModelPath: "world-model.json",
@@ -176,29 +201,57 @@ const WORLD_MODEL = {
 const keys = Object.keys(STUDY_PARAMS);
 
 // Experiment NUMBERS are stable identities, not positions in a list: results/
-// experiment.N/ holds finished CSVs and report.html indexes them by that number.
-// So the pairing enumeration still runs over the ORIGINAL seven-parameter order,
-// including the removed aiRelianceIntensity, and simply emits nothing for the six
-// pairs that involved it. Surviving experiments therefore keep the numbers their
-// results were written under; 2, 7, 12, 13, 14 and 15 are retired and stay absent.
-// Renumbering 1..15 instead would silently repoint every archived results
-// directory at a different pairing.
+// experiment.N/ holds finished CSVs and report.html indexes them by that number, so a
+// number must always mean the same pairing.
+//
+// Two rules keep that true:
+//   1. Pairs among the ORIGINAL seven parameters keep their original numbers 1..21,
+//      enumerated over HISTORICAL_KEY_ORDER — including the removed
+//      aiRelianceIntensity, whose six pairs (2, 7, 12-15) are simply not emitted.
+//      Their finished results stay under results/ as the archive of that study.
+//   2. Parameters added LATER are appended to HISTORICAL_KEY_ORDER, and their pairs
+//      are numbered from 22 upward in append order. Numbering them positionally
+//      would have slid an existing pair's number along (aiDampeningBelow x
+//      transferRate would land at index 7, displacing everything after it).
 const HISTORICAL_KEY_ORDER = [
+  // the original seven, in their original order — do not reorder or insert
   "transferRate", "decayRate", "aiRelianceIntensity", "aiDampeningAbove",
   "aiLevelFraction", "expertiseMean", "entrantExpertiseMean",
+  // added 2026-08, when rho's removal left the below-AI channels unswept here
+  "aiDampeningBelow", "aiAtrophyMultiplier",
 ];
-const REMOVED_KEYS = new Set(["aiRelianceIntensity"]);
+const ORIGINAL_COUNT = 7;
+// Retired study parameters. Their pairings keep their numbers and simply are not
+// emitted, so a results/experiment.N directory always means the same pairing.
+//   aiRelianceIntensity — a constraint over two parameters, not a mechanism
+//   aiAtrophyMultiplier — moved the shortfall by 0.005 alone and collapses onto
+//                         decayRate at rank-R2 0.946 (problems.md); removed with the
+//                         "use it or lose it" branch itself
+const REMOVED_KEYS = new Set(["aiRelianceIntensity", "aiAtrophyMultiplier"]);
 
-const pairs = [];
-for (let i = 0; i < HISTORICAL_KEY_ORDER.length; i++) {
-  for (let j = i + 1; j < HISTORICAL_KEY_ORDER.length; j++) {
-    pairs.push([HISTORICAL_KEY_ORDER[i], HISTORICAL_KEY_ORDER[j]]);
+if (HISTORICAL_KEY_ORDER.filter((k) => !REMOVED_KEYS.has(k)).sort().join() !== keys.slice().sort().join()) {
+  throw new Error("STUDY_PARAMS no longer matches HISTORICAL_KEY_ORDER minus the removed keys — " +
+    "adding a study parameter means APPENDING it to HISTORICAL_KEY_ORDER, never inserting");
+}
+
+// numbered[] is indexed by n-1, so a hole stays a hole.
+const numbered = [];
+for (let i = 0; i < ORIGINAL_COUNT; i++) {
+  for (let j = i + 1; j < ORIGINAL_COUNT; j++) {
+    numbered.push([HISTORICAL_KEY_ORDER[i], HISTORICAL_KEY_ORDER[j]]);
   }
 }
-if (HISTORICAL_KEY_ORDER.filter((k) => !REMOVED_KEYS.has(k)).join() !== keys.join()) {
-  throw new Error("STUDY_PARAMS no longer matches HISTORICAL_KEY_ORDER minus the removed keys — " +
-    "adding a study parameter means appending it to HISTORICAL_KEY_ORDER too, or numbering will shift");
+for (let j = ORIGINAL_COUNT; j < HISTORICAL_KEY_ORDER.length; j++) {
+  for (let i = 0; i < j; i++) {
+    // Removed keys are skipped rather than numbered-and-retired here: a pair of a
+    // LATER-added parameter with a removed one never ran, so reserving a number for
+    // it would leave a hole that points at nothing. The holes at 2, 7 and 12-15 are
+    // different — those experiments exist, under results/.
+    if (REMOVED_KEYS.has(HISTORICAL_KEY_ORDER[i])) continue;
+    numbered.push([HISTORICAL_KEY_ORDER[i], HISTORICAL_KEY_ORDER[j]]);
+  }
 }
+const pairs = numbered;
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -251,7 +304,16 @@ const rowsPerExp = manifest[0].runs * RECORD_AT.length;
 
 console.log(`wrote ${manifest.length} world-model experiment files: ${manifest.map((m) => m.n).join(", ")}`);
 console.log(`  + experiments.worldmodel.manifest.json`);
-console.log(`  retired (studied the removed aiRelianceIntensity): ${retired.join(", ")} — results/ kept as archive`);
+console.log(`  retired (studied a removed parameter: ${[...REMOVED_KEYS].join(", ")}): ${retired.join(", ")}`);
+console.log(`    finished results for retired numbers stay under results/ as an archive`);
+
+// Stale files from a previous generation would otherwise be picked up by
+// run_experiments.sh and run against parameters the engine no longer has.
+const stale = fs.readdirSync(OUT_DIR)
+  .filter((f) => /^experiment\.\d+\.json$/.test(f))
+  .filter((f) => !manifest.some((m) => path.basename(m.file) === f));
+stale.forEach((f) => fs.unlinkSync(path.join(OUT_DIR, f)));
+if (stale.length) console.log(`  removed ${stale.length} stale config(s): ${stale.join(", ")}`);
 console.log(`\ntime base: 1 tick = 1 month | career = ${CAREER_YEARS}y = ${CAREER_YEARS * TICKS_PER_YEAR} ticks`);
 console.log(`horizon ${HORIZON} = ${HORIZON / TICKS_PER_YEAR} years = ${(HORIZON / (CAREER_YEARS * TICKS_PER_YEAR)).toFixed(1)} careers`);
 console.log(`recordAt: every ${TICKS_PER_YEAR} ticks (yearly), ${RECORD_AT.length} records per run`);

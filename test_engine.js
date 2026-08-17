@@ -7,35 +7,33 @@ function assert(cond, msg) {
 
 function summarize(state) {
   const last = state.history[state.history.length - 1];
-  let nanE = false, nanC = false;
+  let nanE = false;
   for (let i = 0; i < state.N; i++) {
     if (Number.isNaN(state.E[i])) nanE = true;
-    if (Number.isNaN(state.C[i])) nanC = true;
     if (state.E[i] < 0 || state.E[i] > 1) nanE = true;
-    if (state.C[i] < 0 || state.C[i] > 1) nanC = true;
   }
-  return { last, nanE, nanC };
+  return { last, nanE };
 }
 
 // --- 1. Baseline (AI off) ---
 {
   const s = initSim({ seed: 42 });
   for (let k = 0; k < 200; k++) tick(s);
-  const { last, nanE, nanC } = summarize(s);
-  assert(!nanE && !nanC, "baseline: no NaN / out-of-range E or C");
+  const { last, nanE } = summarize(s);
+  assert(!nanE, "baseline: no NaN / out-of-range E");
   assert(s.N === 500, "baseline: population conserved at N");
-  console.log("baseline meanE:", last.meanE.toFixed(4), "meanC:", last.meanC.toFixed(4), "gap:", last.gap.toFixed(4), "divergence:", last.divergence.toFixed(5));
-  assert(Math.abs(last.gap) < 1e-6, "baseline: brittleness gap is ~0 when AI is off");
+  console.log("baseline meanE:", last.meanE.toFixed(4), "divergence:", last.divergence.toFixed(5));
+  assert(!("meanC" in last) && !("gap" in last),
+    "the observed-capability channel is gone: no meanC, no illusion gap (removed 2026-08)");
 }
 
 // --- 2. AI on, floor mode ---
 {
-  const s = initSim({ seed: 42, aiEnabled: true, aiResponseMode: "floor", aiLevelFraction: 0.7 });
+  const s = initSim({ seed: 42, aiEnabled: true, aiLevelFraction: 0.7 });
   for (let k = 0; k < 200; k++) tick(s);
-  const { last, nanE, nanC } = summarize(s);
-  assert(!nanE && !nanC, "AI floor: no NaN / out-of-range");
-  console.log("AI floor meanE:", last.meanE.toFixed(4), "meanC:", last.meanC.toFixed(4), "gap:", last.gap.toFixed(4), "aiLevel:", last.aiLevel.toFixed(4));
-  assert(last.gap > 0, "AI floor: brittleness gap opens up (C > E on average)");
+  const { last, nanE } = summarize(s);
+  assert(!nanE, "AI on: no NaN / out-of-range");
+  console.log("AI on meanE:", last.meanE.toFixed(4), "aiLevel:", last.aiLevel.toFixed(4));
   // Structural, not empirical: aiLevel = aiLevelFraction * state.startTopE, and
   // aiLevelFraction is defined to run at most 1.0 (100% of the t=0 top performer), so
   // aiLevel can never exceed the fixed t=0 top performer itself. The live/current top
@@ -58,14 +56,9 @@ function summarize(state) {
   assert(Math.abs(levelAt1 - 0.7 * s.startTopE) < 1e-6, "ai_level: equals aiLevelFraction * state.startTopE exactly");
 }
 
-// --- 3. All five AI response modes run without diverging ---
-for (const mode of ["floor", "flat", "linear", "amplified", "exponential"]) {
-  const s = initSim({ seed: 7, aiEnabled: true, aiResponseMode: mode, aiGain: 1.0 });
-  for (let k = 0; k < 150; k++) tick(s);
-  const { last, nanE, nanC } = summarize(s);
-  assert(!nanE && !nanC, `AI mode ${mode}: no NaN / out-of-range`);
-  console.log(`mode=${mode} meanE=${last.meanE.toFixed(4)} meanC=${last.meanC.toFixed(4)} gap=${last.gap.toFixed(4)}`);
-}
+// --- 3. (removed) The five AI response modes shaped observed capability C, which
+//     was deleted in 2026-08 along with aiGain and aiResponseMode. Nothing replaces
+//     this section: with no C there is no boost shape to exercise.
 
 // --- 4. Mobility modes ---
 for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
@@ -131,7 +124,7 @@ for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
 {
   const s = initSim({
     seed: 13, N: 800, aiEnabled: true, aiLevelFraction: 0.9,
-    aiDampeningBelow: 1.0, aiDampeningAbove: 1.0, aiAtrophyMultiplier: 4.0,
+    aiDampeningBelow: 1.0, aiDampeningAbove: 1.0,
     transferRate: 0.02, // deliberately weak — isolates atrophy from the (now much
     // stronger default) learning rate, which would otherwise swamp a 300-tick window
   });
@@ -198,7 +191,7 @@ for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
 //     net-improve, not just decay slower. Isolate by zeroing decayRate/transferRate/
 //     turnoverRate/baseMoveProb (each would otherwise move institution averages or
 //     population composition on their own, confounding the comparison) and comparing
-//     ambientGrowthRate=0 against >0: with it off, an above-average population sits
+//     personalLearningRate=0 against >0: with it off, an above-average population sits
 //     flat; with it on, it rises. The strong-vs-weak-institution comparison holds each
 //     individual's own E and L fixed (same seed, so identical random draws in both
 //     runs) and varies ONLY state.startEbar after init — isolating the institution's
@@ -206,11 +199,11 @@ for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
 //     comparison would introduce (a uniformly higher-E population has fundamentally
 //     less room left to grow, which would understate the effect being tested).
 {
-  function aboveAvgDrift(ambientGrowthRate, startEbarOverride) {
+  function aboveAvgDrift(personalLearningRate, startEbarOverride) {
     const s = initSim({
       seed: 31, N: 1000, M: 20, expertiseMean: 0.5, expertiseSpread: 0.05, expertiseSkew: 0,
       transferRate: 0, decayRate: 0, turnoverRate: 0, baseMoveProb: 0,
-      ambientGrowthRate, aiEnabled: false,
+      personalLearningRate, aiEnabled: false,
     });
     if (startEbarOverride != null) s.startEbar.fill(startEbarOverride);
     const before = Array.from(s.E);
@@ -222,10 +215,126 @@ for (const mode of ["unconstrained", "edge_constrained", "hybrid"]) {
   const driftOff = aboveAvgDrift(0, null);
   const driftOnWeak = aboveAvgDrift(0.01, 0.3);
   const driftOnStrong = aboveAvgDrift(0.01, 0.9);
-  console.log(`ambient growth drift: off=${driftOff.toFixed(5)}  on(weak founding avg=0.3)=${driftOnWeak.toFixed(5)}  on(strong founding avg=0.9)=${driftOnStrong.toFixed(5)}`);
-  assert(Math.abs(driftOff) < 1e-6, "ambient growth: with rate=0, an above-average population sits flat (no residual drift)");
-  assert(driftOnWeak > 0, "ambient growth: with rate>0, an above-average population still improves even in a weaker institution");
-  assert(driftOnStrong > driftOnWeak, "ambient growth: holding individual E/L fixed, a stronger founding institution average produces more growth");
+  console.log(`personal learning drift: off=${driftOff.toFixed(5)}  on(weak founding avg=0.3)=${driftOnWeak.toFixed(5)}  on(strong founding avg=0.9)=${driftOnStrong.toFixed(5)}`);
+  assert(Math.abs(driftOff) < 1e-6, "personal learning: with rate=0, an above-average population sits flat (no residual drift)");
+  assert(driftOnWeak > 0, "personal learning: with rate>0, an above-average population still improves even in a weaker institution");
+  assert(driftOnStrong > driftOnWeak, "personal learning: holding individual E/L fixed, a stronger founding institution average produces more growth");
+}
+
+
+// --- entrant pipeline (learningCap + seniorTenureYears) --------------------
+console.log("\n--- entrant pipeline ---");
+{
+  const { PIPELINE_PARAMS, MONTHLY_TICK_PARAMS, EXPERT_THRESHOLD } = require("./engine.js");
+  const base = { N: 800, M: 40, seed: 7 };
+
+  // OFF by default: every archived result was produced without this, so an untouched
+  // config must be bit-for-bit what it always was.
+  const plain = initSim(base);
+  assert(plain.params.learningCap === 0, "learningCap defaults to 0 (off)");
+  assert(plain.params.seniorTenureYears === 0, "seniorTenureYears defaults to 0 (off)");
+  const traceOf = (extra) => {
+    const s = initSim(Object.assign({}, base, extra));
+    for (let i = 0; i < 200; i++) tick(s);
+    return s.history.map((h) => h.meanE.toFixed(12)).join(",");
+  };
+  assert(traceOf({}) === traceOf({ learningCap: 0, seniorTenureYears: 0 }),
+    "explicitly setting both to 0 is identical to omitting them");
+
+  // Tenure must come from its own RNG stream — drawing it from the main one would
+  // shift every downstream value and silently change every existing result.
+  assert(traceOf({ seniorTenureYears: 8 }) !== traceOf({}),
+    "turning the mechanism on does change the dynamics (sanity: it is wired up)");
+  const s0 = initSim(base), s1 = initSim(Object.assign({}, base, { seniorTenureYears: 8 }));
+  let sameE = true;
+  for (let i = 0; i < s0.N; i++) if (s0.E[i] !== s1.E[i]) { sameE = false; break; }
+  assert(sameE, "the starting population is identical with and without the mechanism (tenure uses a separate stream)");
+
+  // Tenure ages and resets on turnover.
+  const t0 = initSim(Object.assign({}, base, { turnoverRate: 0 }));
+  const before = t0.tenure[0];
+  tick(t0);
+  assert(t0.tenure[0] === before + 1, "tenure advances one month per tick");
+
+  // The pipeline produces a LADDER, which is the whole point: a spread population
+  // with a real share still below the expert threshold.
+  const pipe = initSim(Object.assign({ N: 2000, M: 40, seed: 3 }, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS));
+  for (let i = 0; i < 600; i++) tick(pipe);
+  const sorted = Array.from(pipe.E).sort((a, b) => a - b);
+  const spread = sorted[Math.floor(0.9 * sorted.length)] - sorted[Math.floor(0.1 * sorted.length)];
+  const below = sorted.filter((e) => e < EXPERT_THRESHOLD).length / sorted.length;
+  assert(spread > 0.15, `PIPELINE_PARAMS gives a spread population (p10-p90 ${spread.toFixed(3)} > 0.15)`);
+  assert(below > 0.10, `a real share is still climbing (${(below * 100).toFixed(0)}% below expert > 10%)`);
+
+  // What now carries the post-training spread. Per-person teacher assignment was
+  // removed in 2026-08 after it measured inert against the shipped configuration, so
+  // aptitude ceilings are the mechanism that separates one veteran from another.
+  const shape = (extra) => {
+    const st = initSim(Object.assign({ N: 1500, M: 40, seed: 3 }, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, extra));
+    for (let i = 0; i < 1200; i++) tick(st);
+    const arr = Array.from(st.E).sort((a, b) => a - b);
+    return { iqr: arr[Math.floor(0.75 * arr.length)] - arr[Math.floor(0.25 * arr.length)],
+             mean: arr.reduce((a, b) => a + b, 0) / arr.length };
+  };
+  const shipped = shape({});
+  assert(shipped.iqr > 0.15, `the shipped set spreads the body of the distribution (IQR ${shipped.iqr.toFixed(3)} > 0.15)`);
+  assert(shape({ aptitudeSpread: 0 }).iqr < shipped.iqr - 0.05,
+    `without aptitude ceilings the body compresses (IQR ${shape({ aptitudeSpread: 0 }).iqr.toFixed(3)} vs ${shipped.iqr.toFixed(3)})`);
+
+  // Ceilings must not collect at the boundary. A clipped normal put 10% of them on
+  // exactly 1.0, and because most people converge onto their ceiling that atom became
+  // a wall of extreme experts in the expertise distribution itself.
+  {
+    const st = initSim(Object.assign({ N: 4000, M: 40, seed: 2 }, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS));
+    const caps = Array.from(st.aptitude);
+    const atCeiling = caps.filter((c) => c >= 0.999).length / caps.length;
+    assert(atCeiling < 0.005, `aptitude ceilings do not pile up at 1.0 (${(atCeiling * 100).toFixed(2)}% there, was 10% when clipped)`);
+    assert(Math.min(...caps) > 0.01, "no ceiling lands at or below zero either");
+    for (let i = 0; i < 1500; i++) tick(st);
+    // Extreme expertise must be bounded by the CEILING distribution rather than by a
+    // clipping artefact — reaching the top has to stay something only some of those
+    // capable of it manage. Stated as a ratio, not an absolute share: teachTopN is an
+    // absolute count, so how selective it is depends on institution size, and a fixed
+    // threshold here would only describe this one scale. (The artefact this test was
+    // originally written against — ceilings piling on exactly 1.0 — is asserted
+    // directly two lines above.)
+    const extreme = Array.from(st.E).filter((e) => e >= 0.85).length / st.N;
+    const entitled = Array.from(st.aptitude).filter((a) => a >= 0.85).length / st.N;
+    assert(extreme < entitled * 0.7,
+      `reaching the top stays selective (${(extreme * 100).toFixed(1)}% at E>=0.85, of ${(entitled * 100).toFixed(1)}% with a ceiling that high)`);
+  }
+
+  // No one may be pushed UP past their own ceiling, by any route including ambient
+  // growth. Stated as a per-tick invariant rather than as "E <= aptitude at the end":
+  // APTITUDE_FLOOR is 0.02 while entrants arrive near 0.05, so a person can be BORN
+  // above their ceiling and then decay toward it. That is legitimate — someone whose
+  // potential sits below where they started — and an end-state comparison scores it as
+  // a breach. What must never happen is expertise RISING at or above the ceiling.
+  {
+    const st = initSim(Object.assign({ N: 600, M: 20, seed: 11 }, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS));
+    for (let i = 0; i < 1500; i++) tick(st);
+    const before = Float32Array.from(st.E);
+    let worstRise = 0;
+    for (let k = 0; k < 200; k++) {
+      before.set(st.E);
+      tick(st);
+      for (let i = 0; i < st.N; i++) {
+        if (before[i] >= st.aptitude[i]) worstRise = Math.max(worstRise, st.E[i] - before[i]);
+      }
+    }
+    assert(worstRise <= 1e-6,
+      `nobody at or above their ceiling ever gains expertise (largest rise ${worstRise.toExponential(1)})`);
+  }
+
+  // Without the senior target, the same cap collapses the field instead — the failure
+  // mode the tenure rule exists to prevent.
+  const capOnly = initSim(Object.assign({ N: 2000, M: 40, seed: 3 }, MONTHLY_TICK_PARAMS,
+    { learningCap: PIPELINE_PARAMS.learningCap, decayRate: PIPELINE_PARAMS.decayRate }));
+  let m;
+  for (let i = 0; i < 600; i++) m = tick(capOnly);
+  const withSeniors = pipe.history[pipe.history.length - 1].meanE;
+  assert(m.meanE < withSeniors - 0.1,
+    `a cap without the senior target collapses the field (${m.meanE.toFixed(3)} vs ${withSeniors.toFixed(3)})`);
 }
 
 console.log(process.exitCode ? "\nSOME CHECKS FAILED" : "\nALL CHECKS PASSED");

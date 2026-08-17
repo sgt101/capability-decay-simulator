@@ -15,6 +15,16 @@
 // bipartite AFFILIATION network, not a peer graph. There is no transfer graph in
 // the data — only the ingredients to compute one. Adjacency here is an OUTPUT.
 "use strict";
+//
+// SCOPE: wrapped in an IIFE so this file publishes EXACTLY ONE name — module.exports
+// under Node, globalThis.WorldModel in a browser. simulator.html loads it with
+// <script src>, and two classic scripts share ONE global lexical scope: anything
+// declared at top level here would collide with an identically-named declaration in
+// the page and throw SyntaxError before either script ran. That is precisely what
+// broke the page in 2026-08 (seven collisions, starting at the RNG). The body below
+// is deliberately NOT re-indented — the wrapper is a scope boundary, not a reason for
+// a whitespace diff over every line in the file.
+(function () {
 
 const DEFAULT_OPTS = {
   useBlocAffinity: true,
@@ -143,6 +153,15 @@ function loadWorldModel(world, costs, userOpts) {
       index: i,
       node_id: o.node_id,
       label: o.label,
+      // Human-readable location, for anything that needs to show WHICH institution a
+      // node is rather than an index. hubIds are node ids; these are the city names
+      // behind them, with the organisation's own hub_city as the fallback for an org
+      // that has no LOCATED_IN edge.
+      hubCities: (() => {
+        const names = hubIds.map((id) => { const h = byId.get(id); return h && h.label; }).filter(Boolean);
+        return names.length ? names : (o.hub_city ? [o.hub_city] : []);
+      })(),
+      country: o.country || null,
       sector: o.sector,
       sector_id: null,             // filled below
       subsector: o.subsector_tier,
@@ -394,3 +413,5 @@ if (typeof module !== "undefined" && module.exports) {
 } else if (typeof globalThis !== "undefined") {
   globalThis.WorldModel = { loadWorldModel, suggestedN, fnv1a, DEFAULT_OPTS };
 }
+
+})();
