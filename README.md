@@ -9,8 +9,7 @@ real expertise (`E`) behind their output over time.
 
 You will need to download this repository and then you do the following:
 
-- See [src/simulator.html](src/simulator.html) for the interactive
-  visualizer.
+- See src/simulator.html for the interactive visualizer.
 
 - Run the experiments "src/run_experiments.sh --workers 14"
 

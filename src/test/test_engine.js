@@ -1,4 +1,6 @@
-const { initSim, tick, generateBAGraph, mulberry32, DEFAULT_PARAMS } = require("../engine.js");
+const { initSim, tick, generateBAGraph, mulberry32, DEFAULT_PARAMS,
+        MONTHLY_TICK_PARAMS: MTP, PIPELINE_PARAMS: PP, TICKS_PER_YEAR: TPY,
+        capabilityWeight, aclLeverage } = require("../engine.js");
 
 function assert(cond, msg) {
   if (!cond) { console.error("FAIL:", msg); process.exitCode = 1; }
@@ -335,6 +337,117 @@ console.log("\n--- entrant pipeline ---");
   const withSeniors = pipe.history[pipe.history.length - 1].meanE;
   assert(m.meanE < withSeniors - 0.1,
     `a cap without the senior target collapses the field (${m.meanE.toFixed(3)} vs ${withSeniors.toFixed(3)})`);
+}
+
+// --- mixing survives the founding cohort ---------------------------------------
+// The bug this pins: originRetention used to count only people present at t=0 and never
+// replaced. That cohort decays with turnover — under 10% of the field within a century —
+// so the statistic described a vanishing sliver and settled onto its own baseline, blind
+// to how everyone who arrived since had been redistributed. Entrants now start a fresh
+// origin at their placement, which makes it stationary.
+{
+  console.log("\n--- mixing: measured over the whole field, not the t=0 cohort ---");
+  const base = Object.assign({ N: 2000, M: 40, seed: 3, baseMoveProb: 0.01 }, MTP, PP);
+  const s = initSim(base);
+  const at = {};
+  for (const y of [50, 100, 200, 400]) { while (s.t < y * TPY) tick(s); at[y] = s.history[s.history.length - 1]; }
+
+  const churn = s.turnoverTotal / s.N;
+  assert(churn > 4, `the founding cohort is long gone by t=400y (${churn.toFixed(1)}x the population replaced)`);
+  assert(at[400].originRetention > at[400].mixedBaseline * 3,
+    `retention ${(at[400].originRetention * 100).toFixed(1)}% still stands well clear of the ` +
+    `${(at[400].mixedBaseline * 100).toFixed(2)}% fully-mixed floor after ${churn.toFixed(0)}x turnover`);
+  const drift = Math.abs(at[400].originRetention - at[100].originRetention);
+  assert(drift < 0.03,
+    `retention is stationary from t=100y to t=400y (moves ${(drift * 100).toFixed(1)} points)`);
+
+  // With nobody moving, time-in-place must equal time-in-career, whose mean is the
+  // career length by construction. A direct check that the counter tracks what it says.
+  const still = initSim(Object.assign({}, base, { baseMoveProb: 0 }));
+  for (let i = 0; i < 400 * TPY; i++) tick(still);
+  const h = still.history[still.history.length - 1];
+  const careerYears = 1 / (still.params.turnoverRate * TPY);
+  assert(h.originRetention === 1,
+    `with mobility off nobody is anywhere but their origin (${(h.originRetention * 100).toFixed(1)}%)`);
+  assert(Math.abs(h.meanMonthsInPlace / TPY - careerYears) / careerYears < 0.1,
+    `with mobility off, mean time in place ${(h.meanMonthsInPlace / TPY).toFixed(1)}y matches the ` +
+    `${careerYears.toFixed(0)}y career it must equal`);
+
+  // ...and it has to move when mobility does.
+  const busy = initSim(Object.assign({}, base, { baseMoveProb: 0.05 }));
+  for (let i = 0; i < 200 * TPY; i++) tick(busy);
+  const hb = busy.history[busy.history.length - 1];
+  assert(hb.originRetention < at[200].originRetention / 2 && hb.meanMonthsInPlace < at[200].meanMonthsInPlace / 2,
+    `5x the move rate cuts retention ${(at[200].originRetention * 100).toFixed(1)}% -> ` +
+    `${(hb.originRetention * 100).toFixed(1)}% and time in place ` +
+    `${(at[200].meanMonthsInPlace / TPY).toFixed(1)}y -> ${(hb.meanMonthsInPlace / TPY).toFixed(1)}y`);
+}
+
+// --- asymmetric cognitive leverage --------------------------------------------
+{
+  console.log("\n--- AI leverage on capability (Dell'Acqua et al.) ---");
+  const P = DEFAULT_PARAMS;
+
+  // The defect this pins: read literally, the study's two cohorts are a STEP at the
+  // split, and a step makes capability fall as skill rises — measured before smoothing,
+  // someone at 0.501 was 10% less capable than someone at 0.499. Capability must never
+  // punish expertise, at any AI level.
+  let worstDrop = 0, dropAt = 0, dropLam = 0;
+  for (const lam of [0.05, 0.3, 0.585, 0.7, 0.95, 1.0]) {
+    for (let e = 0; e <= 1; e += 0.0005) {
+      const a = capabilityWeight(e) * aclLeverage(e, lam, P);
+      const b = capabilityWeight(e + 0.0005) * aclLeverage(e + 0.0005, lam, P);
+      if (a - b > worstDrop) { worstDrop = a - b; dropAt = e; dropLam = lam; }
+    }
+  }
+  assert(worstDrop <= 0,
+    `capability is monotone in expertise at every AI level (worst drop ${worstDrop.toExponential(1)}` +
+    (worstDrop > 0 ? ` at E=${dropAt.toFixed(3)}, lambda=${dropLam}` : "") + ")");
+
+  // The empirical anchor: with all work inside the frontier the two cohort means must
+  // still land near the study's +43% / +17%. Smoothing costs a little fidelity and that
+  // is the trade — a few points, against a monotone function.
+  const s = initSim(Object.assign({ N: 4000, M: 40, seed: 3, baseMoveProb: 0.01 }, MTP, PP));
+  for (let i = 0; i < 150 * TPY; i++) tick(s);
+  const inside = Object.assign({}, P, { frontierBreadth: 0 });   // F = 1: all inside
+  const lam = 0.7;
+  let lo = 0, nlo = 0, hi = 0, nhi = 0;
+  for (let i = 0; i < s.N; i++) {
+    const a = aclLeverage(s.E[i], lam, inside);
+    if (s.E[i] < lam) { lo += a; nlo++; } else { hi += a; nhi++; }
+  }
+  assert(Math.abs(lo / nlo - 1.43) < 0.06 && Math.abs(hi / nhi - 1.17) < 0.06,
+    `cohort gains stay near the study: below ${(lo / nlo).toFixed(3)} vs 1.430, ` +
+    `above ${(hi / nhi).toFixed(3)} vs 1.170`);
+  assert(lo / nlo > hi / nhi,
+    `AI levels: the weaker cohort gains more (${(lo / nlo).toFixed(3)} vs ${(hi / nhi).toFixed(3)})`);
+
+  // Outside the frontier a novice cannot catch the error, so a weak AI is net harmful
+  // to them while still helping an expert. The crossing point falls out of the numbers
+  // rather than being asserted: F = deficit / (noviceGain + deficit).
+  const crossing = P.aclNoviceDeficit / (P.aclNoviceGain + P.aclNoviceDeficit);
+  assert(aclLeverage(0.05, crossing - 0.1, P) < 1 && aclLeverage(0.05, crossing + 0.1, P) > 1,
+    `AI is net harmful to novices below lambda=${crossing.toFixed(3)} and helpful above it`);
+  assert(aclLeverage(0.95, 0.1, P) > 1,
+    `a weak AI still helps an expert (x${aclLeverage(0.95, 0.1, P).toFixed(3)}) where it hurts a novice`);
+
+  // The bug the multiplier replaces: the old floor counted anyone below the AI AS the
+  // AI, so at a high level system capability read N x w(aiLevel) — pinned, and blind to
+  // whatever was happening to the humans. Leverage is bounded, so it cannot mask that.
+  const cap = [];
+  for (const l of [0.3, 0.95]) {
+    const s2 = initSim(Object.assign({ N: 2000, M: 40, seed: 3, baseMoveProb: 0.01,
+      aiEnabled: true, aiLevelFraction: l }, MTP, PP));
+    let h; for (let i = 0; i < 150 * TPY; i++) h = tick(s2);
+    cap.push(h);
+  }
+  const maxLev = Math.max(...cap.map((h) => h.systemCapability / h.systemCapabilityHuman));
+  assert(maxLev < 1 + P.aclNoviceGain + 1e-9,
+    `AI leverage stays inside the study's ceiling (largest x${maxLev.toFixed(3)}, cap x${(1 + P.aclNoviceGain).toFixed(2)})`);
+  assert(cap[1].systemCapability < cap[0].systemCapability,
+    `a stronger AI that suppresses learning LOWERS measured capability ` +
+    `(${cap[0].systemCapability.toExponential(2)} at lambda=0.3 -> ${cap[1].systemCapability.toExponential(2)} at 0.95), ` +
+    `rather than the floor's pinned maximum`);
 }
 
 console.log(process.exitCode ? "\nSOME CHECKS FAILED" : "\nALL CHECKS PASSED");

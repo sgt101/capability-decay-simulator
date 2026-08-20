@@ -14,18 +14,35 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { EXPERT_THRESHOLD, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS } = require("./engine.js");
+const { EXPERT_THRESHOLD, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS,
+        TICKS_PER_YEAR, CAREER_YEARS, FIELD_DIVISOR } = require("./engine.js");
+const { loadWorldModel, suggestedN } = require("./world_model.js");
 
 const paths = require("./paths.js");
 
 const OUT_DIR = paths.data("experiments");
-const TICKS_PER_YEAR = 12;
-const CAREER_YEARS = 40;
 const HORIZON = 1440;                       // 3 careers
 const RECORD_AT = [];                       // yearly: 12, 24, ... 1440
 for (let t = TICKS_PER_YEAR; t <= HORIZON; t += TICKS_PER_YEAR) RECORD_AT.push(t);
 const REPLICATES = 3;
 const SEED = 1;
+
+// N is one leg of the identity `headcount = annual intake x career length` (problems.md
+// P5), so it is READ OFF the data rather than written down beside a comment describing
+// the arithmetic. Loading the world model here is the cost of that, and it is a
+// dependency this generator always had in practice — every config it writes names the
+// same two files.
+const INTAKE_DERIVED_N = (() => {
+  try {
+    const wm = loadWorldModel(
+      JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8")),
+      JSON.parse(fs.readFileSync(paths.data("mobility-costs.json"), "utf8")));
+    return suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR);
+  } catch (err) {
+    throw new Error("[gen-worldmodel] cannot derive N from the world model — the "
+      + "experiments it would write are not reproducible without it: " + err.message);
+  }
+})();
 // 21 was the original resolution, dropped to 15 when a run cost ~3.5s. The CDF
 // sampler and the allocation-free mobility path took that to ~0.78s/tick-scaled
 // (4.5x), which buys the resolution back: 21x21 at 3 replicates costs less CPU
@@ -181,11 +198,12 @@ const BASE_FIXED = Object.assign({
   competitionAversion: 0.5,
   prestigeWeight: 0.3,
 }, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS, {
-  // N stays at the intake-derived figure rather than the round 10500 the calibration
-  // was fitted at: 40 years x (52,514 annual intake / 200). The 4-person difference is
-  // immaterial and this number is traceable to the data. M is NOT set — it is derived
-  // from the world model (245) and setting it throws.
-  N: 10504,
+  // N stays at the intake-derived figure rather than the round 10500 the calibration was
+  // fitted at. COMPUTED from the world model, not written down: this used to be the
+  // literal 10504 beside a comment citing 52,514 annual intake, and the data now says
+  // 52,518 — the arithmetic in the comment had already stopped matching the number above
+  // it. M is NOT set — it is derived from the world model (245) and setting it throws.
+  N: INTAKE_DERIVED_N,
 });
 
 const WORLD_MODEL = {

@@ -4,7 +4,8 @@
 const fs = require("fs");
 const path = require("path");
 const { loadWorldModel, suggestedN, fnv1a } = require("../world_model.js");
-const { initSim, tick, generateBAGraph, mulberry32, MONTHLY_TICK_PARAMS } = require("../engine.js");
+const { initSim, tick, generateBAGraph, mulberry32, MONTHLY_TICK_PARAMS,
+        WORLD_MODEL_PARAMS, TICKS_PER_YEAR, CAREER_YEARS, FIELD_DIVISOR } = require("../engine.js");
 const paths = require("../paths.js");
 
 let pass = 0, fail = 0;
@@ -384,6 +385,39 @@ console.log("\n--- bundled world-model-data.js is current ---");
     detail = (e.stderr ? e.stderr.toString() : e.message).trim();
   }
   assert(ok, "world-model-data.js matches world-model.json + mobility-costs.json" + (ok ? "" : " — " + detail));
+}
+
+// --- N, turnoverRate and career length are one identity (problems.md P5) ------
+// headcount = annual intake x career length, at FIELD_DIVISOR scale. Three numbers,
+// two degrees of freedom, and until now nothing checked they still agreed — the
+// literal 40 lived in four files and the divisor in one prose comment whose intake
+// figure had already gone stale by four people.
+//
+// Asserted over the SHIPPED DEFAULTS ONLY, deliberately. turnoverRate is a live
+// slider in simulator.html, so no invariant holds over an arbitrary run: a user can
+// set a 20-year career whenever they like and that is a legitimate ablation, not a
+// bug. What this pins is that the numbers this project ships still describe one
+// coherent field.
+console.log("\n--- the time-base identity ---");
+{
+  const r = MONTHLY_TICK_PARAMS.turnoverRate;
+  const careerFromRate = 1 / (r * TICKS_PER_YEAR);
+  assert(Math.abs(careerFromRate - CAREER_YEARS) < 1e-9,
+    `shipped turnoverRate implies a ${careerFromRate.toFixed(2)}y career, matching CAREER_YEARS = ${CAREER_YEARS}`);
+
+  const identityN = suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR);
+  const shippedN = WORLD_MODEL_PARAMS.N;
+  // WORLD_MODEL_PARAMS.N is the ROUND figure the calibration was fitted at; the
+  // experiment generator uses the identity-exact one. A handful of people apart is
+  // expected and documented — a large gap would mean the scale had drifted.
+  assert(Math.abs(identityN - shippedN) <= 10,
+    `identity N ${identityN} (intake ${wm.totalIntake}/yr x ${CAREER_YEARS}y / ${FIELD_DIVISOR}) ` +
+    `agrees with the shipped N ${shippedN}`);
+
+  // The scale must apply to BOTH sides, or the model is not a scale model of anything.
+  const simulatedIntake = shippedN * r * TICKS_PER_YEAR;
+  assert(Math.abs(simulatedIntake * FIELD_DIVISOR - wm.totalIntake) / wm.totalIntake < 0.01,
+    `simulated intake ${simulatedIntake.toFixed(0)}/yr x ${FIELD_DIVISOR} recovers the real ${wm.totalIntake}/yr`);
 }
 
 console.log(`\n${fail === 0 ? "ALL CHECKS PASSED" : fail + " CHECK(S) FAILED"}  (${pass} passed, ${fail} failed)`);

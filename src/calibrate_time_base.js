@@ -32,7 +32,8 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { initSim, tick, EXPERT_THRESHOLD, DEFAULT_PARAMS } = require("./engine.js");
+const { initSim, tick, EXPERT_THRESHOLD, DEFAULT_PARAMS,
+        MONTHLY_TICK_PARAMS, TICKS_PER_YEAR, CAREER_YEARS } = require("./engine.js");
 const paths = require("./paths.js");
 
 const USE_WM = process.argv.includes("--world-model");
@@ -51,9 +52,10 @@ function graphParams() {
     : { M: 100 };
 }
 
-const TICKS_PER_YEAR = 12;
-const CAREER_YEARS = 40;
-const TURNOVER = 1 / (CAREER_YEARS * TICKS_PER_YEAR); // 0.002083
+// The rate the engine actually ships, not a second copy of the arithmetic. This script
+// used to rebuild it from its own CAREER_YEARS, so changing the shipped rate would have
+// left the calibration quietly fitting against a time base nothing runs on.
+const TURNOVER = MONTHLY_TICK_PARAMS.turnoverRate;
 
 // Calibration target. This is a DOMAIN ASSUMPTION, not a measurement — the whole
 // scan hangs off it, so it is stated here rather than buried.

@@ -13,10 +13,17 @@ const registry = new Map();
 // Every canvas method is a no-op EXCEPT the ones whose return value the drawing code
 // uses. measureText is one: chart legends space their entries by the width of the text
 // before them, so a bare no-op returns undefined and the layout throws.
+// Text the charts draw, with the alignment and x it was drawn at. Recorded because
+// clipped axis labels are otherwise invisible to this harness: every canvas call is a
+// no-op, so a label rendered at a negative x looks exactly like one that fits.
+const drawnText = [];
 const CTX_STUB = new Proxy({}, {
   get(target, prop) {
     if (prop in target) return target[prop];
     if (prop === "measureText") return (str) => ({ width: String(str).length * 6 });
+    if (prop === "fillText") return (str, x, y) => {
+      drawnText.push({ text: String(str), x, y, align: target.textAlign });
+    };
     return function () {};
   },
   set(target, prop, value) { target[prop] = value; return true; },
@@ -34,7 +41,16 @@ class FakeElement {
     this._id = ""; this._value = ""; this._checked = false; this._text = ""; this._html = "";
     this._attrs = {}; this._fieldMap = {}; this.style = {}; this.children = [];
     this._listeners = new Listeners();
-    this.classList = { add: () => {}, remove: () => {}, contains: () => false };
+    // A real class set, not a set of no-ops: refreshLiveHint uses toggle() and a driver
+    // needs to read back whether the warning state was actually applied.
+    this._classes = new Set();
+    this.classList = {
+      add: (c) => this._classes.add(c),
+      remove: (c) => this._classes.delete(c),
+      toggle: (c, on) => { const want = on == null ? !this._classes.has(c) : !!on;
+        if (want) this._classes.add(c); else this._classes.delete(c); return want; },
+      contains: (c) => this._classes.has(c),
+    };
     this._max = ""; this._min = "";
   }
   get id() { return this._id; }
@@ -66,30 +82,49 @@ class FakeElement {
     if (m) return this._fieldMap[m[1]] || null;
     if (sel === "input") return this._input || null;
     if (sel === "output") return this._output || null;
+    if (sel === ".live-hint") return this._liveHint || null;
+    if (sel === ".why") return this._why || null;
+    if (sel === ".note") return this._note || null;
     return null;
   }
 }
 
-function makeFieldStub(initialValue, initialText) {
+// Sub-elements are created only when the field's markup actually contains them. A stub
+// that fabricates every slot regardless makes "is this control wired up?" unanswerable:
+// querySelector would hand back an element the real page would not have, so code that
+// only runs when the element exists appears to run for every field.
+function makeFieldStub(initialValue, initialText, has) {
+  has = has || {};
   const root = new FakeElement("div");
   const input = new FakeElement("input"); input.value = initialValue;
   const output = new FakeElement("output"); output.textContent = initialText;
+  const liveHint = has.liveHint ? new FakeElement("div") : null;
+  const why = has.why ? new FakeElement("button") : null;
+  const note = has.note ? new FakeElement("div") : null;
   root._input = input; root._output = output;
-  root.querySelector = (sel) => (sel === "input" ? input : sel === "output" ? output : null);
+  root._liveHint = liveHint; root._why = why; root._note = note;
+  root.querySelector = (sel) => (sel === "input" ? input : sel === "output" ? output
+    : sel === ".live-hint" ? liveHint : sel === ".why" ? why : sel === ".note" ? note : null);
   return root;
 }
 
 function parseFieldBlocks(html) {
   const map = {};
-  // Trailing [^>]* so extra attributes on the wrapper (e.g. the hover-description
-  // title=) don't stop a field being found.
-  const re = /<div class="field" data-key="([^"]+)"[^>]*>([\s\S]*?)<\/div>/g;
+  // Captures to the START OF THE NEXT FIELD rather than the first </div>: a field now
+  // holds several sibling divs (the description, the note, the live reading), and
+  // stopping at the first close tag hid all but the earliest from this parser.
+  // Trailing [^>]* so extra attributes on the wrapper don't stop a field being found.
+  const re = /<div class="field" data-key="([^"]+)"[^>]*>([\s\S]*?)(?=<div class="field" data-key="|$)/g;
   let m;
   while ((m = re.exec(html))) {
     const key = m[1], block = m[2];
     const outM = block.match(/<output>([^<]*)<\/output>/);
     const valM = block.match(/<input[^>]*value="([^"]*)"/);
-    map[key] = makeFieldStub(valM ? valM[1] : "0", outM ? outM[1] : "");
+    map[key] = makeFieldStub(valM ? valM[1] : "0", outM ? outM[1] : "", {
+      why: /class="why"/.test(block),
+      note: /class="note"/.test(block),
+      liveHint: /class="live-hint"/.test(block),
+    });
   }
   return map;
 }
@@ -114,17 +149,27 @@ function registerIdsFromHTML(html) {
   }
 }
 
+// Read here rather than at the point of use: the element registry below is built FROM
+// this markup, so it has to exist first.
+const pageHTML = fs.readFileSync(process.argv[2], "utf8");
+
+// Every id the page declares, with its real tag, scanned straight out of the markup.
+// This replaces a hand-maintained list that was the source of truth for four separate
+// silent passes: an element missing from it made getElementById return null, so the
+// code that touches it either no-opped or was never reached, and the flow "passed".
+registerIdsFromHTML(pageHTML);
+
+// The same list, now demoted to an ASSERTION. These are the ids the drivers below reach
+// for by name; if the page stops declaring one, fail here rather than 900 lines later
+// with a null dereference.
 const staticIds = [
   "statT", "statN", "statM", "aiChip", "btnStep", "btnPlay", "speedRange",
   "btnRebuild", "scrubRange", "scrubLabel", "btnLive", "sidebar", "networkCanvas",
   "distCanvas", "distCounters", "divCanvas", "spreadCanvas", "inspector",
+  "diffusionFlows", "diffusionMixing", "mixCanvas", "capCanvas",
 ];
-staticIds.forEach((id) => {
-  const tag = id.includes("Canvas") ? "canvas" : id === "sidebar" || id === "inspector" ? "aside" : "div";
-  const el = new FakeElement(tag);
-  el._id = id;
-  registry.set(id, el);
-});
+const missing = staticIds.filter((id) => !registry.has(id));
+if (missing.length) throw new Error("the page no longer declares these ids: " + missing.join(", "));
 registry.get("scrubRange")._value = "0";
 registry.get("scrubRange")._max = "0";
 registry.get("speedRange")._value = "6";
@@ -146,7 +191,7 @@ function getComputedStyle() { return { getPropertyValue: () => "#336699" }; }
 
 function pumpRAFSrc() {} // placeholder, real pump lives in driver code below (has access to window)
 
-const html = fs.readFileSync(process.argv[2], "utf8");
+const html = pageHTML;
 const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/);
 if (!scriptMatch) throw new Error("no <script> found");
 
@@ -239,11 +284,163 @@ mobSel.dispatch("change", { target: mobSel });
 console.log("OK: mobilityMode =", app.sim.params.mobilityMode);
 if (app.sim.params.mobilityMode !== "edge_constrained") throw new Error("mobility mode select did not apply");
 
+// This list is hand-maintained, and an id missing from it does not fail — the panel's
+// render function just finds nothing and returns, so the flow passes without ever
+// running. That is exactly how the diffusion panel first "passed", so it is asserted
+// on directly below rather than trusted to the no-throw sweep.
+console.log("--- diffusion readouts report real movement ---");
+{
+  const flows = document.getElementById("diffusionFlows").innerHTML;
+  const mixing = document.getElementById("diffusionMixing").innerHTML;
+  for (const label of ["moves", "expertise carried", "upgrading arrivals", "retirements"])
+    if (flows.indexOf(label) === -1) throw new Error("diffusion flows missing row: " + label);
+  for (const label of ["still at origin", "if fully mixed", "time in place"])
+    if (mixing.indexOf(label) === -1) throw new Error("diffusion mixing missing row: " + label);
+  // A panel of en-dashes renders perfectly well and means the counters never arrived.
+  // Parsed by string slicing, not a regex: this block is spliced into the driver as a
+  // template literal, which eats the backslashes a character class needs.
+  // No quotes and no backslashes in this literal: the block is spliced into the driver
+  // as a template literal, which eats both. ">moves</span><b>" is unique anyway — no
+  // other row label ends in "moves".
+  const marker = ">moves</span><b>";
+  const at = flows.indexOf(marker);
+  const moved = at === -1 ? "" : flows.slice(at + marker.length, flows.indexOf("</b>", at));
+  if (!moved || moved.indexOf("/yr") === -1) throw new Error("diffusion panel shows no move rate after " + app.sim.t + " ticks, got: " + JSON.stringify(moved));
+  if (parseInt(moved, 10) <= 0) throw new Error("diffusion panel reports no moves at all: " + moved);
+  const h = app.sim.history[app.sim.history.length - 1];
+  for (const k of ["moves", "moveExpertiseFlux", "upgradingArrivals", "originRetention", "mixedBaseline", "meanMonthsInPlace"])
+    if (!(k in h)) throw new Error("engine history entry is missing " + k);
+  if (h.originRetention > 1 || h.originRetention < 0) throw new Error("originRetention out of range: " + h.originRetention);
+  // Whether the statistic survives the founding cohort is an engine property and is
+  // pinned over four centuries in test_engine.js; this page-level run is 47 years, too
+  // short to show it. Checked here only that the panel is wired to a live number.
+  if (!(h.meanMonthsInPlace > 0)) throw new Error("meanMonthsInPlace is not positive: " + h.meanMonthsInPlace);
+  if (h.upgradingArrivals > h.moves) throw new Error("upgrading arrivals exceed moves");
+  console.log("OK: diffusion panel reports " + moved + ", retention " +
+    (h.originRetention * 100).toFixed(1) + "% vs fully-mixed " + (h.mixedBaseline * 100).toFixed(1) + "%");
+}
+
 console.log("--- network node click -> inspector ---");
 app.selectedInst = 0;
 renderInspector();
 console.log("OK: renderInspector ran, inspector html length =", document.getElementById("inspector").innerHTML.length);
 if (document.getElementById("inspector").innerHTML.indexOf("Institution 0") === -1) throw new Error("inspector did not render selected institution");
+
+// --- axis labels must fit inside the chart, on every chart ---------------------
+// The reported bug: y-axis numbers clipped off the left edge. Invisible here until now,
+// because a no-op canvas draws a label at x = -2 as happily as at x = 40. Right-aligned
+// text ends at x and extends LEFT by its width, so x - width is its left edge.
+console.log("--- axis labels fit their gutters ---");
+{
+  drawnText.length = 0;
+  drawSpreadChart();
+  drawMiniChart("divCanvas", "divergence", "#000", { zeroFloor: true });
+  drawMixChart();
+  drawCapabilityChart();
+  app.selectedInst = 0; renderInspector();
+  const labels = drawnText.filter((d) => d.align === "right");
+  if (labels.length < 8) throw new Error("expected axis labels from five charts, recorded " + labels.length);
+  const clipped = labels.filter((d) => d.x - d.text.length * 6 < 0);
+  if (clipped.length) {
+    throw new Error("axis labels clipped off the left edge: " +
+      clipped.map((d) => JSON.stringify(d.text) + " ends at x=" + d.x).join(", "));
+  }
+  const widest = labels.reduce((a, d) => (d.text.length > a.text.length ? d : a), labels[0]);
+  console.log("OK: " + labels.length + " axis labels fit; widest is " +
+    JSON.stringify(widest.text) + " at x=" + widest.x);
+}
+
+// --- a flat series must not be drawn as if it were eventful ------------------
+// The reported bug: at a high ai_level_fraction the capability line is pinned by the AI
+// floor and varies by a fraction of a percent, but autoscaling plotted that wobble
+// across the whole frame; one real change then rescaled the axis by ~340x, which reads
+// as a collapse followed by an explosion. Checked on the axis maths directly, since the
+// symptom is a shape and there is nothing to measure on a no-op canvas.
+console.log("--- near-constant series get a minimum axis span ---");
+{
+  const flat = [4.579e6, 4.5681e6, 4.5679e6, 4.5683e6];
+  let mn = Infinity, mx = -Infinity;
+  flat.forEach((v) => { const t = Math.log10(v); if (t < mn) mn = t; if (t > mx) mx = t; });
+  const rawSpan = mx - mn;
+  const [pmn, pmx] = padAxisSpan(mn, mx, { log: true });
+  if (rawSpan > 0.01) throw new Error("fixture is not flat enough to exercise the guard");
+  if (pmx - pmn < Math.log10(2) - 1e-9)
+    throw new Error("log axis span " + (pmx - pmn).toFixed(4) + " is below the one-doubling floor");
+  // ...and a series that genuinely spans decades must be left alone.
+  const wide = padAxisSpan(Math.log10(1e4), Math.log10(1e7), { log: true });
+  if (Math.abs((wide[1] - wide[0]) - 3) > 1e-9)
+    throw new Error("a 3-decade series was rescaled: " + (wide[1] - wide[0]));
+  // A pinned bound stays pinned: the 0..1 expertise axis must not grow a negative floor.
+  const pinned = padAxisSpan(0.61, 0.61, { fixedMin: 0, fixedMax: 1 });
+  if (pinned[0] !== 0.61 || pinned[1] !== 0.61)
+    throw new Error("padAxisSpan overrode bounds the caller pinned: " + pinned.join(", "));
+  console.log("OK: flat series padded from " + rawSpan.toExponential(1) + " to " +
+    (pmx - pmn).toFixed(3) + " decades; wide series and pinned bounds untouched");
+}
+
+// --- controls that only initSim reads must say so ----------------------------
+// expertiseMean/Spread/Skew are read by initSim and by nothing in tick(). Presented as
+// live sliders they are inert mid-run, which is exactly the "I changed it and nothing
+// happened / then everything happened" confusion behind the bug report.
+console.log("--- init-only sliders light up Rebuild ---");
+{
+  const initOnly = PARAM_FIELDS.filter((f) => f.initOnly).map((f) => f.key);
+  ["expertiseMean", "expertiseSpread", "expertiseSkew"].forEach((k) => {
+    if (initOnly.indexOf(k) === -1) throw new Error(k + " is read only by initSim but is not marked initOnly");
+  });
+  markRebuildPending(false);
+  const root = document.getElementById("sidebar").querySelector('.field[data-key="expertiseMean"]');
+  const inp = root.querySelector("input");
+  inp.value = "0.31";
+  inp.dispatch("input", { target: inp });
+  if (!document.getElementById("btnRebuild").classList.contains("needs-rebuild"))
+    throw new Error("moving an init-only slider did not mark Rebuild as pending");
+  console.log("OK: " + initOnly.length + " init-only sliders marked; moving one lights up Rebuild");
+}
+
+console.log("--- institution history: all series, bounded by thinning ---");
+{
+  const h = app.sim.instHistory;
+  // Named explicitly rather than read from INST_SERIES: this list is the contract the
+  // inspector charts rely on, and deriving it from the thing under test would let a
+  // renamed or dropped series pass. It also guards the collision this caught once
+  // already — a series called "cap" silently overwrote the sample-cap field.
+  ["Ebar", "teach", "pop", "experts", "capability", "capabilityHuman"].forEach((k) => {
+    if (!h[k] || !h[k][0] || h[k][0].length !== h.maxSamples)
+      throw new Error("instHistory series " + k + " missing or wrong width");
+  });
+  if (typeof h.maxSamples !== "number") throw new Error("instHistory.maxSamples is not a number — a series name has shadowed it");
+  if (h.len < 2) throw new Error("instHistory recorded nothing after " + app.sim.t + " ticks");
+
+  // Two invariants the recording must satisfy, checked at the newest sample: headcount
+  // is conserved across institutions, and nobody is an expert who is not also a person.
+  const last = h.len - 1;
+  let tot = 0;
+  for (let j = 0; j < app.sim.M; j++) {
+    tot += h.pop[j][last];
+    if (h.experts[j][last] > h.pop[j][last])
+      throw new Error("institution " + j + " records more experts than people");
+  }
+  if (tot !== app.sim.N) throw new Error("recorded populations sum to " + tot + ", not N=" + app.sim.N);
+
+  // Thinning, on a throwaway history so the live one is not corrupted. The cap is
+  // 2,000 samples and a UI run will not reach it during this test, so it is driven
+  // directly — otherwise the branch that keeps memory flat is never executed here.
+  const M2 = 3, h2 = makeInstHistory(M2);
+  const zE = new Float32Array(M2), zT = new Float32Array(M2);
+  const zC = new Int32Array(M2), zX = new Int32Array(M2);
+  zE[0] = 0.5;                                    // a marker in the oldest sample
+  pushInstHistory(h2, M2, zE, zT, zC, zX, zC, zC);
+  zE[0] = 0.1;
+  let guard = 0;
+  while (h2.stride === 1 && guard++ < h2.maxSamples * 2) pushInstHistory(h2, M2, zE, zT, zC, zX, zC, zC);
+  if (h2.stride !== 2) throw new Error("history never thinned after " + guard + " pushes");
+  if (h2.len > h2.maxSamples) throw new Error("history exceeded its cap: " + h2.len + " > " + h2.maxSamples);
+  if (h2.len !== h2.maxSamples >> 1) throw new Error("thinning left " + h2.len + " samples, expected " + (h2.maxSamples >> 1));
+  if (h2.Ebar[0][0] !== 0.5) throw new Error("thinning dropped the oldest sample instead of every second one");
+  console.log("OK: 6 series recorded, populations sum to N; thinned at " + h2.maxSamples +
+    " samples to " + h2.len + " at stride " + h2.stride + ", oldest sample kept");
+}
 
 console.log("--- scrubbing to an earlier tick ---");
 const scrub = document.getElementById("scrubRange");
@@ -816,8 +1013,10 @@ console.log("\\n--- every slider default is inside its own range and on-step ---
   PARAM_FIELDS.forEach((f) => {
     const root = document.getElementById("sidebar").querySelector('.field[data-key="' + f.key + '"]');
     if (!root) throw new Error(f.key + " did not render into the sidebar at all");
-    const shown = (f.hint || f.desc || "").trim();
-    if (!shown) throw new Error(f.key + " has no visible explanation");
+    // desc is the visible line and says WHAT the control is; hint is the optional note
+    // behind the ?. A field with only a hint would render a caveat about a control it
+    // never introduced, which is the regression this guards.
+    if (!(f.desc || "").trim()) throw new Error(f.key + " has no desc — nothing tells the reader what this control is");
   });
   // ...and the concise ones must stay concise.
   PARAM_FIELDS.filter((f) => f.group === "learn").forEach((f) => {
@@ -825,6 +1024,32 @@ console.log("\\n--- every slider default is inside its own range and on-step ---
     if (words > 15) throw new Error(f.key + " desc is " + words + " words, over the 15-word limit for this group");
   });
   console.log("OK: all " + PARAM_FIELDS.length + " sliders in range, on-step, described and visibly labelled");
+
+  // The ? actually opens the note. Driven through a real click, because a slot that is
+  // rendered but never wired up passes every other check in this file silently — which
+  // is how the diffusion panel and the identity hint both first "passed".
+  {
+    const withHint = PARAM_FIELDS.filter((f) => f.hint);
+    if (!withHint.length) throw new Error("no field carries a hint — the ? affordance has nothing to show");
+    withHint.forEach((f) => {
+      const root = document.getElementById("sidebar").querySelector('.field[data-key="' + f.key + '"]');
+      const why = root.querySelector(".why"), note = root.querySelector(".note");
+      if (!why || !note) throw new Error(f.key + " has a hint but no ? / note element");
+      if (note.classList.contains("is-open")) throw new Error(f.key + " note starts expanded");
+      why.dispatch("click", { target: why });
+      if (!note.classList.contains("is-open")) throw new Error(f.key + " note did not open on click");
+      if (why.getAttribute("aria-expanded") !== "true") throw new Error(f.key + " ? did not report aria-expanded");
+      why.dispatch("click", { target: why });
+      if (note.classList.contains("is-open")) throw new Error(f.key + " note did not close again");
+      if (why.getAttribute("aria-expanded") !== "false") throw new Error(f.key + " ? left aria-expanded true after closing");
+    });
+    // A field with no caveat must not sprout an empty ?.
+    PARAM_FIELDS.filter((f) => !f.hint).forEach((f) => {
+      const root = document.getElementById("sidebar").querySelector('.field[data-key="' + f.key + '"]');
+      if (root.querySelector(".why")) throw new Error(f.key + " has no hint but rendered a ?");
+    });
+    console.log("OK: the ? opens and closes on all " + withHint.length + " fields that carry a note");
+  }
 }
 
 console.log("\\nALL FLOWS COMPLETED WITHOUT THROWING");
@@ -877,6 +1102,7 @@ const sandbox = {
   console, Math, Set, Array, Object, Float32Array, Float64Array, Int32Array, Uint32Array,
   parseInt, parseFloat, isFinite, JSON,
   FileReader: FakeFileReader, Error, Number,
+  drawnText,
   // Real project data — the browser path is exercised against the same files the
   // batch runner uses, not a synthetic fixture.
   WORLD_JSON_TEXT: fs.readFileSync(paths.data("world-model.json"), "utf8"),
@@ -989,5 +1215,36 @@ console.log("\n--- bundled world-model data: ready at boot ---");
   if (state.N !== 10500) throw new Error("expected the calibrated N=10500 at boot, got " + state.N);
   if (!/bundled with this page/.test(state.status)) throw new Error("status line does not say where the data came from: " + state.status);
   console.log("OK: booted with the bundle —", state.M, "institutions ready, booted into the world model at N=" + state.N);
+
+  // --- the turnover slider reports whether the intake identity still holds ----------
+  // Only meaningful here: the BA graph carries no intake data, so this reading exists
+  // exactly in the mode this sandbox is in. Driven through the real input event rather
+  // than by calling refreshLiveHint, so a slot that is never wired up still fails.
+  const idn = vm.runInContext(`(() => {
+    const root = document.getElementById("sidebar").querySelector('.field[data-key="turnoverRate"]');
+    if (!root) return { err: "no turnover field" };
+    const el = root.querySelector(".live-hint");
+    if (!el) return { err: "turnover field has no live-hint slot" };
+    const input = root.querySelector("input");
+    const read = () => ({ text: el.textContent, warn: el.classList.contains("is-warn") });
+    const atBoot = read();
+    // Halve the career length. N is structural and does not follow, so the identity
+    // must now be reported as broken.
+    input.value = String(1 / (20 * 12));
+    input.dispatch("input", { target: input });
+    const halved = read();
+    input.value = String(1 / (40 * 12));
+    input.dispatch("input", { target: input });
+    return { atBoot, halved, restored: read(), n: app.sim.params.N };
+  })()`, sandbox2);
+  if (idn.err) throw new Error("live identity hint: " + idn.err);
+  if (!idn.atBoot.text) throw new Error("turnover live hint is empty at boot");
+  if (idn.atBoot.warn) throw new Error("shipped config reported as breaking the identity: " + idn.atBoot.text);
+  if (!/40y career/.test(idn.atBoot.text)) throw new Error("boot hint does not state the career length: " + idn.atBoot.text);
+  if (!idn.halved.warn) throw new Error("a 20y career at N=" + idn.n + " should warn, got: " + idn.halved.text);
+  if (!/Rebuild/.test(idn.halved.text)) throw new Error("warning does not say what to do: " + idn.halved.text);
+  if (idn.restored.warn) throw new Error("restoring the calibrated rate left the warning on: " + idn.restored.text);
+  console.log("OK: identity hint —", JSON.stringify(idn.atBoot.text));
+  console.log("    at a 20y career —", JSON.stringify(idn.halved.text));
   console.log("   status:", state.status);
 }

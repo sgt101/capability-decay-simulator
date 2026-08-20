@@ -128,6 +128,77 @@ function generateBAGraph(M, mAttach, rng) {
 // artifact; 0.585 doesn't have that problem.)
 const EXPERT_THRESHOLD = 0.585;
 
+// --- capability -------------------------------------------------------------------
+// What a person is WORTH, as distinct from how skilled they are. Expertise is linear
+// and bounded in [0,1]; capability is not, because the top of a field does work the
+// rest of it cannot do at all.
+//
+// w(E) = RATIO ^ ((E - EXPERT_THRESHOLD) / (1 - EXPERT_THRESHOLD))
+//
+// Anchored so that w(EXPERT_THRESHOLD) = 1 and w(1) = CAPABILITY_RATIO. The unit is
+// therefore "one threshold expert", and a capability of 8,363 states that an
+// institution is worth 8,363 experts. Both constants are stated assumptions, not fits:
+// the ratio says one person at the ceiling is worth a thousand people who merely
+// qualify, and the anchor is the model's own definition of an expert.
+//
+// This is CONVEX, not logarithmic. A logarithmic weighting compresses differences and
+// would say the opposite of what is intended here. The logarithm belongs on the output:
+// log10(w) is linear in E, and capability spans enough orders of magnitude that a log
+// axis is the only readable way to chart it (measured: severe AI dampening moves meanE
+// by -72% and capability by -99.99%).
+const CAPABILITY_RATIO = 1000;
+const CAPABILITY_EXP = 1 / (1 - EXPERT_THRESHOLD);
+function capabilityWeight(E) {
+  return Math.pow(CAPABILITY_RATIO, (E - EXPERT_THRESHOLD) * CAPABILITY_EXP);
+}
+
+// --- what AI does to that capability: asymmetric cognitive leverage ---------------
+// AI MULTIPLIES what a person is already worth. It does not replace them, and it does
+// not put a floor under them.
+//
+// The floor it replaces — counting anyone below the AI AS the AI — had the property
+// that at a high ai_level_fraction system capability read N x w(aiLevel) no matter what
+// the humans did: pinned, flat, and blind to a collapse happening underneath it. A
+// multiplier cannot do that, and the human signal survives.
+//
+// Two effects, from Dell'Acqua et al. (HBS/BCG, 2023/2026), measured on management
+// consultants across ~18 tasks with a GPT-4-class model:
+//
+//   INSIDE the AI's frontier   quality rises, but unevenly: +43% for the bottom half of
+//                              performers against +17% for the top half. AI levels.
+//   OUTSIDE it                 quality falls for those who cannot tell it is wrong:
+//                              -19 points for novices, ~0 for experts, who catch it.
+//
+// PROVENANCE, and the size of the extrapolation: those are four numbers from ONE study
+// of one profession on one model generation, applied here across 40-year careers and
+// 245 institutions. Splitting work by a frontier ratio and blending the two regimes
+// linearly is OUR synthesis, not a finding of the paper. They are parameters, not
+// constants, so a run states what it assumed.
+//
+// SMOOTH, not binned. The study reports two cohorts because that is how you report an
+// experiment; taken literally as a step at the median it makes capability NON-MONOTONIC
+// in expertise — measured, a person at 0.501 came out 10% less capable than one at
+// 0.499, and everyone up to 0.555 was worth less than someone below the line. Expertise
+// here is continuous and people cross that line constantly, so the step is blended.
+// The cost is small: the cohort means come out ~1.40 / 1.21 against the study's
+// 1.43 / 1.17, which is a better trade than a capability function that punishes skill.
+//
+// Keyed to the AI's LEVEL, not to the population median. The person who cannot check the
+// AI's work is the person the AI outranks, and that is the same population aiDampening-
+// Below governs — see the note there. Using the median would have made someone a novice
+// for learning and an expert for output at the same time.
+function aclLeverage(E, aiLevel, p) {
+  // The share of work inside the frontier, derived from how good the AI is rather than
+  // stated separately: a better AI safely covers more. frontierBreadth = 1 makes them
+  // equal; below 1 widens the frontier for a given AI, above 1 narrows it.
+  const F = Math.pow(aiLevel, p.frontierBreadth);
+  // 1 well below the AI, 0 well above it.
+  const mix = 1 / (1 + Math.exp(p.aclBlendSharpness * (E - aiLevel)));
+  const alpha = 1 + p.aclExpertGain + (p.aclNoviceGain - p.aclExpertGain) * mix;
+  const beta = 1 - p.aclNoviceDeficit * mix;
+  return F * alpha + (1 - F) * beta;
+}
+
 const DEFAULT_PARAMS = {
   N: 500, M: 40,
   expertiseMean: 0.28, expertiseSpread: 0.30, expertiseSkew: 3,
@@ -278,7 +349,28 @@ const DEFAULT_PARAMS = {
   // the saturation plateau that begins around 0.65, where lambda stops mattering
   // and aiDampeningAbove stops governing anybody (P16).
   aiLevelFraction: EXPERT_THRESHOLD,
+  // TWO FACES OF ONE CLAIM, deliberately kept apart. "Novices lean on AI and cannot
+  // verify it" has a consequence in the LEARNING domain — aiDampeningBelow, the growth
+  // they don't get — and a consequence in the OUTPUT domain — aclNoviceDeficit, the
+  // unverified errors they ship. Same cause, different quantities: one multiplies a
+  // rate of change, the other a level, and measured they differ by ~2.7x (0.30 against
+  // 0.81). Driving both from one dial needs an exchange rate between them, which is
+  // precisely the mistake REMOVED_PARAMS records under aiRelianceIntensity — its
+  // untested base moved the headline result from 0.213 to 0.346. They stay independent.
   aiDampeningBelow: 0.30, aiDampeningAbove: 0.80,
+
+  // --- asymmetric cognitive leverage: what AI does to CAPABILITY (see aclLeverage) ---
+  // Dell'Acqua et al. (HBS/BCG). Parameters rather than constants so a run records what
+  // it assumed — these are four numbers from one study, stretched a long way.
+  aclNoviceGain: 0.43,        // +43% inside the frontier, bottom-half performers
+  aclExpertGain: 0.17,        // +17% inside the frontier, top-half performers
+  aclNoviceDeficit: 0.19,     // -19 points outside it, for those who cannot catch errors
+  // How sharply the novice regime gives way to the expert one, in expertise units.
+  // ~20 puts the transition across roughly an interquartile range; large values
+  // approach the study's hard bin and reintroduce the non-monotonicity it causes.
+  aclBlendSharpness: 20,
+  // F = aiLevel ^ frontierBreadth. 1 = the frontier is exactly the AI's level.
+  frontierBreadth: 1,
 
   seed: 1,
 
@@ -295,6 +387,19 @@ const DEFAULT_PARAMS = {
   // no affinity ordering to take a top-K of.
   candidateCap: 0,
 };
+
+// --- the declared time base -------------------------------------------------------
+// Stated here, once, and derived from rather than repeated. Two scripts used to carry
+// their own `CAREER_YEARS = 40` and one of them rebuilt the turnover rate from it, so
+// the shipped rate and the rate being calibrated against could drift apart in silence.
+//
+// CAREER_YEARS is the CALIBRATION career length: the value MONTHLY_TICK_PARAMS and
+// WORLD_MODEL_PARAMS were fitted at. It is NOT the career length of a running model —
+// turnoverRate is a live control in simulator.html, so the career length of any given
+// run is 1 / (params.turnoverRate * TICKS_PER_YEAR) and moves when the slider moves.
+// Read this constant as "what the shipped numbers assume", never as "what is true now".
+const TICKS_PER_YEAR = 12;
+const CAREER_YEARS = 40;
 
 // Calibrated parameter set for the DECLARED time base: 1 tick = 1 month, career
 // = 40 years = 480 ticks. DEFAULT_PARAMS above was tuned when the tick was
@@ -325,7 +430,7 @@ const DEFAULT_PARAMS = {
 // Trade-off accepted: the higher baseline puts shareExpert at ~0.95, so that
 // metric has little downward range left. meanE is the headline metric here.
 const MONTHLY_TICK_PARAMS = {
-  turnoverRate: 1 / 480,   // 0.002083 — 40-year career
+  turnoverRate: 1 / (CAREER_YEARS * TICKS_PER_YEAR),   // 0.002083 — a 40-year career
   transferRate: 0.15,      // equilibrium meanE ~0.63 at world-model scale
   decayRate: 0.020,        // counterweight; sets where that equilibrium sits
 };
@@ -349,8 +454,6 @@ const REMOVED_PARAMS = {
   teacherTermYears: "per-person teachers are gone; teachTopN left the pool too small and too alike for a persistent draw to carry any variance (IQR moved 0.297 -> 0.313 without it)",
   teachCapacity: "measured to do nothing at the shipped setting (mean 0.566 -> 0.569, IQR unchanged); it only ever rationed a pool that is no longer drawn from",
 };
-
-const TICKS_PER_YEAR = 12;
 
 // Calibrated entrant pipeline — see calibrate_pipeline.js for the scan, and
 // DEFAULT_PARAMS.learningCap for what the two mechanisms do and why.
@@ -441,7 +544,23 @@ const PIPELINE_PARAMS = {
 // back to baseline. Varying learning SPEED smears people along the climb instead: slow
 // learners still arrive, so no permanent underclass forms inside each institution and the
 // institutional signal survives. See README, "Making institutions differ".
+// How far the simulated field is scaled down from the real one. The world model's own
+// data says 52,518 people enter per year, which at CAREER_YEARS gives a headcount of
+// ~2.1 million — far past what this engine runs interactively. Everything is therefore
+// simulated at 1:200, and BOTH sides of the identity scale together, so a simulated
+// career is still 40 years and simulated intake is still exactly 1/200 of real intake.
+//
+// Named here because it used to exist only as the number 200 inside one prose comment,
+// while the test suite reached for a different divisor (400) with nothing saying the
+// two were scales of the same field. See suggestedN() in world_model.js, which applies
+// it, and problems.md P5 for what the identity is.
+const FIELD_DIVISOR = 200;
+
 const WORLD_MODEL_PARAMS = {
+  // The round figure the calibration was fitted at. The identity-exact value is 10,504
+  // (= suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR)), which is what the experiment
+  // generator uses; the 4-person difference is immaterial and this set is kept at the
+  // number the fit actually used. test_world_model.js asserts the two agree.
   N: 10500,                   // matches the world model's own size distribution
   baseMoveProb: 0.01,         // a move every ~7 years, not every 20 months
   learningCap: 0.0048,
@@ -561,6 +680,21 @@ function initSim(userParams) {
   for (let i = 0; i < N; i++) { startEbar[inst[i]] += E[i]; startCount[inst[i]]++; }
   for (let j = 0; j < params.M; j++) startEbar[j] = startCount[j] > 0 ? startEbar[j] / startCount[j] : 0;
 
+  // Each person's CAREER-START institution, for the mixing measurement in tick(). Reset
+  // to the new placement when someone retires and is replaced, so an entrant starts a
+  // fresh origin of their own rather than dropping out of the measure.
+  //
+  // This used to mark a refilled slot with -1 and count only the survivors of the t=0
+  // population. That cohort decays with turnover — 8% of the field left after a century
+  // — so the statistic ended up describing a vanishing sliver and saturating at its own
+  // baseline, blind to how every person who arrived since had been redistributed.
+  const origin = Int32Array.from(inst);
+  // Ticks since this person last changed institution, by either route. A direct mixing
+  // TIMESCALE, and stationary in a way retention alone is not: retention answers "how
+  // many are still where they began", this answers "how long has the average person been
+  // where they are", and the second is what moves the instant mobility changes.
+  const sinceMove = new Int32Array(N);
+
   return {
     params, rng, graph,
     N, M: params.M,
@@ -571,7 +705,7 @@ function initSim(userParams) {
     scratchCand: new Int32Array(params.M + 1),
     scratchUtil: new Float64Array(params.M + 1),
     institutionCDF,
-    startTopE, startEbar,
+    startTopE, startEbar, origin, sinceMove,
     t: 0,
     // Cumulative turnover events since t=0. One event is one retirement AND one
     // entrant — the population is conserved by construction, so the two counts are
@@ -590,9 +724,25 @@ function institutionStats(state) {
   const count = new Int32Array(M);
   // Experts per institution, in ABSOLUTE numbers — the input to critical mass below.
   const experts = new Int32Array(M);
+  // Capability, in threshold-expert equivalents: what a person is worth, times what AI
+  // does to that worth. Both halves are documented at capabilityWeight/aclLeverage.
+  //
+  // capabilityHuman is the same sum with the AI multiplier left off — the field's own
+  // capability, unaugmented. Carried alongside rather than derived later because the
+  // GAP between the two is the leverage, and that is the quantity worth reading.
+  //
+  // Folded into the loop that already walks E, so it costs one pow() per person rather
+  // than a second pass.
+  const capability = new Float64Array(M);
+  const capabilityHuman = new Float64Array(M);
+  const aiOn = state.params.aiEnabled;
+  const aiLevel = aiOn ? state.params.aiLevelFraction * state.startTopE : 0;
   for (let i = 0; i < state.N; i++) {
     sumE[inst[i]] += E[i]; count[inst[i]]++;
     if (E[i] >= EXPERT_THRESHOLD) experts[inst[i]]++;
+    const wi = capabilityWeight(E[i]);
+    capabilityHuman[inst[i]] += wi;
+    capability[inst[i]] += aiOn ? wi * aclLeverage(E[i], aiLevel, state.params) : wi;
   }
   const Ebar = new Float32Array(M);
   for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
@@ -658,7 +808,16 @@ function institutionStats(state) {
       transferEff[j] = n / (n + d);
     }
   }
-  return { Ebar, count, Teach, experts, transferEff };
+  // Critical mass scales what an institution can DO as well as what it can teach: a
+  // department too thin to pass anything on is also too thin to deliver. Applied here
+  // rather than left to the caller so every reader of `capability` sees the same
+  // number, and it is exactly 1.0 when the mechanism is off.
+  if (transferEff) for (let j = 0; j < M; j++) {
+    capability[j] *= transferEff[j];
+    capabilityHuman[j] *= transferEff[j];
+  }
+
+  return { Ebar, count, Teach, experts, transferEff, capability, capabilityHuman };
 }
 
 // Fills state.scratchCand with the candidate institution indices for this human
@@ -805,6 +964,11 @@ function tick(state) {
     E[i] = clip01(E[i] + delta);
   }
 
+  // Diffusion counters ride along with the mobility loop. They are counted HERE and not
+  // by diffing inst[] afterwards, because turnover below reassigns inst as well: a diff
+  // cannot tell a career move from a retirement, reads ~20% high at the calibrated
+  // rates, and credits expertise transfer to entrants who have none.
+  let moves = 0, moveExpertiseFlux = 0, upgradingArrivals = 0;
   for (let i = 0; i < N; i++) {
     if (rng() >= p.baseMoveProb * L[i]) continue;
     const from = inst[i];
@@ -817,7 +981,20 @@ function tick(state) {
       let u = (1 - p.competitionAversion) * growth + p.competitionAversion * status + p.prestigeWeight * graph.prestige[j];
       utils[k] = u;
     }
-    inst[i] = softmaxPick(rng, cands, utils, nc, MOVE_TEMPERATURE);
+    const to = softmaxPick(rng, cands, utils, nc, MOVE_TEMPERATURE);
+    inst[i] = to;
+    // The current institution is always in the candidate set, so being selected to
+    // consider a move is not the same as moving. Only a changed index counts.
+    if (to !== from) {
+      moves++;
+      if (state.sinceMove) state.sinceMove[i] = 0;
+      moveExpertiseFlux += E[i];
+      // A move only transfers CAPABILITY if the arrival is better than what the
+      // destination already teaches from; otherwise it is a lateral relocation that
+      // moves a person without moving the ceiling anyone there learns against. Teach
+      // is this tick's, i.e. the destination as it stood before the arrival.
+      if (E[i] > Teach[to]) upgradingArrivals++;
+    }
   }
 
   let removed = 0;
@@ -834,11 +1011,18 @@ function tick(state) {
       // Same sampler as initial placement — see sampleInstitution(). Placing
       // entrants uniformly here is what used to wash out any weighted sizing.
       inst[i] = sampleInstitution(state, rng);
+      // A new person, so their career starts HERE. Recording the placement as their
+      // origin is what puts entrants into the mixing measure instead of retiring the
+      // slot out of it — without this the statistic only ever describes the t=0 cohort,
+      // and that cohort is mostly gone within two careers.
+      if (state.origin) state.origin[i] = inst[i];
+      if (state.sinceMove) state.sinceMove[i] = 0;
       removed++;
     }
   }
 
   if (state.tenure) for (let i = 0; i < N; i++) state.tenure[i]++;
+  if (state.sinceMove) for (let i = 0; i < N; i++) state.sinceMove[i]++;
 
   state.turnoverTotal += removed;
 
@@ -853,8 +1037,12 @@ function tick(state) {
   const PCTL_BINS = 1000;
   const eHist = new Int32Array(PCTL_BINS);
   let sumE = 0, belowCount = 0, expertCount = 0;
+  let systemCapability = 0, systemCapabilityHuman = 0;
   for (let i = 0; i < N; i++) {
     sumE += E[i];
+    const wi = capabilityWeight(E[i]);
+    systemCapabilityHuman += wi;
+    systemCapability += p.aiEnabled ? wi * aclLeverage(E[i], aiLevel, p) : wi;
     if (p.aiEnabled && E[i] < aiLevel) belowCount++;
     if (E[i] >= EXPERT_THRESHOLD) expertCount++;
     let b = (E[i] * PCTL_BINS) | 0;
@@ -898,6 +1086,38 @@ function tick(state) {
     if (occ[j] < MIN_MEANINGFUL_OCCUPANCY) underOcc++;
   }
 
+  // Mixing. Of everyone in the field, how many are still in the institution their career
+  // started in? Measured over the WHOLE population, entrants included — each arrival
+  // brings a fresh origin, so the statistic is stationary and keeps meaning something
+  // after the founding cohort has gone.
+  //
+  // mixedBaseline is what originRetention would read if that cohort were scattered in
+  // proportion to CURRENT institution sizes: the value retention decays toward, and the
+  // comparator retention is meaningless without.
+  //
+  // Under the default uniform placement it comes out at almost exactly 1/M, and that is
+  // correct rather than a bug worth "fixing" — the t=0 cohort is spread evenly over
+  // institutions, so averaging each institution's current share over a uniform set of
+  // origins returns 1/M however skewed sizes later become. Measured: sizes spanning 15x
+  // at t=480 still give 2.63% against 1/M = 2.50%. It departs from 1/M only when the
+  // ORIGINS are skewed, i.e. institutionSizing = "weighted" — which is what the
+  // deployment configuration uses, so the term earns its keep there and is inert on BA.
+  //
+  // Costs one extra O(N) pass, which the percentile histogram above went to some trouble
+  // to avoid paying twice. Measured at N=10500 on the world graph: 0.052 ms against a
+  // 1.54 ms tick, i.e. 3.4%. Worth it for a number nothing else in the model reports;
+  // if that ever stops being true, this is the pass to drop.
+  let originHome = 0, mixedAcc = 0, sinceMoveAcc = 0;
+  const origin = state.origin, sinceMove = state.sinceMove;
+  if (origin) {
+    for (let i = 0; i < N; i++) {
+      const o = origin[i];
+      if (inst[i] === o) originHome++;
+      mixedAcc += occ[o];
+      if (sinceMove) sinceMoveAcc += sinceMove[i];
+    }
+  }
+
   const entry = {
     t: state.t, meanE,
     // The shape of the distribution, not just its centre — a mean alone cannot tell a
@@ -908,6 +1128,37 @@ function tick(state) {
     shareExpert: expertCount / N,
     turnover: removed,
     turnoverTotal: state.turnoverTotal,
+    // --- diffusion of expertise across the network (2026-08) --------------------
+    // Career moves ONLY. Turnover reassigns inst too, but that channel carries
+    // expertise outward — an experienced person disappears and a novice appears
+    // somewhere unrelated — so folding the two together would report dilution as
+    // transfer. Retirements are already reported above as `turnover`.
+    //
+    // All three are per-TICK counts, not rates. Annualise over a trailing window
+    // rather than scaling one tick by TICKS_PER_YEAR: at the calibrated move
+    // probability a single tick is a small integer and reads as pure noise.
+    // The field's capability in threshold-expert equivalents — see capabilityWeight().
+    // Measured at the END of the tick, like meanE and the percentiles, so the two agree.
+    //
+    // UNGATED by critical mass. When criticalMass > 0 the per-institution figures from
+    // institutionStats() are each scaled by transferEff and will sum to LESS than this;
+    // the difference is precisely the capability stranded in institutions too thin to
+    // function, which is worth being able to see as a gap rather than folded away. With
+    // the shipped criticalMass of 0 the two are identical.
+    systemCapability,
+    // The same field with the AI multiplier left off. Reported alongside because the
+    // ratio of the two IS the leverage, and because a single number cannot distinguish
+    // a field that got better from one that was propped up.
+    systemCapabilityHuman,
+    moves,
+    moveExpertiseFlux,
+    upgradingArrivals,
+    originRetention: origin ? originHome / N : null,
+    mixedBaseline: origin ? mixedAcc / (N * N) : null,
+    // Average months a person has been in their current institution, by either route.
+    // The timescale retention cannot give on its own: retention is a level, this is how
+    // long it takes the field to turn over its arrangement of people.
+    meanMonthsInPlace: sinceMove ? sinceMoveAcc / N : null,
     minOccupancy: minOcc === Infinity ? 0 : minOcc,
     emptyInstitutions: emptyInst,
     underOccupiedInstitutions: underOcc,
@@ -919,7 +1170,9 @@ function tick(state) {
 const API = {
   mulberry32, randNormal, sampleSkewNormalClipped, sampleLognormal, clip01,
   generateBAGraph, DEFAULT_PARAMS, EXPERT_THRESHOLD,
+  capabilityWeight, CAPABILITY_RATIO, aclLeverage,
   MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS, TICKS_PER_YEAR, MIN_MEANINGFUL_OCCUPANCY,
+  CAREER_YEARS, FIELD_DIVISOR,
   initSim, institutionStats, tick, sampleInstitution,
 };
 

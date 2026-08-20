@@ -130,10 +130,25 @@
   .field select, .field input[type="number"] { width: 100%; }
   .kv-note { color: var(--ink-faint); font-weight: 400; }
   .field .hint { font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; }
-  /* Anything carrying a plain-language description on hover advertises it: the
-     dotted underline on the name is the only cue that the tooltip is there. */
-  .field[title], .switch-row[title] { cursor: help; }
-  .field[title] > label > span { text-decoration: underline dotted var(--ink-faint); text-underline-offset: 0.18em; }
+  /* A derived reading that depends on the CURRENT value, recomputed as the slider moves.
+     is-warn is not styled as an error: breaking the identity is a legitimate thing to do
+     deliberately, so this has to read as "you have changed something structural", not
+     as "you are wrong". */
+  .field .live-hint { font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; font-family: ui-monospace, monospace; }
+  .field .live-hint.is-warn { color: var(--accent); }
+  .switch-row[title] { cursor: help; }
+  /* The ? that opens a control's note. Small and quiet: it marks the 10 controls of 23
+     that have a caveat worth reading, so it has to be findable without competing with
+     the control itself. */
+  .field .hint .why { display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; margin-left: 0.32rem; padding: 0; vertical-align: -0.15em;
+    border: 1px solid var(--rule); border-radius: 50%; background: none;
+    color: var(--ink-faint); font: inherit; font-size: 0.62rem; line-height: 1; cursor: pointer; }
+  .field .hint .why:hover, .field .hint .why[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+  .field .hint .why:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+  .field .note { display: none; }
+  .field .note.is-open { display: block; font-size: 0.72rem; color: var(--ink-muted);
+    margin-top: 0.35rem; padding-left: 0.55rem; border-left: 2px solid var(--rule); line-height: 1.45; }
   .seed-row { display: flex; gap: 0.4rem; }
   .seed-row input { flex: 1; }
 
@@ -168,12 +183,37 @@
   .panel .panel-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0.6rem 0.85rem 0.4rem; }
   .panel .panel-head h2 { font-size: 0.92rem; font-family: ui-sans-serif, sans-serif; font-weight: 700; }
   .panel .panel-head .sub { font-size: 0.72rem; color: var(--ink-faint); }
-  .network-panel { flex: 1 1 340px; min-height: 340px; position: relative; }
+  /* The network and its diffusion readouts are one unit: the readouts say what the
+     movement between those nodes amounts to, and are unreadable without the picture
+     beside them. The row carries the vertical growth the network panel used to own,
+     because a grid item cannot flex against its parent column. */
+  .network-row { flex: 1 1 440px; min-height: 440px; grid-template-columns: 1.55fr 1fr; }
+  @media (max-width: 980px) { .network-row { grid-template-columns: 1fr; } }
+  .network-panel { min-height: 340px; position: relative; }
   .network-panel canvas { flex: 1; width: 100%; height: 100%; cursor: pointer; }
   .network-legend { position: absolute; right: 0.85rem; bottom: 0.7rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.7rem; color: var(--ink-muted); box-shadow: var(--shadow); }
   .network-legend .ramp { width: 90px; height: 8px; border-radius: 3px; margin: 0.3rem 0; background: linear-gradient(90deg, #cde2fb, #0d366b); }
   .row { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.9rem; }
   @media (max-width: 780px) { .row { grid-template-columns: 1fr; } }
+  /* The readouts must never drive the row's height. Their content changes the moment
+     real numbers replace the placeholder dashes, and a panel that grows on that swap
+     shifts everything below it — which is exactly what it did: ~530px of content in a
+     340px box, spilling over the histogram. min-height:0 on both the grid item and the
+     flex child is what lets the body scroll instead of pushing, and is load-bearing:
+     the default min-height:auto refuses to shrink below content and the overflow rule
+     alone does nothing. The row is sized to fit the content, so the scrollbar is a
+     backstop for narrow viewports and large text, not the normal case. */
+  .diffusion-panel { min-height: 0; }
+  .diffusion-panel .body { padding: 0.15rem 0.85rem 0.75rem; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
+  .diffusion-panel .kv { display: flex; justify-content: space-between; align-items: baseline; gap: 0.7rem; font-size: 0.8rem; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
+  .diffusion-panel .kv .k { color: var(--ink-muted); min-width: 0; }
+  .diffusion-panel .kv b { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+  /* The derived reading sits under its own number, right-aligned to it, because it is a
+     restatement of that number rather than a separate fact. */
+  .diffusion-panel .kv-sub { font-size: 0.68rem; color: var(--ink-faint); font-family: ui-monospace, monospace; text-align: right; margin: -0.15rem 0 0.2rem; }
+  .diffusion-panel h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; margin: 0.7rem 0 0.1rem; }
+  .diffusion-panel .note { font-size: 0.68rem; color: var(--ink-faint); line-height: 1.45; margin-top: 0.55rem; }
+  .diffusion-panel .placeholder { font-size: 0.8rem; color: var(--ink-faint); line-height: 1.5; }
   .mini-chart canvas { width: 100%; height: 150px; display: block; }
   /* 2.5x the mini-charts. A log axis spanning 1..N compresses the body of the
      distribution into a narrow band, so height is what makes the shape readable — and
@@ -188,7 +228,9 @@
   .inspector .placeholder { font-size: 0.82rem; color: var(--ink-faint); line-height: 1.5; }
   .inspector .kv { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
   .inspector .kv b { font-family: ui-monospace, monospace; font-weight: 600; }
-  .inspector canvas { width: 100%; height: 90px; margin-top: 0.6rem; }
+  .inspector h3 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ink-faint); font-weight: 600; margin: 0.7rem 0 0.1rem; }
+  .inspector canvas { width: 100%; height: 84px; display: block; }
   .inspector .inst-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.4rem; }
 </style>
 
@@ -224,18 +266,35 @@
     <aside class="sidebar" id="sidebar"></aside>
 
     <main class="main">
-      <section class="panel network-panel">
-        <div class="panel-head">
-          <h2>Institution network</h2>
-          <span class="sub">size = population · color = avg. latent expertise (Ē)</span>
-        </div>
-        <canvas id="networkCanvas"></canvas>
-        <div class="network-legend">
-          <div>low Ē <span style="float:right">high Ē</span></div>
-          <div class="ramp"></div>
-          <div style="margin-top:0.35rem;">click a node to inspect it</div>
-        </div>
-      </section>
+      <div class="row network-row">
+        <section class="panel network-panel">
+          <div class="panel-head">
+            <h2>Institution network</h2>
+            <span class="sub">size = population · color = avg. latent expertise (Ē)</span>
+          </div>
+          <canvas id="networkCanvas"></canvas>
+          <div class="network-legend">
+            <div>low Ē <span style="float:right">high Ē</span></div>
+            <div class="ramp"></div>
+            <div style="margin-top:0.35rem;">click a node to inspect it</div>
+          </div>
+        </section>
+
+        <section class="panel diffusion-panel">
+          <div class="panel-head">
+            <h2>Expertise diffusion</h2>
+            <span class="sub">trailing 12 months</span>
+          </div>
+          <div class="body">
+            <div id="diffusionFlows"></div>
+            <h3>Mixing</h3>
+            <div id="diffusionMixing"></div>
+            <p class="note">An arrival <em>upgrades</em> when the person is better than the level
+              their new institution already teaches from — the only move that lifts anyone
+              else's ceiling.</p>
+          </div>
+        </section>
+      </div>
 
       <div class="row">
         <section class="panel dist-panel">
@@ -258,6 +317,14 @@
           <div class="mini-chart">
             <h3>Center–periphery divergence (var of Ē across institutions)</h3>
             <canvas id="divCanvas"></canvas>
+          </div>
+          <div class="mini-chart">
+            <h3>Mixing — share still at the institution their career began in</h3>
+            <canvas id="mixCanvas"></canvas>
+          </div>
+          <div class="mini-chart">
+            <h3>System capability — threshold-expert equivalents, log scale</h3>
+            <canvas id="capCanvas"></canvas>
           </div>
         </section>
       </div>
@@ -309,7 +376,7 @@ if (typeof Engine === "undefined" || !Engine || typeof Engine.initSim !== "funct
 }
 const {
   mulberry32, clip01, DEFAULT_PARAMS, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, WORLD_MODEL_PARAMS,
-  TICKS_PER_YEAR, EXPERT_THRESHOLD, institutionStats, tick,
+  TICKS_PER_YEAR, EXPERT_THRESHOLD, institutionStats, tick, CAREER_YEARS, FIELD_DIVISOR,
 } = Engine;
 
 // Boot on the calibrated monthly set (1 tick = 1 month, 40-year career). engine.js
@@ -337,7 +404,7 @@ function createSim(userParams) {
   // slider or a structural field always beats a default.
   const sim = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS,
     WORLD_MODEL_PARAMS, userParams || {}));
-  sim.instHistory = Array.from({ length: sim.M }, () => []);
+  sim.instHistory = makeInstHistory(sim.M);
   sim.snapshots = [];
   sim.aiToggleEvents = [];
   return sim;
@@ -370,6 +437,68 @@ function steadyStateDecayRate(N, M) {
 const REPULSION_SAMPLE = 60;
 const SNAPSHOT_CAP = 4000, SNAPSHOT_EVICT = 800;
 
+// Per-institution history for the inspector. Four series, because Ē alone hides the
+// things people ask the inspector about:
+//   Ebar     average expertise — the original series
+//   teach    the level newcomers actually climb toward (mean of the best teachTopN
+//            seniors). Diverges from Ē, and is what an institution can pass on.
+//   pop      headcount. Mobility drains some institutions and fills others, and that
+//            is a prediction of the model rather than a side effect.
+//   experts  people at or above the expert threshold, in ABSOLUTE numbers. The one
+//            worth having most: Ē can sit still while every expert leaves and novices
+//            replace them, and critical mass is keyed to this count, not to the mean.
+//   capability  in threshold-expert equivalents — see capabilityWeight() in
+//            engine.js. Charted on a LOG axis: it is convex in expertise by design and
+//            moves through orders of magnitude where Ē moves through tenths.
+//
+// THINNED, not grown without bound. The old single series pushed one number per
+// institution per tick forever — 23 MB at M=245 over 1,000 simulated years, and four
+// of those would be 94 MB in a browser tab. Instead each series holds a fixed 2,000
+// samples; on overflow every second sample is dropped and the sampling rate halves, so
+// the whole time span stays on screen at a coarser grain. 7.8 MB, flat forever, and at
+// ~90px tall no chart here can resolve 2,000 points anyway.
+const INST_HISTORY_CAP = 2000;
+const INST_SERIES = ["Ebar", "teach", "pop", "experts", "capability", "capabilityHuman"];
+
+function makeInstHistory(M) {
+  const h = { len: 0, stride: 1, tick: 0, maxSamples: INST_HISTORY_CAP };
+  INST_SERIES.forEach((k) => {
+    h[k] = Array.from({ length: M }, () => new Float32Array(INST_HISTORY_CAP));
+  });
+  return h;
+}
+
+// Sample time for index i, used to place the scrub marker. Approximate across a
+// thinning boundary — the samples either side of it are half a stride out of phase,
+// which is invisible at this size.
+function instSampleTick(h, i) { return (i + 1) * h.stride; }
+
+function pushInstHistory(h, M, Ebar, Teach, count, experts, capability, capabilityHuman) {
+  h.tick++;
+  if (h.len >= h.maxSamples) {
+    const keep = h.maxSamples >> 1;
+    INST_SERIES.forEach((k) => {
+      const rows = h[k];
+      for (let j = 0; j < M; j++) {
+        const a = rows[j];
+        for (let i = 0; i < keep; i++) a[i] = a[i * 2];
+      }
+    });
+    h.len = keep;
+    h.stride *= 2;
+  }
+  if (h.tick % h.stride !== 0) return;      // this tick is not a sample any more
+  const i = h.len++;
+  for (let j = 0; j < M; j++) {
+    h.Ebar[j][i] = Ebar[j];
+    h.teach[j][i] = Teach[j];
+    h.pop[j][i] = count[j];
+    h.experts[j][i] = experts[j];
+    h.capability[j][i] = capability[j];
+    h.capabilityHuman[j][i] = capabilityHuman[j];
+  }
+}
+
 /* ============================== APP ============================== */
 const app = {
   sim: null,
@@ -390,23 +519,23 @@ const app = {
 // detail belongs in `hint`, which is always-visible text under the slider.
 // Keep desc free of double quotes: it is interpolated into a title="..." attribute.
 const PARAM_FIELDS = [
-  { key: "expertiseMean", group: "init", label: "expertise_mean", sym: "μ_E", min: 0, max: 0.8, step: 0.01,
-    desc: "Average skill of the population on day one, from 0 (all novices) to 1 (all world-class). Sets how good the field is before anything happens.",
-    hint: "t=0 population only — an already-running system's starting mix" },
-  { key: "expertiseSpread", group: "init", label: "expertise_spread", sym: "ω_E", min: 0.05, max: 0.6, step: 0.01,
-    desc: "How unequal day-one skill is. Low = almost everybody is similar; high = a mix of raw novices and standout experts." },
-  { key: "expertiseSkew", group: "init", label: "expertise_skew", sym: "α_E", min: -6, max: 6, step: 0.5,
-    desc: "Which way the day-one skill distribution leans. Positive = most people are below average with a thin tail of stars; negative = most are near the top with a tail of stragglers; 0 = symmetric." },
+  { key: "expertiseMean", group: "init", initOnly: true, label: "expertise_mean", sym: "μ_E", min: 0, max: 0.8, step: 0.01,
+    desc: "Average skill of the starting population, on the 0 to 1 scale.",
+    hint: "The t=0 population only. People who arrive later are drawn from entrant_expertise_mean instead." },
+  { key: "expertiseSpread", group: "init", initOnly: true, label: "expertise_spread", sym: "ω_E", min: 0.05, max: 0.6, step: 0.01,
+    desc: "How unequal skill is in the starting population. Low starts everyone alike, high starts novices and experts side by side." },
+  { key: "expertiseSkew", group: "init", initOnly: true, label: "expertise_skew", sym: "α_E", min: -6, max: 6, step: 0.5,
+    desc: "Which way the starting skill distribution leans. Positive puts most people below average with a few far above, negative does the reverse, 0 is even." },
   { key: "entrantExpertiseMean", group: "init", label: "entrant_expertise_mean", sym: "μ_ent", min: 0, max: 0.5, step: 0.01,
-    desc: "How skilled a fresh recruit is when they replace someone who retires. Low values mean the field depends entirely on newcomers learning from colleagues — which is exactly what AI reliance can block.",
-    hint: "every turnover replacement (mid-run), not t=0 — novices who must earn expertise via peer transfer" },
+    desc: "Average skill of a recruit replacing someone who retires.",
+    hint: "Applies to every mid-run replacement, not to the starting population. The distance from here to the field's level is what an arrival has to close by learning." },
   { key: "entrantExpertiseSpread", group: "init", label: "entrant_expertise_spread", sym: "ω_ent", min: 0.01, max: 0.3, step: 0.01,
-    desc: "How much recruits differ from each other. Low = every intake looks the same; high = the odd exceptional hire alongside the usual novices." },
+    desc: "Spread of recruit skill. Low makes every intake alike, high mixes strong hires among novices." },
   // Exposed as a dial because entrant_expertise_mean is not interpretable without it:
   // the draw is clipped at this floor, so below it the mean stops meaning the mean.
   { key: "entrantExpertiseFloor", group: "init", label: "entrant_expertise_floor", sym: "E_min", min: 0, max: 0.2, step: 0.01,
-    desc: "The least skilled a recruit is allowed to be. Above 0 it stops a pile-up of people arriving at exactly zero, who can never recover once AI reliance blocks their learning. Set 0 for the pre-2026-08 behaviour.",
-    hint: "when entrant_expertise_mean sits within a spread of this floor, a large share of recruits land exactly ON it and the realised mean is higher than the nominal one" },
+    desc: "The least skilled a recruit is allowed to be. Nobody joins below this level.",
+    hint: "When entrant_expertise_mean sits within about one spread of this floor, many recruits land exactly on it and the realised mean runs above the nominal one." },
   { key: "learningRateSpread", group: "learn", label: "learning_rate_spread", sym: "σ_L", min: 0, max: 1, step: 0.02,
     desc: "Spread in how fast individuals learn, forget and move. 0 = everyone identical." },
   // Ranged for the monthly tick: the usable band (0.11-0.20, calibrated 0.15) sits
@@ -439,16 +568,18 @@ const PARAM_FIELDS = [
     fmtOut: (v) => (v > 0 ? "÷" + (1 + v * 0.1).toFixed(1) + " at +0.10 above the mean" : "0 · off"),
     desc: "Divides learning by 1 + k x (your expertise - population mean). 0 = off." },
   { key: "competitionAversion", group: "mobility", label: "competition_aversion", sym: "ρ", min: 0, max: 1, step: 0.02,
-    desc: "Big fish or small pond. 0 = people chase the strongest institution they can get into and learn there; 1 = they prefer places where they outrank everyone, which is comfortable and stops them learning." },
+    desc: "Whether someone changing institution aims for a stronger one, or one where they would be near the top. 0 = always stronger, 1 = always near the top.",
+    hint: "The stronger-than-you term is clipped at zero, so above a candidate's average it contributes nothing and only outranking and prestige decide." },
   { key: "prestigeWeight", group: "mobility", label: "prestige_weight", sym: "η", min: 0, max: 1, step: 0.02,
-    desc: "How much a place's reputation pulls people in regardless of what it would do for their skill. 0 = nobody cares about the name on the door." },
+    desc: "How much an institution's reputation attracts people by itself, regardless of what moving there would do for their skill.",
+    hint: "Added outside the competition_aversion blend, so it applies at every setting of it." },
   // Max cut from 0.3 for the monthly tick: 0.3 per MONTH is reconsidering your job
   // every quarter. 0.1 is already high-churn.
   { key: "baseMoveProb", group: "mobility", label: "base_move_prob", sym: "p_move", min: 0, max: 0.1, step: 0.01,
-    desc: "Chance per month that a given person considers changing institution. Higher = a churn-heavy field that mixes skill around quickly.",
-    hint: "scaled per-person by their learning rate, so fast learners also move more" },
+    desc: "Chance each month that a person considers changing institution.",
+    hint: "Staying put is always one of the candidates, so this is the rate of reconsidering rather than of moving. Scaled per person by learning rate, so faster learners move more." },
   { key: "jumpProbability", group: "mobility", label: "jump_probability", sym: "ε", min: 0, max: 1, step: 0.02,
-    desc: "In hybrid mobility, the share of moves that ignore the network and can land anywhere — the cold-application route rather than the who-you-know one. No effect in the other two mobility modes." },
+    desc: "Share of moves that can land at any institution rather than only one connected to the current one. Hybrid mobility only." },
   // step = 1/4800 so the calibrated 1/480 (a 40-year career) is exactly representable
   // and lands on step 10 of 96 — no decimal step can hit it. Max cut from 0.05, which
   // under a monthly tick was a 20-month career. Reads out as a career length in years,
@@ -456,10 +587,31 @@ const PARAM_FIELDS = [
   { key: "turnoverRate", group: "turnover", label: "turnover_rate", sym: "r", min: 0, max: 0.02, step: 1 / 4800,
     fmtOut: (v) => (v > 0 ? v.toFixed(4) + " · " + (1 / (v * TICKS_PER_YEAR)).toFixed(0) + "y" : "0 · no exit"),
     desc: "Chance per month that a person retires and is replaced by a recruit — one over the career length in months. The calibrated 0.0021 is a 40-year career.",
-    hint: "N, turnover_rate and career length are one identity (headcount = annual intake × career length), so changing this on the world-model graph without moving N breaks that — see problems.md P5" },
+    hint: "N, turnover_rate and career length are one identity (headcount = annual intake × career length), so changing this on the world-model graph without moving N breaks that — see problems.md P5",
+    // The hint above states the identity; this says whether it currently HOLDS. Only
+    // meaningful on the world model, which is the only graph carrying real intake data.
+    liveHint: (v, sim) => {
+      const wm = sim.params.worldModel;
+      if (!wm || sim.params.graphSource !== "worldModel") return null;
+      if (!(v > 0)) return { warn: true, text: "no exit — with nobody retiring there is no intake to match" };
+      const careerYears = 1 / (v * TICKS_PER_YEAR);
+      const impliedN = Math.round((careerYears * wm.totalIntake) / FIELD_DIVISOR);
+      const runningN = sim.params.N;
+      // Compared against the N the RUNNING model uses, not the pending value in the N
+      // box: the results on screen were produced with the former, and a hint that went
+      // green the moment you typed a number would be describing a run you cannot see yet.
+      if (Math.abs(impliedN - runningN) <= Math.max(10, runningN * 0.02)) {
+        return { warn: false, text: `${careerYears.toFixed(0)}y career ⇒ N ${impliedN.toLocaleString()} · matches the running N` };
+      }
+      return { warn: true, text: `${careerYears.toFixed(0)}y career ⇒ N ${impliedN.toLocaleString()}, but this run has ${runningN.toLocaleString()} — set N and Rebuild` };
+    } },
   { key: "aiLevelFraction", group: "ai", label: "ai_level_fraction", sym: "λ", min: 0.01, max: 1, step: 0.005,
     desc: "How good the AI is, on the same skill scale as the humans. Everybody below this line is the one who leans on it, stops learning from colleagues, and atrophies. 0.585 = as good as a human we would call an expert.",
     hint: "fraction of the t=0 population's single greatest human expert, not of the current top performer" },
+  { key: "frontierBreadth", group: "ai", label: "frontier_breadth", sym: "b", min: 0.2, max: 3, step: 0.1,
+    fmtOut: (v) => v.toFixed(1) + " · F = " + Math.pow(app.sim.params.aiLevelFraction, v).toFixed(2),
+    desc: "How much of the work the AI can safely handle, derived from how good it is. Lower widens its reach, higher narrows it.",
+    hint: "The share inside the frontier is ai_level_fraction raised to this power, so it follows the AI's level rather than being set separately. Work outside it is where an unverified answer costs you." },
   { key: "aiDampeningBelow", group: "ai", label: "ai_dampening_below", sym: "γ_below", min: 0, max: 2, step: 0.05, display: (v) => v - 1,
     desc: "What AI does to the learning of people BELOW its level: negative = it crowds out the learning they would have got from colleagues, positive = it teaches them faster than colleagues alone would.",
     hint: "shown as -1..+1: -1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification" },
@@ -469,6 +621,65 @@ const PARAM_FIELDS = [
 ];
 
 function fmt(v) { return Math.abs(v) < 1 ? v.toFixed(v === 0 ? 0 : 3).replace(/0+$/, "").replace(/\.$/, "") : v.toFixed(2); }
+
+// Capability runs from fractions of an expert to tens of thousands, so axis labels have
+// to stay short at every magnitude. 45784 -> 45.8k, 0.19 -> 0.19.
+function fmtCompact(v) {
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(1) + "B";
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + "k";
+  if (a >= 10) return v.toFixed(0);
+  if (a >= 1) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+// A log-scaled chart plots log10(v) but must LABEL v: an axis reading -0.9 to 4.7 is
+// unreadable, and the whole reason for the log axis is that the raw numbers are the
+// interesting part. Values are floored rather than dropped at zero — capability has a
+// positive lower bound by construction, but a guard here costs nothing.
+// Axis labels are drawn right-aligned, ending `gap` px short of the plot area, so the
+// left padding has to be at least as wide as the widest one. MEASURED, not assumed: the
+// formatters in play produce anything from "1.00" to "0.0007" to "45.8k", and a padding
+// that suits one clips another — which is what happened to the divergence chart (6
+// characters into 34px) and the inspector's capability chart (5 into 30px).
+//
+// The floor keeps short-label charts at their existing width so the stacked timeline
+// charts still line up with each other; only a chart that genuinely needs more takes it.
+function axisPadLeft(ctx, labels, floor, gap) {
+  let widest = 0;
+  labels.forEach((t) => { const w = ctx.measureText(String(t)).width; if (w > widest) widest = w; });
+  return Math.max(floor, Math.ceil(widest + (gap == null ? 4 : gap) + 2));
+}
+
+// A series that barely moves must LOOK like it barely moves. Autoscaling to the data
+// alone plots a 0.2% wobble across the full height of the frame, which reads as
+// structure when it is noise — and then one real change rescales the axis by hundreds
+// of times, flattening all prior history to the floor and putting the new value at the
+// top. That is not a collapse followed by an explosion; it is one flat line and one
+// step, drawn twice at wildly different zoom.
+//
+// The floor is a factor of two on a log axis, or 2% of the data's own magnitude on a
+// linear one. Both are below anything worth reading and above pure jitter.
+const MIN_LOG_SPAN = Math.log10(2);
+function padAxisSpan(minV, maxV, options) {
+  const span = maxV - minV;
+  const floor = options.log ? MIN_LOG_SPAN
+    : Math.max(1e-9, Math.abs((minV + maxV) / 2) * 0.02);
+  if (span >= floor) return [minV, maxV];
+  const mid = (minV + maxV) / 2, half = floor / 2;
+  // Never override a bound the caller pinned deliberately — a 0..1 expertise axis stays
+  // 0..1 rather than growing a negative floor to satisfy a minimum span.
+  return [options.fixedMin != null ? minV : mid - half,
+          options.fixedMax != null ? maxV : mid + half];
+}
+
+const LOG_FLOOR = 1e-9;
+function axisTransform(useLog) {
+  return useLog
+    ? { fwd: (v) => Math.log10(v > LOG_FLOOR ? v : LOG_FLOOR), inv: (v) => Math.pow(10, v) }
+    : { fwd: (v) => v, inv: (v) => v };
+}
 // One tick is one month (see MONTHLY_TICK_PARAMS), so elapsed time is worth showing as
 // something a reader can place against a career rather than as a bare tick count.
 function fmtElapsed(t) { return Math.floor(t / TICKS_PER_YEAR) + "y " + (t % TICKS_PER_YEAR) + "m"; }
@@ -506,22 +717,46 @@ function fmtField(f, v) {
   return d > 1e-9 ? "+" + s : s;
 }
 
+// A derived reading that depends on the live value, e.g. "does N still match this
+// career length?". Separate from `hint`, which is static prose: this one has to be
+// recomputed on every input event, and is the only thing in the sidebar that reports
+// on a RELATIONSHIP between two controls rather than on one control.
+function refreshLiveHint(f, el, v) {
+  if (!f.liveHint || !el) return;
+  const r = f.liveHint(v, app.sim);
+  if (!r) { el.textContent = ""; el.classList.remove("is-warn"); return; }
+  el.textContent = r.text;
+  el.classList.toggle("is-warn", !!r.warn);
+}
+
 function buildSidebar() {
   const sidebar = document.getElementById("sidebar");
   sidebar.innerHTML = "";
 
-  // desc is short enough to read at a glance, so when a field has no separate hint the
-  // desc becomes the VISIBLE line rather than a hover-only title. A title attribute is
-  // the wrong home for the only explanation a control has: it takes about a second to
-  // appear, never appears on touch, and is invisible to anyone scanning the panel.
-  // Where a hint does exist it stays the visible line and desc stays the tooltip.
+  // Two jobs, two slots, both reachable. `desc` says WHAT the control is and is ALWAYS
+  // visible; `hint` is the caveat you need once you are actually turning it, and waits
+  // behind the ?.
+  //
+  // These used to share one slot as `hint || desc`, so any control that gained a caveat
+  // lost its definition to a hover-only title — controls that commented on themselves
+  // without introducing themselves. A title attribute cannot carry a definition anyway:
+  // it takes about a second to appear, never appears on touch, and is invisible to
+  // anyone scanning the panel.
+  //
+  // The note expands IN PLACE rather than floating. The sidebar scrolls and clips to
+  // its own box, so a popover would need position:fixed plus manual placement to escape
+  // it, and opening on hover would reintroduce exactly the problem above.
   function fieldHTML(f) {
-    const shown = f.hint || f.desc;
-    const tip = f.hint ? f.desc : null;      // no point repeating the visible text on hover
-    return `<div class="field" data-key="${f.key}"${tip ? ` title="${tip}"` : ""}>
+    const why = f.hint
+      ? `<button type="button" class="why" aria-expanded="false" aria-label="Show a note about ${f.label}">?</button>`
+      : "";
+    return `<div class="field" data-key="${f.key}">
       <label>&nbsp;<span><span class="sym">${f.sym}</span>${f.label}</span><output>${fmtField(f, app.sim.params[f.key])}</output></label>
       <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${app.sim.params[f.key]}" />
-      ${shown ? `<div class="hint">${shown}</div>` : ""}
+      ${f.desc ? `<div class="hint">${f.desc}${why}</div>` : ""}
+      ${f.initOnly ? `<div class="live-hint is-warn">sets the starting population — takes effect on Rebuild</div>` : ""}
+      ${f.hint ? `<div class="note">${f.hint}</div>` : ""}
+      ${f.liveHint ? `<div class="live-hint"></div>` : ""}
     </div>`;
   }
   function group(id, title, bodyHTML, open) {
@@ -627,17 +862,35 @@ function buildSidebar() {
     group("mobility", "Mobility", mobilityHTML, false) +
     group("turnover", "Turnover", turnoverHTML, false) +
     group("ai", "AI", aiHTML, true) +
-    `<div class="reset-note"><b>Live</b> parameters apply on the next tick. <b>Scale &amp; graph</b> parameters need Rebuild.</div>`;
+    `<div class="reset-note"><b>Live</b> parameters apply on the next tick. <b>Scale &amp; graph</b> parameters, and the three that describe the <b>starting population</b>, need Rebuild.</div>`;
 
   PARAM_FIELDS.forEach((f) => {
     const root = sidebar.querySelector(`.field[data-key="${f.key}"]`);
     if (!root) return;
     const input = root.querySelector("input");
     const out = root.querySelector("output");
+    const live = root.querySelector(".live-hint");
     input.addEventListener("input", () => {
       const v = parseFloat(input.value);
       app.sim.params[f.key] = v;
       out.textContent = fmtField(f, v);
+      refreshLiveHint(f, live, v);
+      // Read by initSim and by nothing in tick(), so moving one of these mid-run changes
+      // a number that the running model will never look at again. Light up Rebuild
+      // rather than let the control look as though it did something.
+      if (f.initOnly) markRebuildPending(true);
+    });
+    // Painted once at build time as well, so the reading is correct before anything is
+    // touched — including straight after a Rebuild, which is when N has just changed.
+    refreshLiveHint(f, live, app.sim.params[f.key]);
+
+    const why = root.querySelector(".why");
+    const note = root.querySelector(".note");
+    if (why && note) why.addEventListener("click", () => {
+      const opening = !note.classList.contains("is-open");
+      note.classList.toggle("is-open", opening);
+      why.setAttribute("aria-expanded", String(opening));
+      why.textContent = opening ? "\u00d7" : "?";
     });
   });
 
@@ -1080,9 +1333,9 @@ btnLive.addEventListener("click", () => {
 // and nothing else, exactly as it does under batch_run.js.
 function doTick() {
   tick(app.sim);
-  const { Ebar, count } = institutionStats(app.sim);
+  const { Ebar, count, Teach, experts, capability, capabilityHuman } = institutionStats(app.sim);
   const sim = app.sim;
-  for (let j = 0; j < sim.M; j++) sim.instHistory[j].push(Ebar[j]);
+  pushInstHistory(sim.instHistory, sim.M, Ebar, Teach, count, experts, capability, capabilityHuman);
   sim.snapshots.push({ t: sim.t, E: sim.E.slice(), inst: sim.inst.slice(), Ebar, count });
   if (sim.snapshots.length > SNAPSHOT_CAP) sim.snapshots.splice(0, SNAPSHOT_EVICT);
   if (app.following) app.viewT = app.sim.t;
@@ -1467,25 +1720,38 @@ function drawSeriesChart(canvasId, series, options) {
   if (!hist.length) return;
   const pad = { l: 34, r: 10, t: 8, b: 16 };
   const pad2 = options.legend ? 12 : 0;      // room for the legend strip
-  let minV = Infinity, maxV = -Infinity;
+  const ax = axisTransform(options.log);
+  let minV = Infinity, maxV = -Infinity;      // reassigned by padAxisSpan below
   hist.forEach((e) => series.forEach((sr) => {
     const v = e[sr.key]; if (v == null) return;
-    if (v < minV) minV = v; if (v > maxV) maxV = v;
+    const t = ax.fwd(v);
+    if (t < minV) minV = t; if (t > maxV) maxV = t;
   }));
   if (!isFinite(minV)) { minV = 0; maxV = 1; }
-  if (options.zeroFloor) minV = Math.min(0, minV);
-  if (options.fixedMax != null) maxV = options.fixedMax;
+  if (options.zeroFloor && !options.log) minV = Math.min(0, minV);
+  if (options.fixedMax != null) maxV = ax.fwd(options.fixedMax);
   if (maxV - minV < 1e-6) maxV = minV + 1e-6;
+  [minV, maxV] = padAxisSpan(minV, maxV, options);
+
+  // Label text first, then the padding that fits it, then the scales that depend on it.
+  const axisLabel = (v) => {
+    const raw = ax.inv(v);
+    return options.log ? fmtCompact(raw) : raw.toFixed(raw < 0.01 ? 4 : 2);
+  };
+  const gridAt = [minV, (minV + maxV) / 2, maxV];
+  ctx.font = "9px ui-monospace, monospace";
+  pad.l = axisPadLeft(ctx, gridAt.map(axisLabel), pad.l);
+
   const t0 = hist[0].t, t1 = hist[hist.length - 1].t;
   const toX = (t) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * (w - pad.l - pad.r);
   const toY = (v) => (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad2 - pad.b);
 
   ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
-  ctx.fillStyle = cssVar("--ink-faint"); ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "right";
-  [minV, (minV + maxV) / 2, maxV].forEach((v) => {
+  ctx.fillStyle = cssVar("--ink-faint"); ctx.textAlign = "right";
+  gridAt.forEach((v) => {
     const y = toY(v);
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
-    ctx.fillText(v.toFixed(v < 0.01 ? 4 : 2), pad.l - 4, y + 3);
+    ctx.fillText(axisLabel(v), pad.l - 4, y + 3);
   });
 
   // x axis in years: a tick is a month, so a bare tick count leaves the reader doing
@@ -1508,10 +1774,10 @@ function drawSeriesChart(canvasId, series, options) {
   ctx.setLineDash([]);
 
   // Expert threshold, where asked for: the deciles only mean something against it.
-  if (options.threshold != null && options.threshold >= minV && options.threshold <= maxV) {
+  if (options.threshold != null && ax.fwd(options.threshold) >= minV && ax.fwd(options.threshold) <= maxV) {
     ctx.strokeStyle = cssVar("--ink-faint"); ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.7;
-    const y = toY(options.threshold);
+    const y = toY(ax.fwd(options.threshold));
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
@@ -1523,7 +1789,7 @@ function drawSeriesChart(canvasId, series, options) {
     let started = false;
     hist.forEach((e) => {
       const v = e[sr.key]; if (v == null) return;
-      const x = toX(e.t), y = toY(v);
+      const x = toX(e.t), y = toY(ax.fwd(v));
       if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     });
     ctx.stroke();
@@ -1551,6 +1817,82 @@ function drawSeriesChart(canvasId, series, options) {
   }
 }
 
+/* ============================== DIFFUSION ============================== */
+// The engine's three flow counters are per-TICK integers, and at the calibrated move
+// probability one tick is a handful of moves across the whole field — as a rate that is
+// mostly noise. Everything here is therefore summed over a trailing YEAR, which is both
+// steadier and a quantity with a plain meaning ("moves in the last 12 months") rather
+// than a smoothed rate.
+//
+// The window ends at the tick being VIEWED, not the live one, so scrubbing back reads
+// the field as it stood then — same rule as the distribution panel's counters.
+function renderDiffusion() {
+  const flowsEl = document.getElementById("diffusionFlows");
+  const mixEl = document.getElementById("diffusionMixing");
+  if (!flowsEl || !mixEl) return;
+  const hist = app.sim.history;
+  const end = Math.max(0, Math.min(app.viewT, hist.length));
+  const dash = "–";
+  const row = (k, v, sub) => `<div class="kv"><span class="k">${k}</span><b>${v}</b></div>` +
+    (sub ? `<div class="kv-sub">${sub}</div>` : "");
+
+  if (!end) {
+    flowsEl.innerHTML = row("moves", dash) + row("expertise carried", dash) +
+      row("upgrading arrivals", dash) + row("retirements", dash);
+    mixEl.innerHTML = row("still at origin", dash) + row("if fully mixed", dash) + row("time in place", dash);
+    return;
+  }
+
+  const win = hist.slice(Math.max(0, end - TICKS_PER_YEAR), end);
+  const years = win.length / TICKS_PER_YEAR;          // below 1 during the first year
+  const sum = (k) => win.reduce((a, e) => a + (e[k] || 0), 0);
+  const moves = sum("moves"), flux = sum("moveExpertiseFlux");
+  const upgrades = sum("upgradingArrivals"), retire = sum("turnover");
+  const last = hist[end - 1];
+  const perYear = (v) => Math.round(v / years).toLocaleString();
+  const pct = (v) => v == null ? dash : (v * 100).toFixed(1) + "%";
+
+  // Years between moves for one person. A bare "0.11 moves per person per year" is a
+  // number nobody can place against a 40-year career; its reciprocal is.
+  const perPersonYr = moves / app.sim.N / years;
+  const every = perPersonYr > 0 ? (1 / perPersonYr).toFixed(1) + "y" : "never";
+  const upPct = moves > 0 ? Math.round(upgrades / moves * 100) + "%" : dash;
+
+  flowsEl.innerHTML =
+    row("moves", perYear(moves) + " /yr", "one per person every " + every) +
+    row("expertise carried", (flux / years).toFixed(0) + " /yr", "summed E of everyone crossing a boundary") +
+    row("upgrading arrivals", perYear(upgrades) + " /yr", upPct + " of moves — the rest are lateral") +
+    row("retirements", perYear(retire) + " /yr", "a separate channel — not counted as moves");
+  mixEl.innerHTML =
+    row("still at origin", pct(last.originRetention), "of the whole field, entrants included") +
+    row("if fully mixed", pct(last.mixedBaseline), "scattered in proportion to institution size") +
+    row("time in place", last.meanMonthsInPlace == null ? dash
+      : (last.meanMonthsInPlace / TICKS_PER_YEAR).toFixed(1) + "y", "average, since arriving where they are");
+}
+
+// Retention against its own fully-mixed floor, in the Timeline panel with the other
+// two charts rather than beside the network — the readouts have to hold a fixed height
+// next to a fixed-height network, and a chart is the part that would not fit.
+//
+// The two series are plotted together deliberately: the distance between the lines IS
+// the answer, and retention alone cannot be read without knowing where "mixed" sits.
+// Logged, for the same reason the inspector's is: capability is convex in expertise, so
+// a run that halves mean expertise can drop this by three orders of magnitude. On a
+// linear axis the whole history before a collapse is pinned to the top of the frame.
+function drawCapabilityChart() {
+  drawSeriesChart("capCanvas", [
+    { key: "systemCapability", color: cssVar("--accent"), label: "with AI", width: 2 },
+    { key: "systemCapabilityHuman", color: cssVar("--ink-faint"), label: "unaugmented", width: 1.5, dash: [3, 2] },
+  ], { log: true, legend: true });
+}
+
+function drawMixChart() {
+  drawSeriesChart("mixCanvas", [
+    { key: "originRetention", color: cssVar("--accent"), label: "still at origin", width: 2 },
+    { key: "mixedBaseline", color: cssVar("--ink-faint"), label: "fully mixed", width: 1.5, dash: [3, 2] },
+  ], { zeroFloor: true, legend: true });
+}
+
 /* ============================== INSPECTOR ============================== */
 function renderInspectorPlaceholder() {
   document.getElementById("inspector").innerHTML = `<h2>Institution inspector</h2><p class="placeholder">Click a node in the network panel to see its population, average expertise, and history.</p>`;
@@ -1565,6 +1907,17 @@ function renderInspector() {
   const dot = `<span class="inst-dot" style="background:${seqColor(Ebar[j], theme === "dark")}"></span>`;
   const el = document.getElementById("inspector");
   const inst = institutionOf(j);
+  // Capability is read from the recorded series rather than recomputed: the KV rows
+  // above it come from the viewed SNAPSHOT, and recomputing here from live E would
+  // quietly disagree with them whenever the scrubber is off the live tick.
+  const ih = app.sim.instHistory;
+  const capIdx = ih.len > 0 ? ih.len - 1 : -1;
+  const capNow = capIdx >= 0 ? ih.capability[j][capIdx] : 0;
+  // Size and quality answer different questions: the largest institution by total
+  // capability is rarely the strongest per person, so neither number alone ranks them.
+  const capPerHead = count[j] > 0 ? fmtCompact(capNow / count[j]) : "—";
+  const capHumanNow = capIdx >= 0 ? ih.capabilityHuman[j][capIdx] : 0;
+  const leverage = capHumanNow > 0 ? "×" + (capNow / capHumanNow).toFixed(2) : "—";
   // Sourced from world-model.json: label and hub_city (resolved through LOCATED_IN to
   // the hub nodes' own labels, falling back to the organisation's own hub_city).
   const identity = inst ? `
@@ -1577,26 +1930,120 @@ function renderInspector() {
     ${identity}
     <div class="kv"><span>population</span><b>${count[j]}</b></div>
     <div class="kv"><span>avg. latent expertise (Ē)</span><b>${Ebar[j].toFixed(3)}</b></div>
+    <div class="kv"><span>capability</span><b>${fmtCompact(capNow)} <span class="kv-note">experts' worth</span></b></div>
+    <div class="kv"><span>capability per head</span><b>${capPerHead}</b></div>
+    <div class="kv"><span>AI leverage</span><b>${leverage} <span class="kv-note">over unaugmented</span></b></div>
     <div class="kv"><span>degree</span><b>${app.sim.graph.degree[j]}</b></div>
     <div class="kv"><span>prestige</span><b>${app.sim.graph.prestige[j].toFixed(2)}</b></div>
-    <canvas id="instSparkline"></canvas>
+    <h3>expertise</h3>
+    <canvas id="instChartE"></canvas>
+    <h3>people</h3>
+    <canvas id="instChartN"></canvas>
+    <h3>capability · log scale</h3>
+    <canvas id="instChartC"></canvas>
   `;
-  const sparkHist = app.sim.instHistory[j];
-  const canvas = document.getElementById("instSparkline");
+  const hist = app.sim.instHistory, dark = theme === "dark";
+  // Paired by UNIT, not by topic: each chart shares one y scale, so the two lines on it
+  // have to be comparable by eye or the scale lies. Ē against the teaching level shows
+  // the gap a newcomer has to climb; headcount against expert count shows composition,
+  // and their divergence is the drain the mean cannot show.
+  drawInstSeries("instChartE", hist, [
+    { key: "teach", row: j, color: seqColor(0.85, dark), label: "teaching level" },
+    { key: "Ebar", row: j, color: seqColor(0.45, dark), label: "average (Ē)", width: 2 },
+  ], { fixedMin: 0, fixedMax: 1, decimals: 2 });
+  drawInstSeries("instChartN", hist, [
+    { key: "pop", row: j, color: cssVar("--accent2"), label: "population", width: 2 },
+    { key: "experts", row: j, color: cssVar("--accent"), label: "experts" },
+  ], { zeroFloor: true, decimals: 0 });
+  // Alone on its own chart, and logged. Capability is convex in expertise by design, so
+  // it moves through orders of magnitude while everything above it moves through tenths
+  // — on a shared linear scale it would flatten every other line to the axis.
+  // Two lines, and the GAP between them is the AI leverage. One line cannot tell a
+  // field that got better from one that is being propped up.
+  drawInstSeries("instChartC", hist, [
+    { key: "capability", row: j, color: seqColor(0.75, dark), label: "with AI", width: 2 },
+    { key: "capabilityHuman", row: j, color: seqColor(0.35, dark), label: "unaugmented", width: 1.5, dash: [3, 2] },
+  ], { log: true });
+}
+
+// Charts one institution's recorded series. Separate from drawSeriesChart because that
+// one reads app.sim.history — population-level records, one object per tick — while
+// these are typed-array rows that have been thinned, so index no longer equals tick.
+function drawInstSeries(canvasId, hist, series, options) {
+  options = options || {};
+  // Deliberately NOT guarded against a missing canvas. A silent return here would hide
+  // exactly the class of bug this page keeps producing: markup and drawing code drifting
+  // apart, with the chart simply absent and every test still green.
+  const canvas = document.getElementById(canvasId);
   const { ctx, w, h } = setupCanvasDPR(canvas);
   ctx.clearRect(0, 0, w, h);
-  if (sparkHist.length > 1) {
-    let minV = Infinity, maxV = -Infinity;
-    sparkHist.forEach((v) => { if (v < minV) minV = v; if (v > maxV) maxV = v; });
-    if (maxV - minV < 1e-6) maxV = minV + 1e-6;
-    const pad = { l: 4, r: 4, t: 6, b: 6 };
-    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1.5; ctx.beginPath();
-    sparkHist.forEach((v, i) => {
-      const x = pad.l + (i / (sparkHist.length - 1)) * (w - pad.l - pad.r);
-      const y = (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad.b);
+  const n = hist.len;
+  if (n < 2) return;
+  const pad = { l: 30, r: 6, t: 12, b: 4 };
+
+  const ax = axisTransform(options.log);
+  let minV = Infinity, maxV = -Infinity;
+  series.forEach((sr) => {
+    const a = hist[sr.key][sr.row];
+    for (let i = 0; i < n; i++) { const v = ax.fwd(a[i]); if (v < minV) minV = v; if (v > maxV) maxV = v; }
+  });
+  if (options.zeroFloor && !options.log) minV = Math.min(0, minV);
+  if (options.fixedMin != null) minV = ax.fwd(options.fixedMin);
+  if (options.fixedMax != null) maxV = ax.fwd(options.fixedMax);
+  if (maxV - minV < 1e-6) maxV = minV + 1e-6;
+  [minV, maxV] = padAxisSpan(minV, maxV, options);
+
+  const axisLabel = (v) => {
+    const raw = ax.inv(v);
+    return options.log ? fmtCompact(raw)
+      : raw.toFixed(options.decimals != null ? options.decimals : 2);
+  };
+  const gridAt = [minV, maxV];
+  ctx.font = "9px ui-monospace, monospace";
+  pad.l = axisPadLeft(ctx, gridAt.map(axisLabel), pad.l);
+
+  const toX = (i) => pad.l + (i / (n - 1)) * (w - pad.l - pad.r);
+  const toY = (v) => (h - pad.b) - ((v - minV) / (maxV - minV)) * (h - pad.t - pad.b);
+
+  ctx.textAlign = "right";
+  gridAt.forEach((v) => {
+    const y = toY(v);
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = cssVar("--ink-faint");
+    ctx.fillText(axisLabel(v), pad.l - 4, y + 3);
+  });
+
+  series.forEach((sr) => {
+    const a = hist[sr.key][sr.row];
+    ctx.strokeStyle = sr.color; ctx.lineWidth = sr.width || 1.5; ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = toX(i), y = toY(ax.fwd(a[i]));
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
+    }
     ctx.stroke();
+  });
+
+  ctx.textAlign = "left";
+  let lx = pad.l;
+  series.forEach((sr) => {
+    ctx.strokeStyle = sr.color; ctx.lineWidth = sr.width || 1.5;
+    ctx.beginPath(); ctx.moveTo(lx, 5); ctx.lineTo(lx + 9, 5); ctx.stroke();
+    ctx.fillStyle = cssVar("--ink-muted"); ctx.fillText(sr.label, lx + 12, 8);
+    lx += 21 + ctx.measureText(sr.label).width;
+  });
+
+  // Where the rest of the page is looking, when that is not the live tick. Found by
+  // scanning for the sample nearest viewT rather than by dividing: the stride changes
+  // whenever the history thins, so index and tick are not proportional across a run.
+  if (!app.following) {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(instSampleTick(hist, i) - app.viewT);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(toX(best), pad.t); ctx.lineTo(toX(best), h - pad.b); ctx.stroke();
   }
 }
 
@@ -1609,12 +2056,18 @@ function refreshAll() {
   drawHistogram();
   drawSpreadChart();
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
+  drawMixChart();
+  drawCapabilityChart();
+  renderDiffusion();
   if (app.selectedInst != null) renderInspector();
 }
 function renderSnapshotViews() {
   drawHistogram();
   drawSpreadChart();
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
+  drawMixChart();
+  drawCapabilityChart();
+  renderDiffusion();
   if (app.selectedInst != null) renderInspector();
 }
 
