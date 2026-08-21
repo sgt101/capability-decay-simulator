@@ -27,7 +27,11 @@ const OUT_DIR = paths.data("experiments-structure");
 const HORIZON = 1440;                       // 3 careers, matching the other sets
 const RECORD_AT = [];
 for (let t = TICKS_PER_YEAR; t <= HORIZON; t += TICKS_PER_YEAR) RECORD_AT.push(t);
-const REPLICATES = 3;
+// 5, not the 3 the other sets use. Replicate noise falls as 1/sqrt(n), so this buys a
+// ~22% narrower error on every cell for a 67% larger run — worth it here because the
+// structural effects being measured are small next to the AI ones: capability loss
+// moves ~30 points across the whole M axis, where a dampening sweep moves ~100.
+const REPLICATES = 5;
 const SEED = 1;
 
 // N is fixed across the whole set so that M alone moves the people-per-institution

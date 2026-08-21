@@ -142,6 +142,9 @@ structure_report.html
 #   node src/build_report.js --metrics capability  --out graph-results-capability.html
 # ~53 MB each and regenerated from results/, so they are output, not source.
 graph-results-*.html
+# Assembled by src/build_pages.js for GitHub Pages — a copy of files already tracked
+# elsewhere, rebuilt in CI on every deploy.
+site/
 
 # Archived result sets now live under results/archive/, covered by the rule above.
 # These two patterns are kept for anything restored from an old checkout into the

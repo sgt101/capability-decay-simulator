@@ -53,10 +53,33 @@ class FakeElement {
   appendChild(c) { this.children.push(c); return c; }
   getBoundingClientRect() { return { width: 900, height: 480, left: 0, top: 0 }; }
   getContext() { return CTX_STUB; }
+  setAttribute(k, v) { this._attrs = this._attrs || {}; this._attrs[k] = v; if (k === "id") this.id = v; }
+  getAttribute(k) { return this._attrs && this._attrs[k] != null ? this._attrs[k] : null; }
 }
 
+// Read here rather than at the point of use: the element registry below is built FROM
+// this markup.
+const pageHTML = fs.readFileSync(process.argv[2], "utf8");
+
+// Every id the page declares, with its real tag, scanned out of the markup. This
+// replaces a hand-maintained list that was the source of truth — an element missing
+// from it made getElementById return null, so whatever touched it silently no-opped
+// and the flow "passed". The same list had already hidden three additions in the
+// simulator's harness before it was fixed the same way there.
+{
+  const re = /<(\w+)[^>]*\bid="([\w-]+)"[^>]*>/g;
+  let m;
+  while ((m = re.exec(pageHTML))) {
+    const el = new FakeElement(m[1]);
+    el._id = m[2];
+    registry.set(m[2], el);
+  }
+}
+
+// The same list, demoted to an ASSERTION: these are the ids the driver reaches for by
+// name, so a page that stops declaring one should fail here rather than 900 lines later.
 const staticIds = [
-  "metaLine", "metricSelect", "tickLabel", "tickRange", "tickField",
+  "metaLine", "metricSelect", "metricHelpBtn", "metricHelp", "tickLabel", "tickRange", "tickField",
   "tabHeatmap", "tabTable", "tabTrajectories", "axesFlipBtn",
   "expList", "fixedPanel",
   "heatmapPanel", "heatmapTitle", "heatmapSub", "heatmapWrap", "heatmapCanvas", "tableWrap",
@@ -66,7 +89,8 @@ const staticIds = [
   "trajHeadA", "trajHeadB", "trajWrapA", "trajWrapB", "trajCanvasA", "trajCanvasB",
   "trajLegendMin", "trajLegendMax", "trajLegendRamp", "trajLegendLabel", "trajCaption",
 ];
-staticIds.forEach((id) => { const el = new FakeElement(id.includes("Canvas") ? "canvas" : "div"); el._id = id; registry.set(id, el); });
+const missingIds = staticIds.filter((id) => !registry.has(id));
+if (missingIds.length) throw new Error("the page no longer declares these ids: " + missingIds.join(", "));
 
 const documentElement = new FakeElement("html");
 documentElement.getAttribute = () => null;
@@ -83,11 +107,15 @@ const window = {
 class MutationObserver { constructor(cb) { this.cb = cb; } observe() {} }
 function getComputedStyle() { return { getPropertyValue: (name) => CSS_VARS[name] || "#888888" }; }
 
-const html = fs.readFileSync(process.argv[2], "utf8");
+const html = pageHTML;
 const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/);
 if (!scriptMatch) throw new Error("no <script> found");
 
 const driver = `
+// Captured on the FIRST line, before this driver touches anything. Clicking an
+// experiment sets tickIndex to the last tick, so a check further down would be reading
+// the consequence of its own interaction rather than what the page opened on.
+const BOOT_TICK_INDEX = app.tickIndex;
 console.log("OK: initial render — experiments loaded:", DATA.experiments.length);
 // Count comes from whatever was built, not a hardcoded number — the study set has
 // been 55 (11 params) and is now 21 (7 params), and this test should not need
@@ -167,8 +195,8 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
   // either way and simply shows, or claims, the wrong thing.
   {
     const exp0 = DATA.experiments[0];
-    if (app.tickIndex !== exp0.ticks.length - 1) {
-      throw new Error("report opens on tick index " + app.tickIndex + " (t=" + exp0.ticks[app.tickIndex]
+    if (BOOT_TICK_INDEX !== exp0.ticks.length - 1) {
+      throw new Error("report opens on tick index " + BOOT_TICK_INDEX + " (t=" + exp0.ticks[BOOT_TICK_INDEX]
         + ") instead of the settled last tick (t=" + exp0.ticks[exp0.ticks.length - 1]
         + ") — early ticks can show the opposite sign to the result");
     }
@@ -191,7 +219,46 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
         }
       }
     });
-    console.log("OK: opens on t=" + exp0.ticks[app.tickIndex] + "; axis titles describe the paired no-AI comparison");
+    console.log("OK: opens on t=" + exp0.ticks[BOOT_TICK_INDEX] + "; axis titles describe the paired no-AI comparison");
+  }
+
+  // --- every metric explains itself ---------------------------------------------
+  // A metric name is compressed to fit a toolbar; the ? is where the sentence lives.
+  // Driven through the real change event so a help box that is rendered but never
+  // wired up still fails.
+  {
+    const btn = document.getElementById("metricHelpBtn");
+    const box = document.getElementById("metricHelp");
+    if (!btn || !box) throw new Error("the metric help affordance is missing from the page");
+    const sel = document.getElementById("metricSelect");
+    let shortest = null;
+    DATA.metrics.forEach((m) => {
+      if (!m.help) throw new Error("metric " + m.key + " has no help text");
+      sel.value = m.key;
+      sel.dispatch("change", { target: sel });
+      if (btn.hidden) throw new Error("help ? hidden for " + m.key + " despite having help text");
+      if (box.innerHTML.indexOf(m.help) === -1) {
+        throw new Error("help box does not show " + m.key + " after selecting it: " + box.innerHTML);
+      }
+      // Jargon check, such as it can be automated: the explanation must not lean on the
+      // internal names the reader is trying to decode in the first place.
+      ["treatment", "baseline arm", "shortfall", "aiDampening", "gamma", "aiLevelFraction"].forEach((w) => {
+        if (m.help.indexOf(w) !== -1) throw new Error("help for " + m.key + " uses internal jargon: " + w);
+      });
+      if (!shortest || m.help.length < shortest.len) shortest = { key: m.key, len: m.help.length };
+    });
+    // Opens on hover, closes again, and is reachable without a mouse.
+    showMetricHelp(false);
+    if (!box.hidden) throw new Error("help box did not start closed");
+    btn.dispatch("mouseenter", {});
+    if (box.hidden) throw new Error("help box did not open on hover");
+    btn.dispatch("mouseleave", {});
+    if (!box.hidden) throw new Error("help box did not close on mouseleave");
+    btn.dispatch("focus", {});
+    if (box.hidden) throw new Error("help box is unreachable by keyboard focus");
+    btn.dispatch("blur", {});
+    console.log("OK: all " + DATA.metrics.length + " metrics carry help; opens on hover and focus"
+      + " (shortest is " + shortest.key + ", " + shortest.len + " chars)");
   }
   const otherKeys = Object.keys(exp5.fixed).filter((k) => k !== exp5.xKey && k !== exp5.yKey);
   if (otherKeys.length < 10) throw new Error("expected many other fixed parameters to be listed, got " + otherKeys.length);

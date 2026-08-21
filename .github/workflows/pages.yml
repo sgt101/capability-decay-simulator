@@ -1,0 +1,72 @@
+# Publishes the interactive simulator to GitHub Pages.
+#
+# Only the simulator goes up, not the whole repository: see src/build_pages.js for what
+# it assembles and why. The generated reports are deliberately excluded — they are
+# 27-53 MB each and gitignored, so they are not in the checkout to publish.
+name: Deploy simulator to Pages
+
+on:
+  push:
+    branches: [main]
+    # Rebuild only when something the published page actually contains changes.
+    paths:
+      - src/simulator.html
+      - src/engine.js
+      - src/world_model.js
+      - data/world-model-data.js
+      - src/build_pages.js
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Not cancel-in-progress: a half-finished deploy that gets
+# cancelled leaves the live site on whichever version happened to land.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The bundled world-model data is GENERATED from world-model.json and
+      # mobility-costs.json. If it has drifted from them, the published simulator runs a
+      # different graph from the one the repository describes — silently, because the
+      # page loads whatever bundle it is given. This test compares the two.
+      - name: Bundled world-model data matches its sources
+        run: node src/test/test_world_model.js
+
+      - name: Build site/
+        run: node src/build_pages.js
+
+      # Boot the ASSEMBLED page, not the source one. This is what catches a dependency
+      # that failed to copy or a path that no longer resolves — the page degrades to the
+      # generated graph rather than erroring, so nothing else would notice.
+      - name: Built page boots and loads the world model
+        run: |
+          node src/test/dom_stub_test.js site/index.html | tee /tmp/boot.log
+          grep -q "booted with the bundle" /tmp/boot.log
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

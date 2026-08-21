@@ -59,12 +59,18 @@ const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, MANIFEST_PA
 // to millions, and on a linear ramp every cell but the largest collapses to one shade.
 const METRIC_SETS = {
   expertise: [
-    { key: "meanE_shortfall", label: "Mean expertise shortfall (E)" },
-    { key: "shareExpert_shortfall", label: "Expert-share shortfall" },
-    { key: "meanE_baseline", label: "Mean E — no-AI baseline" },
-    { key: "meanE_treatment", label: "Mean E — with AI" },
-    { key: "shareExpert_baseline", label: "Expert share — no-AI baseline" },
-    { key: "shareExpert_treatment", label: "Expert share — with AI" },
+    { key: "meanE_shortfall", label: "Mean expertise shortfall (E)",
+      help: "How much lower the average skill level is with AI than without it, at this point in the run. Bigger numbers mean AI cost more. Below zero means the AI run ended up ahead." },
+    { key: "shareExpert_shortfall", label: "Expert-share shortfall",
+      help: "The drop in how much of the workforce counts as expert, comparing the AI run to the same run without it. 0.2 means a fifth of the population fell below the expert line." },
+    { key: "meanE_baseline", label: "Mean E — no-AI baseline",
+      help: "The average skill level across everyone, in the run without AI. A number between 0 and 1, where 0.585 is the level this model calls expert." },
+    { key: "meanE_treatment", label: "Mean E — with AI",
+      help: "The average skill level across everyone, in the run with AI. Compare it to the no-AI baseline to see which way AI moved things." },
+    { key: "shareExpert_baseline", label: "Expert share — no-AI baseline",
+      help: "The fraction of people at or above the expert level, without AI. 0.6 means three in five." },
+    { key: "shareExpert_treatment", label: "Expert share — with AI",
+      help: "The fraction of people at or above the expert level, with AI. 0.6 means three in five." },
   ],
   capability: [
     // The headline, and derived rather than taken raw for a reason: the absolute
@@ -73,15 +79,21 @@ const METRIC_SETS = {
     // field is rather than by how much of it AI cost. The FRACTION is comparable across
     // every cell in the grid.
     { key: "capabilityLostFrac", label: "Share of capability lost to AI",
+      help: "How much of the work the field could do was lost. 0.4 means it gets four tenths less done than the same field without AI. Below zero means AI left it better off.",
       from: (r) => { const b = num(r.systemCapability_baseline), t = num(r.systemCapability_treatment);
         return b && b > 0 && t != null ? 1 - t / b : null; } },
-    { key: "systemCapability_shortfall", label: "Capability shortfall (expert-equivalents)" },
-    { key: "systemCapability_baseline", label: "Capability — no-AI baseline (log₁₀)", log: true },
-    { key: "systemCapability_treatment", label: "Capability — with AI (log₁₀)", log: true },
+    { key: "systemCapability_shortfall", label: "Capability shortfall (expert-equivalents)",
+      help: "The same loss counted in people rather than percentages: how many experts' worth of work the field no longer gets done. Below zero means AI added capability." },
+    { key: "systemCapability_baseline", label: "Capability — no-AI baseline (log₁₀)", log: true,
+      help: "What the whole field can get done without AI, measured in experts' worth of work. Written as a power of ten, so 5 means 100,000 and 4 means 10,000." },
+    { key: "systemCapability_treatment", label: "Capability — with AI (log₁₀)", log: true,
+      help: "The same measure for the run with AI. Also a power of ten, so a drop of 1 means the field gets a tenth as much done." },
     // What the humans alone are worth in the AI arm: the field after AI has eroded it,
     // with the multiplier taken back off. The gap to the row above is the leverage.
-    { key: "systemCapabilityHuman_treatment", label: "Capability — humans alone, under AI (log₁₀)", log: true },
+    { key: "systemCapabilityHuman_treatment", label: "Capability — humans alone, under AI (log₁₀)", log: true,
+      help: "What the people in the AI run could do if the AI were taken away. The gap between this and the line above is how much the AI itself is contributing." },
     { key: "aiLeverage", label: "AI leverage (× over unaugmented)",
+      help: "How much more the field gets done with AI than the same people manage without it. 1.2 means a fifth more work.",
       from: (r) => { const t = num(r.systemCapability_treatment), h = num(r.systemCapabilityHuman_treatment);
         return h && h > 0 && t != null ? t / h : null; } },
   ],
@@ -157,6 +169,25 @@ function loadExperiment(entry) {
   };
   const mm = axisMismatch(xKey, entry.xValues, xValues) || axisMismatch(yKey, entry.yValues, yValues);
   if (mm) { degenerate.push({ n: entry.n, xKey, yKey, why: mm + " — stale results from an earlier generation?" }); return null; }
+
+  // Replicate count, checked the same way and for the same reason. Changing replicates
+  // leaves the axes untouched, so the check above sees nothing wrong — and the page then
+  // states a replicate count in its header that the data does not have, which is exactly
+  // the sort of quiet mismatch this whole section exists to refuse. Counted from the
+  // rows rather than trusted: it is the number of runs that actually landed in a cell.
+  if (manifest.replicates != null) {
+    const perCell = new Map();
+    for (const row of rows) {
+      const k = row[xKey] + "|" + row[yKey] + "|" + row.t;
+      perCell.set(k, (perCell.get(k) || 0) + 1);
+    }
+    const counts = [...new Set(perCell.values())];
+    if (counts.length === 1 && counts[0] !== manifest.replicates) {
+      degenerate.push({ n: entry.n, xKey, yKey,
+        why: `manifest says ${manifest.replicates} replicates, CSV has ${counts[0]} per cell — stale results from an earlier generation?` });
+      return null;
+    }
+  }
   const ticks = [...new Set(rows.map((r) => num(r.t)))].sort((a, b) => a - b);
   const NY = yValues.length, NT = ticks.length;
   const size = xValues.length * NY * NT;
@@ -238,8 +269,8 @@ if (degenerate.length) {
   // guessing which one applies.
   const stale = degenerate.some((d) => /stale results/.test(d.why));
   if (stale) {
-    console.error(`\n  The axis was REGENERATED since these were run. Delete the affected results and`);
-    console.error(`  re-run just those — the rest will be skipped as already complete:`);
+    console.error(`\n  The experiment set was REGENERATED since these were run. Delete the affected`);
+    console.error(`  results and re-run them — anything not listed is skipped as already complete:`);
     console.error(`    rm -rf ${degenerate.map((d) => `results/${STEM}.${d.n}`).join(" ")}`);
     console.error(`    ./src/run_${STEM === "structure" ? "structure_" : ""}experiments.sh --workers 16`);
   } else {

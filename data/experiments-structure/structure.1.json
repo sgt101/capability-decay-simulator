@@ -1,6 +1,6 @@
 {
   "mode": "grid",
-  "replicates": 3,
+  "replicates": 5,
   "horizon": 1440,
   "recordAt": [
     12,

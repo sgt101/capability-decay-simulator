@@ -365,6 +365,30 @@
     opacity: 0.6;
   }
 
+  /* The metric names are compressed to fit a toolbar — "Capability shortfall
+     (expert-equivalents)" is a label, not an explanation. The ? carries the sentence
+     that says what the reader is looking at.
+     Opens on hover AND on focus AND on click: hover alone would be unreachable from a
+     keyboard and invisible on a touchscreen. */
+  .field-inline { position: relative; }
+  .help-dot {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; margin-left: 0.3rem; padding: 0;
+    border: 1px solid var(--rule); border-radius: 50%; background: none;
+    color: var(--ink-faint); font: inherit; font-size: 0.66rem; line-height: 1; cursor: help;
+  }
+  .help-dot:hover, .help-dot[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+  .help-dot:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+  .help-box {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+    width: max-content; max-width: 320px;
+    background: var(--panel); color: var(--ink-muted);
+    border: 1px solid var(--rule); border-radius: 5px;
+    padding: 0.5rem 0.65rem; font-size: 0.76rem; line-height: 1.5;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  }
+  .help-box b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 0.2rem; }
+
   .chart-tooltip {
     position: absolute;
     pointer-events: none;
@@ -505,6 +529,9 @@
     <div class="field-inline">
       <span>metric</span>
       <select id="metricSelect"></select>
+      <button type="button" class="help-dot" id="metricHelpBtn" aria-describedby="metricHelp"
+              aria-label="What does this metric mean?">?</button>
+      <div class="help-box" id="metricHelp" role="tooltip" hidden></div>
     </div>
     <div class="field-inline" id="tickField">
       <span>t = <b class="tabular" id="tickLabel">–</b></span>
@@ -846,7 +873,40 @@
     const sel = document.getElementById("metricSelect");
     sel.innerHTML = DATA.metrics.map((m) => '<option value="' + m.key + '">' + m.label + "</option>").join("");
     sel.value = app.metricKey;
-    sel.addEventListener("change", () => { app.metricKey = sel.value; render(); });
+    sel.addEventListener("change", () => { app.metricKey = sel.value; syncMetricHelp(); render(); });
+
+    const helpBtn = document.getElementById("metricHelpBtn");
+    if (helpBtn && !helpBtn._wired) {
+      helpBtn._wired = true;
+      helpBtn.addEventListener("mouseenter", () => showMetricHelp(true));
+      helpBtn.addEventListener("mouseleave", () => showMetricHelp(false));
+      helpBtn.addEventListener("focus", () => showMetricHelp(true));
+      helpBtn.addEventListener("blur", () => showMetricHelp(false));
+      // Touch has no hover, so a tap has to latch it open.
+      helpBtn.addEventListener("click", () => showMetricHelp(document.getElementById("metricHelp").hidden));
+    }
+    syncMetricHelp();
+  }
+
+  // The help follows whichever metric is selected, so the ? always describes what is on
+  // screen rather than opening a list the reader has to search.
+  function syncMetricHelp() {
+    const box = document.getElementById("metricHelp"), btn = document.getElementById("metricHelpBtn");
+    if (!box || !btn) return;
+    const m = DATA.metrics.find((x) => x.key === app.metricKey);
+    const help = m && m.help;
+    // A ? that opens an empty box is worse than no ?. A report built before the help
+    // text existed simply does not get one.
+    btn.hidden = !help;
+    if (!help) { box.hidden = true; return; }
+    box.innerHTML = "<b>" + m.label + "</b>" + help;
+  }
+
+  function showMetricHelp(on) {
+    const box = document.getElementById("metricHelp"), btn = document.getElementById("metricHelpBtn");
+    if (!box || !btn || btn.hidden) return;
+    box.hidden = !on;
+    btn.setAttribute("aria-expanded", String(!!on));
   }
 
   function buildTickRange() {
