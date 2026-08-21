@@ -120,11 +120,43 @@
   .scrubbar .live-btn.is-live { color: var(--accent2); border-color: var(--accent2); }
 
   /* ---- Layout ---- */
-  .layout { display: grid; grid-template-columns: 280px 1fr 260px; flex: 1; min-height: 0; }
+  /* The sidebar's width is a variable so the drag handle has one thing to move and the
+     grid follows. Collapsed is width 0 rather than display:none — the panel keeps its
+     scroll position and its built controls, so reopening is instant and nothing is
+     rebuilt. */
+  .layout {
+    display: grid; grid-template-columns: var(--sidebar-w, 280px) auto 1fr 260px;
+    flex: 1; min-height: 0;
+  }
   @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
 
   .sidebar, .inspector { background: var(--panel); overflow-y: auto; max-height: calc(100vh - 96px); }
   .sidebar { border-right: 1px solid var(--rule); }
+  .layout.sidebar-collapsed .sidebar { overflow: hidden; border-right: none; }
+
+  /* ---- sidebar drag handle ---- */
+  .drag-handle {
+    position: relative; width: 6px; cursor: col-resize; flex: none;
+    background: var(--panel); border-right: 1px solid var(--rule);
+    max-height: calc(100vh - 96px);
+  }
+  .drag-handle:hover, .drag-handle.is-dragging { background: var(--accent); }
+  @media (max-width: 980px) { .drag-handle { display: none; } }
+  /* The collapse control rides ON the handle: it is the one piece of furniture already
+     at the boundary being moved, so the two controls stay together instead of the
+     toggle drifting off into the toolbar. */
+  .drag-handle .grip {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 16px; height: 44px; padding: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 4px;
+    color: var(--ink-faint); font-size: 0.6rem; line-height: 1; z-index: 3;
+  }
+  .drag-handle .grip:hover { color: var(--accent); border-color: var(--accent); }
+  .drag-handle .grip:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+  /* While dragging, stop the pointer selecting text or turning into an I-beam over the
+     panels it crosses. */
+  body.is-resizing { user-select: none; cursor: col-resize; }
   .inspector { border-left: 1px solid var(--rule); padding: 1rem; }
 
   .group summary {
@@ -298,8 +330,13 @@
     <button class="btn live-btn is-live" id="btnLive">live</button>
   </div>
 
-  <div class="layout">
+  <div class="layout" id="layout">
     <aside class="sidebar" id="sidebar"></aside>
+    <div class="drag-handle" id="sidebarHandle" role="separator" aria-orientation="vertical"
+         title="Drag to resize · double-click to collapse">
+      <button type="button" class="grip" id="sidebarToggle" aria-expanded="true"
+              aria-controls="sidebar" title="Collapse the parameter panel">&#9664;</button>
+    </div>
 
     <main class="main">
       <div class="row network-row">
@@ -2105,6 +2142,92 @@ function renderSnapshotViews() {
   drawCapabilityChart();
   renderDiffusion();
   if (app.selectedInst != null) renderInspector();
+}
+
+/* ---- resizable / collapsible parameter panel ---- */
+// Dragging the divider does NOT fire a window resize, and every chart on the page sizes
+// itself from getBoundingClientRect at draw time. So the redraw has to be called
+// explicitly or the canvases keep their old width and render stretched.
+const SIDEBAR_MIN = 200, SIDEBAR_MAX = 560, SIDEBAR_DEFAULT = 280;
+const sidebarState = { width: SIDEBAR_DEFAULT, collapsed: false, raf: 0 };
+
+function applySidebarWidth() {
+  const w = sidebarState.collapsed ? 0 : sidebarState.width;
+  const layout = document.getElementById("layout");
+  layout.style.setProperty("--sidebar-w", w + "px");
+  layout.classList.toggle("sidebar-collapsed", sidebarState.collapsed);
+  const btn = document.getElementById("sidebarToggle");
+  btn.innerHTML = sidebarState.collapsed ? "&#9654;" : "&#9664;";
+  btn.setAttribute("aria-expanded", String(!sidebarState.collapsed));
+  btn.title = sidebarState.collapsed ? "Show the parameter panel" : "Collapse the parameter panel";
+  // Coalesced to one redraw per frame: a drag fires mousemove far faster than the
+  // network and four charts can be re-rendered, and queueing them all makes the drag
+  // lag behind the pointer.
+  if (!sidebarState.raf) {
+    sidebarState.raf = requestAnimationFrame(() => {
+      sidebarState.raf = 0;
+      drawNetwork();
+      refreshAll();
+    });
+  }
+}
+
+function setSidebarCollapsed(on) { sidebarState.collapsed = on; applySidebarWidth(); }
+
+{
+  const handle = document.getElementById("sidebarHandle");
+  const toggle = document.getElementById("sidebarToggle");
+  const layout = document.getElementById("layout");
+
+  handle.addEventListener("mousedown", (e) => {
+    if (e.target.closest && e.target.closest(".grip")) return;   // the button is not a drag
+    e.preventDefault();
+    handle.classList.add("is-dragging");
+    document.body.classList.add("is-resizing");
+    const startX = e.clientX;
+    const startW = sidebarState.collapsed ? 0 : sidebarState.width;
+
+    const onMove = (ev) => {
+      const raw = startW + (ev.clientX - startX);
+      // Dragging below the minimum collapses rather than jamming against a floor —
+      // pulling the panel shut is the obvious gesture and otherwise does nothing.
+      if (raw < SIDEBAR_MIN * 0.6) {
+        sidebarState.collapsed = true;
+      } else {
+        sidebarState.collapsed = false;
+        sidebarState.width = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, raw));
+      }
+      applySidebarWidth();
+    };
+    const onUp = () => {
+      handle.classList.remove("is-dragging");
+      document.body.classList.remove("is-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+
+  handle.addEventListener("dblclick", (e) => {
+    if (e.target.closest && e.target.closest(".grip")) return;
+    setSidebarCollapsed(!sidebarState.collapsed);
+  });
+  toggle.addEventListener("click", () => setSidebarCollapsed(!sidebarState.collapsed));
+  // Keyboard: the handle is a separator, so arrows resize it and Enter toggles.
+  handle.tabIndex = 0;
+  handle.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const d = e.key === "ArrowLeft" ? -16 : 16;
+      sidebarState.collapsed = false;
+      sidebarState.width = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, sidebarState.width + d));
+      applySidebarWidth();
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setSidebarCollapsed(!sidebarState.collapsed);
+    }
+  });
+  applySidebarWidth();
 }
 
 window.addEventListener("resize", () => { drawNetwork(); refreshAll(); });

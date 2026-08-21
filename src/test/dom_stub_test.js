@@ -39,7 +39,15 @@ class FakeElement {
   constructor(tag) {
     this.tagName = (tag || "div").toUpperCase();
     this._id = ""; this._value = ""; this._checked = false; this._text = ""; this._html = "";
-    this._attrs = {}; this._fieldMap = {}; this.style = {}; this.children = [];
+    this._attrs = {}; this._fieldMap = {}; this.children = [];
+    // A real CSSStyleDeclaration-ish object: the layout sets its column width through a
+    // custom property, and a bare {} silently lacks setProperty.
+    this.style = {
+      _props: {},
+      setProperty(k, v) { this._props[k] = v; },
+      getPropertyValue(k) { return this._props[k] != null ? this._props[k] : ""; },
+      removeProperty(k) { delete this._props[k]; },
+    };
     this._listeners = new Listeners();
     // A real class set, not a set of no-ops: refreshLiveHint uses toggle() and a driver
     // needs to read back whether the warning state was actually applied.
@@ -177,12 +185,24 @@ registry.get("speedRange")._value = "6";
 const documentElement = new FakeElement("html");
 documentElement.getAttribute = () => null;
 
-const document = { documentElement, getElementById: (id) => registry.get(id) || null };
+// A real body element: the resize code toggles a class on it to suppress text
+// selection while dragging.
+const body = new FakeElement("body");
+const document = { documentElement, body, getElementById: (id) => registry.get(id) || null };
 
+// window listeners are RECORDED, not discarded. A drag registers its mousemove/mouseup
+// on window and removes them on release; with a no-op addEventListener the whole
+// interaction is unreachable from a driver and would pass untested.
+const windowListeners = new Listeners();
 const window = {
   devicePixelRatio: 1,
   matchMedia: () => ({ matches: false, addEventListener: () => {} }),
-  addEventListener: () => {},
+  addEventListener: (t, f) => windowListeners.add(t, f),
+  removeEventListener: (t, f) => {
+    const a = windowListeners.map[t];
+    if (a) { const i = a.indexOf(f); if (i >= 0) a.splice(i, 1); }
+  },
+  fire: (t, e) => windowListeners.fire(t, e),
   _rafQueue: [],
   requestAnimationFrame(fn) { window._rafQueue.push(fn); return window._rafQueue.length; },
 };
@@ -334,6 +354,48 @@ if (document.getElementById("inspector").innerHTML.indexOf("Institution 0") === 
 // The published page is all most visitors see: no README, no method, no statement of
 // what the model assumes. The link out is the only route to any of that, so it is
 // asserted rather than left to survive a future edit of the header.
+// --- the parameter panel resizes and collapses ---------------------------------
+// Driven through real events. The charts size themselves from getBoundingClientRect at
+// draw time, so a resize that does not trigger a redraw leaves every canvas rendering
+// at its old width — which looks like a rendering bug, not a layout one.
+console.log("--- parameter panel resize / collapse ---");
+{
+  const layout = document.getElementById("layout");
+  const handle = document.getElementById("sidebarHandle");
+  const toggle = document.getElementById("sidebarToggle");
+  if (!layout || !handle || !toggle) throw new Error("the sidebar drag handle is missing from the page");
+  const widthNow = () => parseFloat(layout.style.getPropertyValue("--sidebar-w"));
+
+  const start = widthNow();
+  if (!(start > 0)) throw new Error("sidebar has no starting width: " + start);
+
+  // Drag right by 120px.
+  handle.dispatch("mousedown", { clientX: 400, target: handle, preventDefault: () => {} });
+  window.fire("mousemove", { clientX: 520 });
+  window.fire("mouseup", {});
+  const wider = widthNow();
+  if (wider <= start) throw new Error("dragging right did not widen the panel: " + start + " -> " + wider);
+
+  // Drag far left: past the minimum it should collapse rather than stick at a floor.
+  handle.dispatch("mousedown", { clientX: 400, target: handle, preventDefault: () => {} });
+  window.fire("mousemove", { clientX: 0 });
+  window.fire("mouseup", {});
+  if (widthNow() !== 0) throw new Error("dragging shut did not collapse the panel: " + widthNow());
+  if (toggle.getAttribute("aria-expanded") !== "false") throw new Error("collapse did not update aria-expanded");
+
+  // The toggle restores it, and to a usable width rather than to zero.
+  toggle.dispatch("click", { target: toggle });
+  if (widthNow() < 100) throw new Error("toggle reopened the panel to " + widthNow() + "px");
+  if (toggle.getAttribute("aria-expanded") !== "true") throw new Error("reopen did not update aria-expanded");
+
+  // Clamped at both ends, so a long drag cannot swallow the dashboard.
+  handle.dispatch("mousedown", { clientX: 0, target: handle, preventDefault: () => {} });
+  window.fire("mousemove", { clientX: 5000 });
+  window.fire("mouseup", {});
+  if (widthNow() > 560) throw new Error("panel exceeded its maximum width: " + widthNow());
+  console.log("OK: drags, clamps at " + widthNow() + "px, collapses and reopens");
+}
+
 console.log("--- the page links back to its source ---");
 // String slicing, not a regex: this block is spliced into the driver as a template
 // literal, which strips the backslashes a character class needs.

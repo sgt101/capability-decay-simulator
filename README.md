@@ -9,7 +9,7 @@ real expertise (`E`) behind their output over time.
 
 You will need to download this repository and then you do the following:
 
-- See src/simulator.html for the interactive visualizer.
+- See [simulator.html](https://sgt101.github.io/capability-decay-simulator/) for the interactive visualizer.
 
 - Run the experiments "src/run_experiments.sh --workers 14"
 
@@ -54,9 +54,17 @@ An average agent is maintained in the population for 480 time ticks simultating 
 
 ### Graph
 
+Two graphs were developed to represent the overal system of insitutions.
+
+A BA-Graph (Albert and Barabasi 2002) is generated synthetically and agents are allocated to nodes according the the mechanics of generation.
+
+A data driven graph is created using the data in [data\world-model.json](data\world-model.json). The data in this graph is a result of estimates and internet scrapes with AI; it should in no way be treated as canonical, but instead is an attempt to describe the modern financial system.
+
 ## Tools
 
-Two
+Two types of tool are provided to explore and use the simuation.
+
+- [src\similator.html](src\simulator.html) : this is an interactive html page that you can open as a file on your file system when you download the repo or open at [[sgt101.github.io/capability-decay-simulator](https://sgt101.github.io/capability-decay-simulator/)
 
 [^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinking and scholarship behind this work was developed. Thanks folks!
 
@@ -65,5 +73,7 @@ However, all mistakes, errors, and ommissions are attributable to the author dir
 ## References
 
 Fabrizio Dell’Acqua, , Edward McFowland III, , Ethan Mollick, et al. ‘Navigating the Jagged Technological Frontier: Field Experimental Evidence of the Effects of Artificial Intelligence on Knowledge Worker Productivity and Quality’. Organization Science, n.d. Accessed 20 August 2026. https://pubsonline.informs.org/doi/abs/10.1287/orsc.2025.21838.
+
+Albert, Reka, and Albert-Laszlo Barabasi. ‘Statistical Mechanics of Complex Networks’. Reviews of Modern Physics 74, no. 1 (2002): 47–97. https://doi.org/10.1103/RevModPhys.74.47.
 
 David Stromberg, Victor Lei, and Yanhui Wu. ‘The Generative AI Learning Penalty: Evidence from Chinese Secondary Education by David Stromberg, Victor Lei, Yanhui Wu :: SSRN’. Accessed 20 August 2026. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6868618.
