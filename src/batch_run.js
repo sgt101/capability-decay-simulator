@@ -44,6 +44,11 @@ const { initSim, tick, mulberry32, DEFAULT_PARAMS } = require(path.join(__dirnam
 const paths = require("./paths.js");
 
 const METRIC_KEYS = ["meanE", "p10E", "p50E", "p90E", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
+  // Capability, in threshold-expert equivalents, with and without the AI multiplier.
+  // Added 2026-08 with the capability model; without them the batch runner recorded
+  // nothing about it at all, so any sweep of an AI parameter that acts only on
+  // capability (frontierBreadth) would have written 21 identical columns.
+  "systemCapability", "systemCapabilityHuman",
   // occupancy diagnostics — asymmetric mobility drains low-market-index
   // institutions by design, and a run where these get small is suspect
   "minOccupancy", "emptyInstitutions", "underOccupiedInstitutions"];
@@ -111,9 +116,15 @@ function buildRow(sim, job, entry) {
 }
 
 /* ============================== worker entry point ============================== */
+// A worker is a loop, not a batch: it asks for a job, runs it, posts the rows back, and
+// asks again. The main thread hands out the next job each time, so a slow core simply
+// takes fewer jobs instead of holding up the barrier at the end.
 if (!isMainThread) {
-  const rows = workerData.jobs.flatMap(runJob);
-  parentPort.postMessage(rows);
+  parentPort.on("message", (msg) => {
+    if (msg === null) { parentPort.close(); return; }   // queue drained
+    parentPort.postMessage({ rows: runJob(msg) });
+  });
+  parentPort.postMessage({ ready: true });              // ask for the first job
 } else {
   main().catch((err) => { console.error("[batch] " + err.message); process.exit(1); });
 }
@@ -276,8 +287,15 @@ function summarize(rows) {
   return out;
 }
 
-// meanC was dropped with the observed-capability channel in 2026-08.
-const SHORTFALL_KEYS = ["meanE", "shareExpert"];
+// meanC was dropped with the observed-capability channel in 2026-08. systemCapability is
+// not its return: that one was a per-person observed score, this is the field's worth in
+// threshold-expert equivalents, so baseline - treatment reads directly as "experts' worth
+// of capability the AI cost us" — a subtraction that means something in these units.
+// systemCapabilityHuman is paired too, for its TREATMENT column specifically: that is
+// what the field is worth with the AI multiplier taken back off, i.e. what AI has done
+// to the humans themselves. Its baseline column is redundant by construction (the no-AI
+// arm has no multiplier, so baseline human == baseline total) and costs one column.
+const SHORTFALL_KEYS = ["meanE", "shareExpert", "systemCapability", "systemCapabilityHuman"];
 
 function computeShortfall(rows) {
   const byPair = new Map(); // "comboIndex|replicate|t" -> { baseline, treatment }
@@ -305,26 +323,51 @@ function computeShortfall(rows) {
 }
 
 /* ============================== parallel execution ============================== */
-function chunkArray(arr, n) {
-  const chunks = Array.from({ length: n }, () => []);
-  arr.forEach((item, i) => chunks[i % n].push(item));
-  return chunks;
-}
-
+// DYNAMIC dispatch. This used to split the job list up front — chunk i getting every
+// n'th job — which is only fair when every worker runs at the same speed.
+//
+// On a machine with heterogeneous cores it is not. Apple Silicon's performance and
+// efficiency cores differ several-fold, so the workers that land on efficiency cores
+// receive an equal share of jobs and take multiples of the time to finish them: the
+// fast workers drain their chunk, exit, and sit idle while a few slow ones grind
+// through the tail. Measured as machine utilisation that reads as a persistent 70%
+// rather than a visible stall, because the shortfall is spread across the whole run.
+//
+// Pulling instead of pushing removes the assumption entirely: a core that is a third
+// as fast takes a third as many jobs, and every worker finishes within one job of the
+// others whatever hardware it landed on. It also costs nothing on homogeneous cores —
+// the same total messages, one job at a time instead of one list up front.
 function runWithWorkers(jobs, n) {
-  const chunks = chunkArray(jobs, n).filter((c) => c.length);
-  let done = 0;
-  const promises = chunks.map((chunk, idx) => new Promise((resolve, reject) => {
-    const worker = new Worker(__filename, { workerData: { jobs: chunk } });
-    worker.on("message", (rows) => {
-      done++;
-      console.error(`[batch] worker ${idx + 1}/${chunks.length} finished (${done}/${chunks.length})`);
-      resolve(rows);
-    });
-    worker.on("error", reject);
-    worker.on("exit", (code) => { if (code !== 0) reject(new Error(`worker ${idx} exited with code ${code}`)); });
-  }));
-  return Promise.all(promises).then((arrs) => arrs.flat());
+  const workerCount = Math.min(n, jobs.length);
+  return new Promise((resolve, reject) => {
+    const rows = [];
+    let next = 0, finished = 0, live = 0;
+    const logEvery = Math.max(1, Math.floor(jobs.length / 20));
+
+    for (let i = 0; i < workerCount; i++) {
+      const worker = new Worker(__filename);
+      live++;
+      worker.on("message", (msg) => {
+        if (msg.rows) {
+          // Concatenated rather than pushed one row at a time: a job yields one row per
+          // recordAt entry, and spreading thousands of them through apply() blows the
+          // argument-count limit on a long recordAt.
+          for (let k = 0; k < msg.rows.length; k++) rows.push(msg.rows[k]);
+          finished++;
+          if (finished % logEvery === 0 || finished === jobs.length) {
+            console.error(`[batch] ${finished}/${jobs.length} runs`);
+          }
+        }
+        if (next < jobs.length) worker.postMessage(jobs[next++]);
+        else worker.postMessage(null);              // nothing left: tell it to close
+      });
+      worker.on("error", reject);
+      worker.on("exit", (code) => {
+        if (code !== 0) return reject(new Error(`worker exited with code ${code}`));
+        if (--live === 0) resolve(rows);
+      });
+    }
+  });
 }
 
 function runSequential(jobs) {

@@ -36,16 +36,34 @@ This simulation models how AI might impact the development and transmission of e
 
 ## Model
 
-Imagine a network of financial services insitutions where expertise propagates across the network mediated by insitutional sector similarity and city/hub residence.
+Imagine a network of financial services insitutions within which agents acquire expertise from each other and individually over time. Agents and expertise propagate across the network mediated by insitutional sector similarity and city/hub residence. Insitutional capability is determined by the level of AI that is available in the system and the expertise and number of agents that are affiliated to an insitution.
 
-Agents within the network use AI (the insitutional capability created) in line with the (plausible, peer reviewed, but far from definitive) theory of "The Jagged Frontier..." [Dell'Acqua et-al 2023/2026]. Simultaneously individual e
+### Dynamics
+
+Agents within the network use AI (the insitutional capability created) in line with the (plausible, peer reviewed, but far from definitive) theory of "The Jagged Frontier..." [Dell'Acqua et-al 2023/2026]. In the absence of AI agents gradually acquire experise up to their intrinsic level of capability, but are accelerated or constrained by the expertise around them.
 
 The basic idea of the model is that expertise grows in the presence of other experts, so in each insitution the most senior top_n staff set an expertise target which all other agents grow towards at an accelerated rate (β).
 
-Once agents pass the expertise ceiling in their insitution they can continue to grow at an ambient rate (μ_p). However there is a global decay function so agents that
+Once agents pass the expertise ceiling in their insitution they can continue to grow at an ambient rate (μ_p). However there is a global decay function so agents that are at low expertise nodes experience slow decay (δ).
 
-Agents are rated for a transfer out of their insitution vs a pressure metric and a prestige metric. The idea being that agents are faced with competition internally and can see that there might be an opportunity to go to another presegious place where there is less expertise and less pressure. Essentially this is a job market dynamic.
+Agents are rated for a transfer out of their insitution vs a pressure metric and a prestige metric. The idea being that agents are faced with competition internally and can see that there might be an opportunity to go to another presegious place where there is less expertise and less pressure. Essentially this is a job market dynamic and distributes high expertise accross the network over time.
 
-[^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinkingn and scholarship behind this work was developed. Thanks folks!
+In the presence of AI (λ) a mechanism, in line with the effects reported in Stromberg et-al 2026 and others, is used to differentially surpress or amplify learning speed for agents in the different populations with expertise below (γ_below) or above (γ_above) the level of AI simulated. The idea is that agents with different expertise levels would get different results by using an AI that is less or more capable than they are, in particular that an agent which is less capable may experience fewer opportunities for learning because they simply use an AI rather than expand their knowledge. The simulator does not impose this view, however, instead the parameter is represented by a value -1 to +1 which can be selected. Under the hood this is actually selecting over a co-efficient from 0.0 (complete learning surpression) to 2.0 (learning amplifed 2x speed).
+
+An average agent is maintained in the population for 480 time ticks simultating a 40 year working life. Every year insitutions recieve an intake of new agents in proportion to their scale. These agents are introduced at a mean expertise level of α_E, which is typically set low simulating the entry of naive finance graduates to the workforce. A parameter c_learning_cap is used to surpress learning early in a career ensuring that a certain number of years is required to breach the insitutional expertise threshold.
+
+### Graph
+
+## Tools
+
+Two
+
+[^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinking and scholarship behind this work was developed. Thanks folks!
 
 However, all mistakes, errors, and ommissions are attributable to the author directly and no collaborator should be considered to bear any responsibility of any kind for the quality and provenance of the work presented.
+
+## References
+
+Fabrizio Dell’Acqua, , Edward McFowland III, , Ethan Mollick, et al. ‘Navigating the Jagged Technological Frontier: Field Experimental Evidence of the Effects of Artificial Intelligence on Knowledge Worker Productivity and Quality’. Organization Science, n.d. Accessed 20 August 2026. https://pubsonline.informs.org/doi/abs/10.1287/orsc.2025.21838.
+
+David Stromberg, Victor Lei, and Yanhui Wu. ‘The Generative AI Learning Penalty: Evidence from Chinese Secondary Education by David Stromberg, Victor Lei, Yanhui Wu :: SSRN’. Accessed 20 August 2026. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6868618.

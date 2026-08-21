@@ -136,6 +136,12 @@ results/*
 # citability, not about it being a source of truth.
 !results/steady_state/
 report.html
+structure_report.html
+# The same template with a different metric set injected, built by
+#   node src/build_report.js --metrics expertise   --out graph-results-expertise.html
+#   node src/build_report.js --metrics capability  --out graph-results-capability.html
+# ~53 MB each and regenerated from results/, so they are output, not source.
+graph-results-*.html
 
 # Archived result sets now live under results/archive/, covered by the rule above.
 # These two patterns are kept for anything restored from an old checkout into the

@@ -5,8 +5,24 @@ const path = require("path");
 const vm = require("vm");
 
 const registry = new Map();
+
+// Text the report draws, with the font and x/y it was drawn at. Recorded because an
+// overflowing cell label is invisible to a no-op canvas: a nine-character number
+// rendered across four characters of cell looks exactly like one that fits.
+const drawnText = [];
 const CTX_STUB = new Proxy({}, {
-  get(t, p) { return p in t ? t[p] : function () {}; },
+  get(t, p) {
+    if (p in t) return t[p];
+    // A real width, not a no-op: the heatmap now measures a label before drawing it,
+    // and a stub returning undefined would throw on .width. ~0.6em is the advance of
+    // the monospace stack the template asks for.
+    if (p === "measureText") {
+      const px = parseFloat(t.font) || 11;
+      return (str) => ({ width: String(str).length * px * 0.6 });
+    }
+    if (p === "fillText") return (str, x, y) => drawnText.push({ text: String(str), x, y, font: t.font });
+    return function () {};
+  },
   set(t, p, v) { t[p] = v; return true; },
 });
 
@@ -104,6 +120,78 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
   }
   if (!heatmapCaption.innerHTML.includes(PARAM_EXPLAIN[exp5.xKey]) || !heatmapCaption.innerHTML.includes(PARAM_EXPLAIN[exp5.yKey])) {
     throw new Error("caption is missing the intuitive explanation text for a varying axis");
+  }
+
+  // --- cell labels must fit inside their cells, for EVERY metric ---------------
+  // The reported bug: capability metrics run to six figures, and a fixed-width
+  // formatter rendered "175217.35" across a 30px cell until the grid was unreadable.
+  // Every metric is swept here, not just the default one, because the failure only
+  // appears on the ones whose magnitudes are large.
+  {
+    const heatCanvas = document.getElementById("heatmapCanvas");
+    // Mirrors drawHeatmap's own geometry. Scoped to the PLOT AREA on purpose: axis tick
+    // labels are monospace too, and they sit outside it — a y-axis label is allowed to
+    // be wider than a column, a label inside a cell is not.
+    const PAD = { l: 90, r: 16, t: 10, b: 46 };
+    let checked = 0, worst = null;
+    DATA.metrics.forEach((m) => {
+      app.metricKey = m.key;
+      drawnText.length = 0;
+      drawHeatmap();
+      const exp = currentExperiment();
+      const plotW = heatCanvas.width - PAD.l - PAD.r, plotH = heatCanvas.height - PAD.t - PAD.b;
+      const width = plotW / exp.xValues.length;
+      drawnText.forEach((d) => {
+        const inPlot = d.x > PAD.l && d.x < PAD.l + plotW && d.y > PAD.t && d.y < PAD.t + plotH;
+        if (!inPlot || !/monospace/.test(d.font || "")) return;
+        const px = parseFloat(d.font) || 11;
+        if (px > 11) throw new Error("cell label font grew past 11px: " + d.font);
+        const w = d.text.length * px * 0.6;
+        checked++;
+        if (w > width - 4 && (!worst || w > worst.w)) worst = { w, text: d.text, metric: m.key, cell: width };
+      });
+    });
+    // No backticks anywhere in this block: it is spliced into the driver as a template
+    // literal, so one would end the string early.
+    if (worst) {
+      throw new Error("cell label " + JSON.stringify(worst.text) + " on " + worst.metric
+        + " needs " + worst.w.toFixed(0) + "px in a " + worst.cell.toFixed(0)
+        + "px cell — it will overspill its neighbours");
+    }
+    if (checked < 50) throw new Error("cell-label check saw only " + checked + " labels — did the heatmap draw?");
+    console.log("OK: " + checked + " cell labels across " + DATA.metrics.length + " metrics all fit their cells");
+  }
+
+  // --- what the report opens on, and what it says the axis means ----------------
+  // Both of these mislead silently rather than break: the page renders perfectly
+  // either way and simply shows, or claims, the wrong thing.
+  {
+    const exp0 = DATA.experiments[0];
+    if (app.tickIndex !== exp0.ticks.length - 1) {
+      throw new Error("report opens on tick index " + app.tickIndex + " (t=" + exp0.ticks[app.tickIndex]
+        + ") instead of the settled last tick (t=" + exp0.ticks[exp0.ticks.length - 1]
+        + ") — early ticks can show the opposite sign to the result");
+    }
+    // Nothing in this report is measured against t=0: every shortfall is the no-AI arm
+    // minus the AI arm at the same tick. An axis title claiming otherwise sends the
+    // reader to a comparison that was never computed.
+    DATA.metrics.forEach((m) => {
+      const title = trajAxisTitle(m.key);
+      if (/starting state|vs\.? start/i.test(title)) {
+        throw new Error("trajectory axis for " + m.key + " claims a comparison against the starting state: " + title);
+      }
+      if (/_shortfall$|LostFrac$/.test(m.key)) {
+        // First character lands at the BOTTOM of the rotated axis and toY puts larger
+        // values higher, so the minus must come first or the cue is inverted.
+        if (title.indexOf("\u2212") === -1 || title.indexOf("+") === -1) {
+          throw new Error("shortfall axis title has no sign cue: " + title);
+        }
+        if (title.indexOf("\u2212") > title.indexOf("+")) {
+          throw new Error("shortfall axis sign cue is inverted (+ would sit at the bottom): " + title);
+        }
+      }
+    });
+    console.log("OK: opens on t=" + exp0.ticks[app.tickIndex] + "; axis titles describe the paired no-AI comparison");
   }
   const otherKeys = Object.keys(exp5.fixed).filter((k) => k !== exp5.xKey && k !== exp5.yKey);
   if (otherKeys.length < 10) throw new Error("expected many other fixed parameters to be listed, got " + otherKeys.length);
@@ -314,6 +402,7 @@ console.log("\\nALL REPORT FLOWS COMPLETED WITHOUT THROWING");
 const sandbox = {
   document, window, MutationObserver, getComputedStyle,
   console, Math, Set, Array, Object, JSON, parseInt, parseFloat, isFinite,
+  drawnText,
 };
 vm.createContext(sandbox);
 try {

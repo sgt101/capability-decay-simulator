@@ -620,6 +620,8 @@
     turnoverRate: "r", learningRateSpread: "σ_L", transferRate: "β", decayRate: "δ",
     aiDampeningBelow: "γ_below", aiDampeningAbove: "γ_above", aiLevelFraction: "λ",
     expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
+    // Structure set (generate_structure_experiments.js).
+    M: "M", graphAttachment: "m", frontierBreadth: "b",
   };
   // These two are stored (in every config/CSV) as a raw multiplier on the learning
   // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
@@ -656,6 +658,24 @@
     if (a !== 0 && a < 0.001) return v.toExponential(1);
     if (a < 1) return v.toFixed(a < 0.01 ? 4 : 3).replace(/0+$/, "").replace(/\.$/, "");
     return v.toFixed(2);
+  }
+
+  // fmtNum is right where there is room — a tooltip, a trajectory axis — and wrong
+  // inside a heatmap cell, which can be 25px across. The metrics on offer now span
+  // 1e-4 to 1.75e5, and fmtNum renders a capability shortfall as "175217.35": nine
+  // characters into four characters of space, spilling across its neighbours until the
+  // grid is unreadable. This caps every label at five characters at any magnitude.
+  // Precision is not lost, only relocated — hover still reports the exact value.
+  function fmtCell(v) {
+    if (v == null) return "—";
+    const a = Math.abs(v);
+    if (a === 0) return "0";
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+    if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";
+    if (a >= 100) return v.toFixed(0);
+    if (a >= 1) return v.toFixed(2);
+    if (a >= 0.01) return v.toFixed(3);
+    return v.toExponential(0);
   }
   // Decimal places are chosen PER PARAMETER — once, from every value that
   // parameter ever takes anywhere in the report — and then used for every label
@@ -734,9 +754,18 @@
     decayRate: "how quickly a human's expertise moves toward their institution's average, for humans at or above that average.",
     aiDampeningBelow: "how much AI use reduces learning, for humans below the AI's reference level.",
     aiDampeningAbove: "how much AI use reduces learning, for humans at or above the AI's reference level.",
-    aiLevelFraction: "the AI's reference level, expressed as a fraction of the starting population's median expertise.",
+    // Corrected: this is a fraction of the single HIGHEST starting expertise, not the
+    // median. The distinction matters because that maximum is 1.0 for any realistic
+    // population size (problems.md P17), which makes lambda an absolute threshold on
+    // the expertise scale rather than anything relative to where the field sits.
+    aiLevelFraction: "the AI's reference level, as a fraction of the highest expertise in the starting population.",
     expertiseMean: "the average starting expertise of the population at the beginning of the simulation.",
     entrantExpertiseMean: "the average starting expertise of new entrants who replace departing humans during the simulation.",
+    // Structure set: the shape of the institutional network rather than the behaviour
+    // of the people in it.
+    M: "how many institutions the population is divided between — with N fixed, more institutions means fewer people in each.",
+    graphAttachment: "how many existing institutions each new one connects to as the network is built, which sets how densely connected it ends up.",
+    frontierBreadth: "how much of the work falls inside the AI's competence, derived from the AI's level: lower widens that reach, higher narrows it.",
   };
 
   function buildFigureCaptions() {
@@ -758,7 +787,13 @@
   const app = {
     expIndex: 0,
     metricKey: DATA.metrics[0].key,
-    tickIndex: 0,
+    // The LAST recorded tick, not the first. Clicking an experiment already jumped to
+    // the end; only the initial load did not, so the report opened on t=12 — one year
+    // into a 120-year run, before anything has happened. Measured on the structure set,
+    // that view showed capabilityLostFrac as uniformly NEGATIVE across every cell (AI
+    // helping everywhere, range -0.13..-0.08) where the settled answer runs to +1.00.
+    // An opening screen that says the opposite of the result is not a neutral default.
+    tickIndex: DATA.experiments[0].ticks.length - 1,
     viewMode: "heatmap", // "heatmap" | "table" | "trajectories"
     trajFixAxis: "x", // which DISPLAY axis is held fixed per panel; the OTHER becomes the colored line fan
     trajValueA: null,
@@ -884,8 +919,8 @@
   function renderLegend() {
     const domain = DATA.domains[app.metricKey];
     const [min, max] = domain;
-    document.getElementById("legendMin").textContent = fmtNum(min);
-    document.getElementById("legendMax").textContent = fmtNum(max);
+    document.getElementById("legendMin").textContent = fmtCell(min);
+    document.getElementById("legendMax").textContent = fmtCell(max);
     const stops = [];
     const N = 20;
     for (let i = 0; i <= N; i++) {
@@ -944,6 +979,17 @@
     return cell;
   }
 
+  // What the y axis of a trajectory panel actually measures. Metric-dependent, because
+  // a shortfall is a difference against the paired no-AI run while a baseline or a
+  // leverage is a level — one label cannot honestly describe both.
+  function trajAxisTitle(key) {
+    if (/_shortfall$|LostFrac$/.test(key)) {
+      return "\u2212 AI helped \u00b7 against the same run without AI \u00b7 AI hurt +";
+    }
+    const m = DATA.metrics.find((x) => x.key === key);
+    return m ? m.label : key;
+  }
+
   function drawHeatmap() {
     const exp = currentExperiment();
     const canvas = document.getElementById("heatmapCanvas");
@@ -965,13 +1011,13 @@
     const domain = DATA.domains[app.metricKey];
 
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
 
-    // A grid can be anywhere from 5x5 to 21x21 depending on the experiment — per-cell
-    // numeric labels read fine at the former and turn to illegible noise at the
-    // latter, so they're dropped once there's not roughly enough room for them
-    // (hover still gives the exact value either way).
-    const showCellLabels = cw >= 30 && ch >= 18;
+    // A grid can be anywhere from 5x5 to 21x21 depending on the experiment, so the
+    // label has to shrink with the cell rather than sit at a fixed 11px inside a 25px
+    // box. Floored at 8px: below that it is texture, not text.
+    const cellFont = Math.max(8, Math.min(11, Math.floor(Math.min(ch * 0.52, cw * 0.30))));
+    ctx.font = cellFont + "px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const showCellLabels = cw >= 22 && ch >= 14;
 
     for (let xi = 0; xi < nx; xi++) {
       for (let yi = 0; yi < ny; yi++) {
@@ -987,8 +1033,16 @@
           ctx.stroke();
         }
         if (showCellLabels && v != null) {
-          ctx.fillStyle = readableTextOn(v, domain);
-          ctx.fillText(fmtNum(v), cx + cw / 2, cy + ch / 2);
+          const label = fmtCell(v);
+          // MEASURED, not assumed from the cell width. The old gate guessed that a
+          // 30px cell fits any label, which held while every metric lived in [-1, 1]
+          // and stopped holding the moment capability arrived. A label that would
+          // still overflow its own cell is dropped rather than drawn over its
+          // neighbours.
+          if (ctx.measureText(label).width <= cw - 4) {
+            ctx.fillStyle = readableTextOn(v, domain);
+            ctx.fillText(label, cx + cw / 2, cy + ch / 2);
+          }
         }
       }
     }
@@ -1235,15 +1289,22 @@
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     [t0, Math.round((t0 + t1) / 2), t1].forEach((t) => ctx.fillText(String(t), toX(t), pad.t + plotH + 6));
 
-    // y-axis title, rotated — first character of the string ends up at the bottom of
-    // the axis, last character at the top, so tailing it with -/+ reads as a sign cue
-    // (bottom = negative = below starting state, top = positive = above it)
+    // y-axis title, rotated. The first character of the string ends up at the BOTTOM of
+    // the axis and the last at the top, and toY puts larger values higher — so the sign
+    // cue has to run "−" first, "+" last.
+    //
+    // This previously read "+ Amount of reduction in expertise in system vs. starting
+    // state -", which was wrong twice over. It named a comparison the report never
+    // makes — every shortfall here is the no-AI arm minus the AI arm at the SAME tick,
+    // a paired counterfactual, and nothing is measured against t=0 — and it put "+" at
+    // the bottom, inverting the very cue it existed to give. It also said "expertise"
+    // for whichever metric was selected, which now includes capability and leverage.
     ctx.font = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
     ctx.save();
     ctx.translate(14, pad.t + plotH / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText("+ Amount of reduction in expertise in system vs. starting state -", 0, 0);
+    ctx.fillText(trajAxisTitle(metricKey), 0, 0);
     ctx.restore();
 
     // zero-reference line for shortfall metrics — deliberately loud (solid, thicker,
