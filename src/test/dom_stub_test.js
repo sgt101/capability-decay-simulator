@@ -330,6 +330,32 @@ if (document.getElementById("inspector").innerHTML.indexOf("Institution 0") === 
 // The reported bug: y-axis numbers clipped off the left edge. Invisible here until now,
 // because a no-op canvas draws a label at x = -2 as happily as at x = 40. Right-aligned
 // text ends at x and extends LEFT by its width, so x - width is its left edge.
+// --- the way back to the project ------------------------------------------------
+// The published page is all most visitors see: no README, no method, no statement of
+// what the model assumes. The link out is the only route to any of that, so it is
+// asserted rather than left to survive a future edit of the header.
+console.log("--- the page links back to its source ---");
+// String slicing, not a regex: this block is spliced into the driver as a template
+// literal, which strips the backslashes a character class needs.
+{
+  const marker = '<a class="repo-link" href="';
+  const at = PAGE_HTML.indexOf(marker);
+  if (at === -1) throw new Error("simulator.html has no link back to the project repository");
+  const rest = PAGE_HTML.slice(at + marker.length);
+  const href = rest.slice(0, rest.indexOf('"'));
+  const attrs = rest.slice(0, rest.indexOf(">"));
+  if (href.indexOf("https://github.com/") !== 0 || href.split("/").length !== 5) {
+    throw new Error("repo link is not a GitHub project URL: " + href);
+  }
+  // There is no save here, so navigating away loses the run in progress; and a _blank
+  // without noopener hands the opened tab a handle on this one.
+  if (attrs.indexOf('target="_blank"') === -1) {
+    throw new Error("repo link would navigate away and discard the run in progress");
+  }
+  if (attrs.indexOf("noopener") === -1) throw new Error("repo link opens a new tab without rel=noopener");
+  console.log("OK: links to " + href + ", new tab, noopener");
+}
+
 console.log("--- axis labels fit their gutters ---");
 {
   drawnText.length = 0;
@@ -1103,6 +1129,8 @@ const sandbox = {
   parseInt, parseFloat, isFinite, JSON,
   FileReader: FakeFileReader, Error, Number,
   drawnText,
+  // The page's own markup, for checks about what it CONTAINS rather than what it does.
+  PAGE_HTML: pageHTML,
   // Real project data — the browser path is exercised against the same files the
   // batch runner uses, not a synthetic fixture.
   WORLD_JSON_TEXT: fs.readFileSync(paths.data("world-model.json"), "utf8"),
