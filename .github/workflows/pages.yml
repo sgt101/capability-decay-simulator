@@ -33,8 +33,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5 on both, not v4: the runner deprecation notice is about the runtime each
+      # ACTION itself declares (`using: node20` in its action.yml), which is a separate
+      # thing from node-version below — that one only picks the Node our own scripts get,
+      # and was already 24 while the warning still fired. v5 is the first major of each
+      # that declares node24.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
 

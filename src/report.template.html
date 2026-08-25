@@ -305,6 +305,50 @@
     color: var(--ink-muted);
   }
 
+  /* Panel statistics strip — grid mean/range, the noise floor, and the signal-to-noise
+     that says whether the surface below is worth reading at all. Sits between the title
+     and the canvas deliberately: after the reader knows what they are looking at, and
+     before they start reading colours off it. */
+  .stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.15rem 1.1rem;
+    margin: 0 0 0.7rem;
+    padding: 0.45rem 0.6rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-family: ui-monospace, monospace;
+    color: var(--ink-muted);
+  }
+  .stats-strip b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .stats-strip .sn-badge {
+    margin-left: auto;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  /* Three bands, not a gradient: the reader needs a verdict, not a percentile. Under 2
+     the sweep's spread does not clear its own seed noise; over 6 it is unambiguous. */
+  .stats-strip .sn-flat   { background: rgba(190, 60, 60, 0.16);  color: #c0392b; }
+  .stats-strip .sn-weak   { background: rgba(200, 150, 40, 0.18); color: #9a7415; }
+  .stats-strip .sn-strong { background: rgba(60, 150, 90, 0.16);  color: #2e7d4f; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .stats-strip .sn-flat   { color: #f08a80; }
+    :root:not([data-theme="light"]) .stats-strip .sn-weak   { color: #e0be6a; }
+    :root:not([data-theme="light"]) .stats-strip .sn-strong { color: #7fd4a2; }
+  }
+  :root[data-theme="dark"] .stats-strip .sn-flat   { color: #f08a80; }
+  :root[data-theme="dark"] .stats-strip .sn-weak   { color: #e0be6a; }
+  :root[data-theme="dark"] .stats-strip .sn-strong { color: #7fd4a2; }
+
   .heatmap-wrap {
     position: relative;
   }
@@ -579,6 +623,7 @@
           <h2 id="heatmapTitle">—</h2>
           <span class="sub" id="heatmapSub"></span>
         </div>
+        <div class="stats-strip" id="statsStrip"></div>
         <div class="heatmap-wrap" id="heatmapWrap">
           <canvas id="heatmapCanvas"></canvas>
           <div class="table-scroll" id="tableWrap" style="display: none"></div>
@@ -1015,6 +1060,75 @@
     document.getElementById("legendRamp").style.background = "linear-gradient(90deg," + stops.join(",") + ")";
     const zeroPct = max > min ? clip01((0 - min) / (max - min)) * 100 : 50;
     document.getElementById("legendZero").style.left = zeroPct + "%";
+  }
+
+  /* ---------- panel statistics ---------- */
+  // Six numbers about the grid currently on screen, recomputed per experiment, per
+  // metric and per tick from the `stats` block build_report.js emits. See gridStats()
+  // there for how each is defined and why the noise variance is subtracted out of the
+  // signal SD.
+  //
+  // The badge is the point of the strip. A reader scanning twenty panels cannot hold a
+  // noise floor in their head and compare it against a range; "no dynamics above noise"
+  // is the same judgement made for them, and it is the judgement that stops a flat
+  // surface being read as a finding because the colour ramp made it look like one.
+  // fmtCell drops to exponential below 0.01, which is where every number in this strip
+  // lives on the expertise metrics — "±8e-3" beside "-0.078" makes two quantities of
+  // the same size look unrelated. Three significant figures in plain decimal down to
+  // 1e-4, so the noise floor and the range can be compared by eye.
+  function fmtStat(v) {
+    if (v == null || !isFinite(v)) return "—";
+    const a = Math.abs(v);
+    if (a === 0) return "0";
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+    if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";
+    if (a >= 100) return v.toFixed(0);
+    if (a >= 1) return v.toFixed(2);
+    // parseFloat round-trips off the trailing zeros toPrecision leaves behind:
+    // "0.00834", not "0.008340", so the strip stays scannable.
+    if (a >= 1e-4) return String(parseFloat(v.toPrecision(3)));
+    return v.toExponential(1);
+  }
+
+  function renderStatsStrip() {
+    const el = document.getElementById("statsStrip");
+    if (!el) return;
+    const exp = currentExperiment();
+    const st = exp.stats && exp.stats[app.metricKey];
+    const i = app.tickIndex;
+    if (!st || st.mean[i] == null) { el.style.display = "none"; return; }
+    el.style.display = "flex";
+
+    const mean = st.mean[i], lo = st.min[i], hi = st.max[i];
+    const sem = st.sem[i], sd = st.sd[i], sn = st.sn[i];
+    const reps = exp.reps != null ? exp.reps : null;
+
+    const parts = [
+      'mean <b>' + fmtStat(mean) + "</b>",
+      "range <b>" + fmtStat(lo) + " … " + fmtStat(hi) + "</b>",
+    ];
+    // sem null means one replicate per cell — the noise floor was never measured, which
+    // is a different statement from "the noise is zero" and has to read as one.
+    if (sem == null) {
+      parts.push('noise <b title="one replicate per cell — no repeat runs to measure seed scatter against">not measured</b>');
+      parts.push("spread <b>" + fmtStat(sd) + "</b>");
+    } else {
+      parts.push("noise <b>±" + fmtStat(2 * sem) + "</b>"
+        + (reps ? ' <span title="standard error of a single cell, at 2σ, pooled over the grid">(2σ, '
+          + reps + " reps)</span>" : ""));
+      parts.push('signal SD <b title="spread of cell means with the replicate noise variance removed">'
+        + fmtStat(sd) + "</b>");
+    }
+    let badge = "";
+    if (sn != null) {
+      const cls = sn < 2 ? "sn-flat" : sn < 6 ? "sn-weak" : "sn-strong";
+      const text = sn < 2 ? "no dynamics above noise" : sn < 6 ? "weak signal" : "clear signal";
+      badge = '<span class="sn-badge ' + cls + '" title="signal SD divided by the single-cell standard error">'
+        + "S/N " + sn.toFixed(1) + " · " + text + "</span>";
+    }
+    // One <span> per figure so the strip's flex gap does the spacing and the whole row
+    // wraps cleanly on a narrow viewport instead of breaking mid-number.
+    el.innerHTML = parts.map((p) => "<span>" + p + "</span>").join("") + badge;
   }
 
   /* ---------- heatmap ---------- */
@@ -1621,6 +1735,7 @@
       const isTable = app.viewMode === "table";
       document.getElementById("heatmapCanvas").style.display = isTable ? "none" : "block";
       document.getElementById("tableWrap").style.display = isTable ? "block" : "none";
+      renderStatsStrip();
       if (isTable) renderTable(); else drawHeatmap();
       renderLegend();
     } else {

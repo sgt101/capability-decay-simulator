@@ -163,6 +163,85 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 
 const degenerate = [];
 
+// --- panel-level statistics -------------------------------------------------------
+//
+// One heatmap's worth of numbers, per metric and per tick, so a reader can tell at a
+// glance whether the surface in front of them carries any signal. Six figures:
+//
+//   mean/min/max  the grid's cell means — plain description of what is on screen.
+//   sem           the NOISE FLOOR: the standard error of a SINGLE cell, pooled across
+//                 the grid. Shown as ±2·sem. This is what a cell's colour is worth.
+//   sd            the SIGNAL: the spread of cell means with the noise variance
+//                 subtracted off, sqrt(max(0, var(cellMeans) - mean(se^2))). Without
+//                 that subtraction a flat panel reads ~40% more structured than it is,
+//                 because seed scatter between cells is counted as parameter response.
+//   sn            sd/sem. The number that actually separates a live panel from a dead
+//                 one; on this project's sets it ranges from 0.6 to 57.
+//
+// NOT a confidence interval on the mean, and deliberately not presented as one: `sd`
+// describes how much the surface varies across the sweep, `sem` how much one cell
+// wobbles between seeds. Conflating them into a single ±2SD band around the mean is
+// exactly the misreading these six numbers exist to prevent.
+//
+// Every figure is computed on the DISPLAYED scale. For a `log` metric the cell value on
+// screen is log10(mean over replicates), so the per-cell standard error is carried
+// through the same transform by the delta method — se/(mean·ln10) — rather than being
+// reported in the untransformed units the reader is not looking at.
+function gridStats(sum, sq, seen, size, NT, def) {
+  const LN10 = Math.LN10;
+  const out = { mean: [], min: [], max: [], sem: [], sd: [], sn: [] };
+  const nCells = size / NT;
+  for (let ti = 0; ti < NT; ti++) {
+    let n = 0, s = 0, ss = 0, lo = Infinity, hi = -Infinity, se2Sum = 0, se2N = 0;
+    for (let c = 0; c < nCells; c++) {
+      const p = c * NT + ti;
+      const cn = seen[p];
+      if (!cn) continue;
+      let mu = sum[p] / cn;
+      // Unbiased within-cell variance across replicates, from the running sums.
+      // Clamped at zero: with cn small and the values near-identical, catastrophic
+      // cancellation in (sq - sum^2/cn) can land a hair below it.
+      let se2 = cn > 1 ? Math.max(0, (sq[p] - (sum[p] * sum[p]) / cn) / (cn - 1)) / cn : null;
+      if (def && def.log) {
+        if (!(mu > 0)) continue;
+        if (se2 != null) se2 = se2 / Math.pow(mu * LN10, 2);
+        mu = Math.log10(mu);
+      }
+      if (!Number.isFinite(mu)) continue;
+      n++; s += mu; ss += mu * mu;
+      if (mu < lo) lo = mu;
+      if (mu > hi) hi = mu;
+      if (se2 != null) { se2Sum += se2; se2N++; }
+    }
+    if (!n) { ["mean", "min", "max", "sem", "sd", "sn"].forEach((k) => out[k].push(null)); continue; }
+    const mean = s / n;
+    const varCells = n > 1 ? Math.max(0, (ss - (s * s) / n) / (n - 1)) : 0;
+    // se2N === 0 means one replicate per cell: the noise floor is not merely small,
+    // it is unmeasured. Null rather than zero, so the page can say so.
+    const meanSe2 = se2N ? se2Sum / se2N : null;
+    const sem = meanSe2 == null ? null : Math.sqrt(meanSe2);
+    const sd = meanSe2 == null ? Math.sqrt(varCells) : Math.sqrt(Math.max(0, varCells - meanSe2));
+    out.mean.push(round(mean)); out.min.push(round(lo)); out.max.push(round(hi));
+    out.sem.push(sem == null ? null : round(sem));
+    out.sd.push(round(sd));
+    // sd === 0 with sem === 0 is a grid of identical values — a dead panel, and the
+    // case the badge most needs to fire on, so it scores 0 rather than falling into
+    // the "cannot say" branch. sem === 0 with sd > 0 is signal against no measurable
+    // noise: real, but not a ratio, so null.
+    out.sn.push(sem ? Math.round((sd / sem) * 10) / 10
+      : sem === 0 && sd === 0 ? 0
+      : null);
+  }
+  return out;
+}
+
+// Same magnitude-aware rounding the cell payload uses: 1e-5 resolution on the [-1, 1]
+// metrics, 1e-3 once a value is in the hundreds and those digits are noise anyway.
+function round(v) {
+  if (v == null || !Number.isFinite(v)) return null;
+  return Math.abs(v) >= 100 ? Math.round(v * 1e3) / 1e3 : Math.round(v * 1e5) / 1e5;
+}
+
 function loadExperiment(entry) {
   const file = path.resolve(paths.RESULTS, RESULTS_DIR, `${STEM}.${entry.n}`, "results_shortfall.csv");
   if (!fs.existsSync(file)) {
@@ -269,6 +348,14 @@ function loadExperiment(entry) {
   NUMERIC_METRIC_KEYS.forEach((k) => { sums[k] = new Float64Array(size); });
   const seen = {};
   NUMERIC_METRIC_KEYS.forEach((k) => { seen[k] = new Int32Array(size); });
+  // Sum of SQUARES, carried alongside the sums for one reason: the mean on its own
+  // cannot tell a real surface from seed noise wearing a colour ramp, and the spread
+  // that would tell them apart is destroyed by the averaging two blocks down. One extra
+  // Float64Array per metric buys the per-cell variance, and from it the panel-level
+  // noise floor computed in gridStats(). Kept as a running sum rather than a second
+  // pass over `rows` — these CSVs run to millions of rows.
+  const sqs = {};
+  NUMERIC_METRIC_KEYS.forEach((k) => { sqs[k] = new Float64Array(size); });
 
   // Accumulate in place — this collapses the replicate dimension via averaging.
   for (const row of rows) {
@@ -280,6 +367,7 @@ function loadExperiment(entry) {
       const v = def.from ? def.from(row) : num(row[k]);
       if (v == null || !Number.isFinite(v)) continue;
       sums[k][p] += v;
+      sqs[k][p] += v * v;
       seen[k][p]++;
     }
   }
@@ -307,6 +395,12 @@ function loadExperiment(entry) {
     m[k] = out;
   }
 
+  // Per-metric, per-tick summary of the whole grid — see gridStats().
+  const stats = {};
+  for (const k of NUMERIC_METRIC_KEYS) {
+    stats[k] = gridStats(sums[k], sqs[k], seen[k], size, NT, METRIC_BY_KEY.get(k));
+  }
+
   // Replicate count per cell, collapsed to a scalar in the overwhelmingly
   // common case where the grid is complete and every cell got the same number.
   let uniform = counts[0];
@@ -322,7 +416,7 @@ function loadExperiment(entry) {
     // Names the SCENARIO where a set's experiments all share one axis pair. Optional:
     // the sweep sets do not set it and the list falls back to the axis names.
     label: entry.label,
-    m, reps: uniform, repsPerCell: uniform === null ? Array.from(counts) : undefined,
+    m, stats, reps: uniform, repsPerCell: uniform === null ? Array.from(counts) : undefined,
   };
 }
 
