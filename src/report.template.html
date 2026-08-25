@@ -813,7 +813,17 @@
     const otherKeys = Object.keys(exp.fixed).filter((k) => k !== exp.xKey && k !== exp.yKey);
     const kvList = otherKeys.map((k) => sym(k) + " " + pretty(k) + "=" + fmtAny(k, exp.fixed[k])).join(", ");
     const fixedLine = '<div class="fixed-line">All other parameters were held fixed at: <span class="kv">' + kvList + "</span>.</div>";
-    const html = axisLines + fixedLine;
+    // aclNoviceGain/aclExpertGain/aclNoviceDeficit/aclBlendSharpness never appear in
+    // exp.fixed above (they are not part of any AI/structure sweep's baseFixed or
+    // studyParams — see engine.js DEFAULT_PARAMS), so this is the ONE place a reader is
+    // told capability numbers on this page assume the published Dell'Acqua effect sizes.
+    // The ACL scenario set is excluded: there the assumption itself is what varies, and
+    // each experiment already names its own variant via `label`.
+    const aclLine = DATA.stem === "acl" ? "" :
+      '<div class="fixed-line">Capability calculations assume Dell&rsquo;Acqua as published: ' +
+      '+43% novice / +17% expert quality gain inside the AI\u2019s frontier, \u221219 point novice ' +
+      'deficit outside it. See results_ACL.html for the weaker and null alternatives.</div>';
+    const html = axisLines + fixedLine + aclLine;
     const heatmapCaption = document.getElementById("heatmapCaption");
     const trajCaption = document.getElementById("trajCaption");
     if (heatmapCaption) heatmapCaption.innerHTML = html;
