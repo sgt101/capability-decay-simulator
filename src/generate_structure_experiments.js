@@ -20,7 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const { MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, TICKS_PER_YEAR, CAREER_YEARS,
-        EXPERT_THRESHOLD } = require("./engine.js");
+        EXPERT_THRESHOLD, WORLD_MODEL_PARAMS } = require("./engine.js");
 const paths = require("./paths.js");
 
 const OUT_DIR = paths.data("experiments-structure");
@@ -37,12 +37,22 @@ const SEED = 1;
 // N is fixed across the whole set so that M alone moves the people-per-institution
 // figure — that IS the structural variable, and letting N drift would confound it.
 //
-// 4,000 with M capped at 132 keeps every institution meaningfully occupied. Measured at
-// the corners over the full horizon: at M=132 the emptiest institution still holds 6
-// people and nothing falls under MIN_MEANINGFUL_OCCUPANCY. Pushing M to 252 was tried
-// and left 9-11 institutions below that floor, which engine.js says makes their internal
-// dynamics noise — so the range stops short of it rather than reporting suspect cells.
-const N = 4000;
+// 10,500: the scale the model is actually calibrated at (WORLD_MODEL_PARAMS), so the
+// structure sweep and the world-model study describe fields of the same size. It was
+// 4,000, which was chosen only to keep the run affordable.
+//
+// The M range needs no change and gets healthier: measured at the corners over the full
+// horizon, M=132 now leaves 80 people per institution with an emptiest of 25, against 30
+// and 6 at N=4,000, and nothing anywhere falls under MIN_MEANINGFUL_OCCUPANCY. There is
+// room to push M past 132 at this scale if that ever becomes the question.
+//
+// It costs 2.81x per run — measured 1.49s to 4.18s at M=40 over the full horizon.
+//
+// DERIVED, not restated. This was a literal 10500 chosen to match WORLD_MODEL_PARAMS,
+// and the moment that moved — to 11,320, when the world model gained its public-sector,
+// asset-owner and market-infrastructure layers — the literal would have been quietly
+// wrong while the comment above still claimed it matched.
+const N = WORLD_MODEL_PARAMS.N;
 
 function range(lo, hi, step) {
   const out = [];

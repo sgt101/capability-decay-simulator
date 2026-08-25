@@ -92,6 +92,9 @@ const staticIds = [
 const missingIds = staticIds.filter((id) => !registry.has(id));
 if (missingIds.length) throw new Error("the page no longer declares these ids: " + missingIds.join(", "));
 
+// window.open calls, so a cell click can be inspected rather than merely survived.
+const openCalls = [];
+
 const documentElement = new FakeElement("html");
 documentElement.getAttribute = () => null;
 const document = {
@@ -103,6 +106,9 @@ const window = {
   devicePixelRatio: 1,
   matchMedia: () => ({ matches: false, addEventListener: () => {} }),
   addEventListener: () => {},
+  // Recorded, not opened: a cell click hands a URL to the browser, and the URL is the
+  // entire behaviour worth checking.
+  open: (...args) => { openCalls.push(args); return null; },
 };
 class MutationObserver { constructor(cb) { this.cb = cb; } observe() {} }
 function getComputedStyle() { return { getPropertyValue: (name) => CSS_VARS[name] || "#888888" }; }
@@ -208,7 +214,7 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
       if (/starting state|vs\.? start/i.test(title)) {
         throw new Error("trajectory axis for " + m.key + " claims a comparison against the starting state: " + title);
       }
-      if (/_shortfall$|LostFrac$/.test(m.key)) {
+      if (/_change$|ChangeFrac$/.test(m.key)) {
         // First character lands at the BOTTOM of the rotated axis and toY puts larger
         // values higher, so the minus must come first or the cue is inverted.
         if (title.indexOf("\u2212") === -1 || title.indexOf("+") === -1) {
@@ -242,7 +248,7 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
       }
       // Jargon check, such as it can be automated: the explanation must not lean on the
       // internal names the reader is trying to decode in the first place.
-      ["treatment", "baseline arm", "shortfall", "aiDampening", "gamma", "aiLevelFraction"].forEach((w) => {
+      ["treatment", "baseline arm", "aiDampening", "gamma", "aiLevelFraction"].forEach((w) => {
         if (m.help.indexOf(w) !== -1) throw new Error("help for " + m.key + " uses internal jargon: " + w);
       });
       if (!shortest || m.help.length < shortest.len) shortest = { key: m.key, len: m.help.length };
@@ -259,6 +265,97 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
     btn.dispatch("blur", {});
     console.log("OK: all " + DATA.metrics.length + " metrics carry help; opens on hover and focus"
       + " (shortest is " + shortest.key + ", " + shortest.len + " chars)");
+  }
+
+  // --- losses read negative -------------------------------------------------------
+  // The sign convention across every change metric. This USED to check each _change
+  // value against its own baseline/treatment level metric in the payload — but those
+  // levels were deliberately removed from the report (2026-08: absolute measures were
+  // dropped, only relative change is shown), so there is nothing left in THIS payload
+  // to check a change metric's sign against. That verification now runs at BUILD TIME
+  // in build_report.js, against the raw CSV rows, on every build regardless of which
+  // metric set is rendered — see checkChangeSign() there. What is checked here instead
+  // is the one sign-relationship that survives on the DISPLAYED metrics alone:
+  // capabilityChangeFrac (a fraction) and systemCapability_change (the same comparison
+  // in absolute expert-equivalents) are computed from the same baseline/treatment pair,
+  // so dividing by a positive baseline can never flip their sign relative to each other.
+  {
+    const exp = DATA.experiments[0];
+    // Only meaningful on a page built with the capability metrics — an expertise-only
+    // build (--metrics expertise) has neither key, and that is a legitimate shape, not
+    // a failure: the real sign guard runs at build time on every build regardless (see
+    // checkChangeSign in build_report.js), so this browser-side check is a bonus for
+    // pages that happen to carry both metrics, not the only line of defence.
+    if (!exp.m.capabilityChangeFrac || !exp.m.systemCapability_change) {
+      console.log("SKIP: capability sign cross-check — this metric set does not include capability");
+    } else {
+      const NY = exp.yValues.length, NT = exp.ticks.length;
+      let checked = 0;
+      for (let xi = 0; xi < exp.xValues.length; xi++) {
+        for (let yi = 0; yi < NY; yi++) {
+          const p = (xi * NY + yi) * NT + (NT - 1);
+          const frac = exp.m.capabilityChangeFrac[p], abs = exp.m.systemCapability_change[p];
+          if (frac == null || abs == null) continue;
+          checked++;
+          if ((frac < 0) !== (abs < 0) && frac !== 0 && abs !== 0) {
+            throw new Error("capabilityChangeFrac (" + frac + ") and systemCapability_change (" + abs
+              + ") disagree on sign at the same cell — one of them is inverted");
+          }
+        }
+      }
+      if (!checked) throw new Error("sign check saw no cells — did the metrics load?");
+      console.log("OK: " + checked + " cells agree — capabilityChangeFrac and systemCapability_change share a sign");
+    }
+  }
+
+  // --- clicking a cell opens the simulator with a short scenario code --------------
+  // The link used to spell out ~25 params in the hash; it is now "#c=AI-482", which
+  // simulator.html dereferences against data/cell-index.json (tested separately, in
+  // dom_stub_test.js — this file has no access to that JSON). What is checked here is
+  // that the CODE ITSELF decodes back to the cell that was actually clicked, using an
+  // independent re-implementation of the same offset arithmetic report.template.html
+  // uses to compute it — if the two drift apart, this catches it even though this test
+  // has no simulator to hand the code to.
+  {
+    const exp = DATA.experiments[app.expIndex];
+    openCalls.length = 0;
+    const canvas = document.getElementById("heatmapCanvas");
+    // A point inside the plot area, away from the axes.
+    canvas.dispatch("click", { clientX: 300, clientY: 120 });
+    if (!openCalls.length) throw new Error("clicking a heatmap cell opened nothing");
+    const url = openCalls[0][0];
+    // String slicing, not a regex: this block is spliced into the driver as a template
+    // literal, which silently eats backslashes that are not one of JS's own recognised
+    // escapes — \d in a regex literal here would parse back out as a literal "d".
+    const marker = "simulator.html#c=";
+    const at = url.indexOf(marker);
+    if (at === -1) throw new Error("cell link is not a scenario code: " + url);
+    const code = url.slice(at + marker.length);
+    const dash = code.indexOf("-");
+    const prefix = dash === -1 ? code : code.slice(0, dash);
+    const globalIndex = parseInt(dash === -1 ? "" : code.slice(dash + 1), 10);
+    if (dash === -1 || !Number.isFinite(globalIndex)) throw new Error("cell link is not a scenario code: " + url);
+    const expectedPrefix = { experiment: "AI", structure: "STR", acl: "CAP" }[DATA.stem] || "X";
+    if (prefix !== expectedPrefix) throw new Error("code prefix " + prefix + " does not match stem " + DATA.stem);
+    // Same cumulative-offset arithmetic as codeForRealCell, computed independently.
+    let offset = 0, ownerIdx = -1, ownerOffset = 0;
+    for (let i = 0; i < DATA.experiments.length; i++) {
+      const e = DATA.experiments[i], n = e.xValues.length * e.yValues.length;
+      if (globalIndex > offset && globalIndex <= offset + n) { ownerIdx = i; ownerOffset = offset; break; }
+      offset += n;
+    }
+    if (ownerIdx === -1) throw new Error("code " + prefix + "-" + globalIndex + " does not decode to any experiment");
+    if (DATA.experiments[ownerIdx].n !== exp.n) {
+      throw new Error("code decodes to experiment " + DATA.experiments[ownerIdx].n + ", not the clicked " + exp.n);
+    }
+    const local = globalIndex - ownerOffset - 1, ny = exp.yValues.length;
+    const xi = Math.floor(local / ny), yi = local % ny;
+    if (xi < 0 || xi >= exp.xValues.length || yi < 0 || yi >= ny) {
+      throw new Error("code decodes to an out-of-grid cell: xi=" + xi + " yi=" + yi);
+    }
+    if (openCalls[0][1] !== "_blank") throw new Error("cell link does not open in a new tab");
+    console.log("OK: cell click -> " + prefix + "-" + globalIndex + " (experiment " + exp.n + ", "
+      + exp.xKey + "=" + exp.xValues[xi] + ", " + exp.yKey + "=" + exp.yValues[yi] + ")");
   }
   const otherKeys = Object.keys(exp5.fixed).filter((k) => k !== exp5.xKey && k !== exp5.yKey);
   if (otherKeys.length < 10) throw new Error("expected many other fixed parameters to be listed, got " + otherKeys.length);
@@ -469,7 +566,7 @@ console.log("\\nALL REPORT FLOWS COMPLETED WITHOUT THROWING");
 const sandbox = {
   document, window, MutationObserver, getComputedStyle,
   console, Math, Set, Array, Object, JSON, parseInt, parseFloat, isFinite,
-  drawnText,
+  drawnText, openCalls,
 };
 vm.createContext(sandbox);
 try {

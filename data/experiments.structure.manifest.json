@@ -3,7 +3,7 @@
   "note": "AI parameters crossed with network structure (M, graphAttachment). BA graph only — M is derived from the data in world-model mode and graphAttachment is unread there.",
   "ticksPerYear": 12,
   "careerYears": 40,
-  "N": 4000,
+  "N": 11322,
   "aiParams": {
     "aiLevelFraction": {
       "values": [
@@ -163,7 +163,7 @@
     "personalLearningRate": 0.005,
     "teachTopN": 8,
     "aboveMeanDrag": 16,
-    "N": 4000
+    "N": 11322
   },
   "studyParams": {
     "aiLevelFraction": {

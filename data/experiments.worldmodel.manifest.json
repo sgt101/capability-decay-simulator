@@ -217,7 +217,7 @@
     "personalLearningRate": 0.005,
     "teachTopN": 8,
     "aboveMeanDrag": 16,
-    "N": 10504,
+    "N": 11322,
     "baseMoveProb": 0.01,
     "learningRateSpread": 1
   },

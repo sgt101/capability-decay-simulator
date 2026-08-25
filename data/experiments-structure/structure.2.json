@@ -146,7 +146,7 @@
     "personalLearningRate": 0.005,
     "teachTopN": 8,
     "aboveMeanDrag": 16,
-    "N": 4000,
+    "N": 11322,
     "aiDampeningBelow": 1,
     "aiDampeningAbove": 1,
     "frontierBreadth": 1,

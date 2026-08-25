@@ -314,7 +314,16 @@ function computeShortfall(rows) {
     SHORTFALL_KEYS.forEach((k) => {
       base[k + "_baseline"] = pair.baseline[k];
       base[k + "_treatment"] = pair.treatment[k];
-      base[k + "_shortfall"] = pair.baseline[k] - pair.treatment[k]; // positive = AI eroded it
+      // SIGNED AS THE CHANGE: negative is what AI cost the field, positive is what it
+      // added. This is the reverse of the old `_shortfall` column, which was baseline
+      // minus treatment.
+      //
+      // Renamed rather than flipped in place, deliberately. A column still called
+      // "shortfall" holding -0.5 reads as a shortfall OF -0.5, i.e. a gain — the exact
+      // misreading the sign change exists to prevent, and one that no tooling could
+      // detect. Old CSVs keep their old column and old meaning; build_report.js reads
+      // either and negates the legacy one.
+      base[k + "_change"] = pair.treatment[k] - pair.baseline[k];
     });
     out.push(base);
   }
@@ -465,6 +474,6 @@ async function main() {
   if (pairWithBaseline && args.shortfallOut) {
     const shortfallRows = computeShortfall(rows);
     writeCSV(args.shortfallOut, shortfallRows);
-    console.error(`[batch] wrote ${args.shortfallOut} (${shortfallRows.length} rows — baseline vs AI, positive shortfall = AI eroded it)`);
+    console.error(`[batch] wrote ${args.shortfallOut} (${shortfallRows.length} rows — baseline vs AI, negative change = AI eroded it)`);
   }
 }

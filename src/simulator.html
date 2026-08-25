@@ -71,6 +71,10 @@
   .title-block { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; }
   /* Findable without competing with the controls: underlined so it reads as a link at a
      glance, muted until hovered. */
+  .from-chip {
+    font-size: 0.72rem; color: var(--accent2); white-space: nowrap;
+    border: 1px solid var(--accent2); border-radius: 999px; padding: 0.12rem 0.5rem;
+  }
   .repo-link {
     display: inline-flex; align-items: center; gap: 0.32rem;
     font-size: 0.78rem; color: var(--ink-faint); white-space: nowrap;
@@ -105,6 +109,16 @@
   .btn-icon { width: 2.1rem; padding: 0.4rem 0; text-align: center; }
   .speed-field { display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--ink-muted); }
   .speed-field input[type="range"] { width: 90px; }
+  /* The scenario-code box: typing "AI-482" and pressing Enter (or clicking the arrow)
+     reproduces the cell a report showed that code for. Sized to fit a code comfortably
+     (longest realistic one is 5 digits) without hogging topbar width. */
+  .code-field { display: flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; color: var(--ink-muted); }
+  .code-field input[type="text"] {
+    width: 84px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.78rem; padding: 0.2rem 0.4rem; border: 1px solid var(--rule);
+    border-radius: 4px; background: var(--panel); color: var(--ink);
+  }
+  .code-field input[type="text"].is-invalid { border-color: var(--accent); color: var(--accent); }
 
   input[type="range"] { accent-color: var(--accent2); }
   input[type="checkbox"] { accent-color: var(--accent2); }
@@ -262,7 +276,9 @@
   .diffusion-panel h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; margin: 0.7rem 0 0.1rem; }
   .diffusion-panel .note { font-size: 0.68rem; color: var(--ink-faint); line-height: 1.45; margin-top: 0.55rem; }
   .diffusion-panel .placeholder { font-size: 0.8rem; color: var(--ink-faint); line-height: 1.5; }
-  .mini-chart canvas { width: 100%; height: 150px; display: block; }
+  /* 120px, down from 150: the Timeline carries five charts now and at the old height the
+     panel ran past 800px, which pushed the distribution chart beside it out of shape. */
+  .mini-chart canvas { width: 100%; height: 120px; display: block; }
   /* 2.5x the mini-charts. A log axis spanning 1..N compresses the body of the
      distribution into a narrow band, so height is what makes the shape readable — and
      the Timeline panel beside it already stacks two 150px charts, so this squares the
@@ -311,6 +327,18 @@
       <span>M = <b class="tabular" id="statM">–</b></span>
     </div>
     <span class="ai-chip" id="aiChip">AI off</span>
+    <!-- Type a code shown when hovering a cell in one of the reports (e.g. "AI-482") to
+         reload this page running that exact scenario. Reloads rather than hot-swapping
+         the running simulation, so it reuses the same boot logic a report's own link
+         uses (see URL_PARAMS/lookupScenarioCode) instead of a second code path. -->
+    <div class="code-field" title="Enter a scenario code from a report, e.g. AI-482">
+      <span>code</span>
+      <input type="text" id="scenarioCodeInput" placeholder="AI-482" autocomplete="off" spellcheck="false" />
+      <button class="btn btn-icon" id="scenarioCodeGo" title="Load this scenario">&#8594;</button>
+    </div>
+    <!-- Shown only when the page was opened from a report heatmap. Without it the reader
+         arrives on a set of numbers they did not type, with nothing saying where from. -->
+    <span class="from-chip" id="fromChip" hidden></span>
     <div class="spacer"></div>
     <div class="transport">
       <button class="btn btn-icon" id="btnStep" title="Step one month (one tick)">⏭</button>
@@ -384,20 +412,24 @@
             <span class="sub">dashed = AI toggled</span>
           </div>
           <div class="mini-chart">
-            <h3>Expertise over time — mean, median, top &amp; bottom decile</h3>
+            <h3>Expertise over time — with AI, and the same world without it</h3>
             <canvas id="spreadCanvas"></canvas>
           </div>
           <div class="mini-chart">
-            <h3>Center–periphery divergence (var of Ē across institutions)</h3>
-            <canvas id="divCanvas"></canvas>
+            <h3>System capability — threshold-expert equivalents, log scale</h3>
+            <canvas id="capCanvas"></canvas>
+          </div>
+          <div class="mini-chart">
+            <h3>AI effect — share of the no-AI world gained (+) or lost (−)</h3>
+            <canvas id="deltaCanvas"></canvas>
           </div>
           <div class="mini-chart">
             <h3>Mixing — share still at the institution their career began in</h3>
             <canvas id="mixCanvas"></canvas>
           </div>
           <div class="mini-chart">
-            <h3>System capability — threshold-expert equivalents, log scale</h3>
-            <canvas id="capCanvas"></canvas>
+            <h3>Center–periphery divergence (var of Ē across institutions)</h3>
+            <canvas id="divCanvas"></canvas>
           </div>
         </section>
       </div>
@@ -427,6 +459,14 @@
      this page because it is generated FROM data/world-model.json; a relative src
      up one level is fine at file://, where only fetch/XHR is restricted. -->
 <script src="../data/world-model-data.js"></script>
+<!-- Scenario codes ("AI-482") shown when hovering a cell in report.html /
+     structure_report.html / results_ACL.html — typing one into the box in the topbar
+     reproduces that exact cell. Generated by build_report.js from cell-index.json;
+     optional and additive, same reasoning as world-model-data.js above: without it
+     window.CELL_INDEX stays undefined and the code box just says so, rather than the
+     page failing to load. Not present at all on the published Pages site, since the
+     reports themselves are not published there — see build_pages.js. -->
+<script src="../data/cell-index.js"></script>
 <script>
 /* ============================== ENGINE ============================== */
 // The model lives in engine.js and is loaded by the <script src> above — this page
@@ -481,6 +521,23 @@ function createSim(userParams) {
   sim.snapshots = [];
   sim.aiToggleEvents = [];
   return sim;
+}
+
+// The paired no-AI twin. Same params, same seed — so the same graph and the same
+// starting population — with aiEnabled forced off and never turned on. That identity at
+// t=0 is the whole point: it makes every later difference between the two attributable
+// to AI rather than to two independently noisy runs. Same construction batch_run.js
+// uses for `pairWithBaseline`.
+//
+// It carries none of the page's own recording. Snapshots, instHistory and the diffusion
+// counters all describe the world the reader is looking at — the network, the histogram
+// and the inspector are the AI arm — and the baseline is needed only for its per-tick
+// history series. Skipping the rest keeps the memory cost of pairing at zero.
+function createBaselineSim(userParams) {
+  const base = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS,
+    WORLD_MODEL_PARAMS, userParams || {}, { aiEnabled: false }));
+  base.aiToggleEvents = [];
+  return base;
 }
 
 // Decay rate that holds the no-AI baseline FLAT at a given institution size, so the
@@ -945,7 +1002,12 @@ function buildSidebar() {
     const live = root.querySelector(".live-hint");
     input.addEventListener("input", () => {
       const v = parseFloat(input.value);
+      // Both arms. A parameter changed on only one of them would make the pair differ by
+      // something other than AI, which is the one thing the comparison must not allow.
+      // The AI-only parameters are inert on the twin anyway — it never has AI enabled —
+      // so they can be applied uniformly rather than filtered.
       app.sim.params[f.key] = v;
+      if (app.simBase) app.simBase.params[f.key] = v;
       out.textContent = fmtField(f, v);
       refreshLiveHint(f, live, v);
       // Read by initSim and by nothing in tick(), so moving one of these mid-run changes
@@ -968,9 +1030,14 @@ function buildSidebar() {
   });
 
   document.getElementById("fieldMobilityMode").value = app.sim.params.mobilityMode;
-  document.getElementById("fieldMobilityMode").addEventListener("change", (e) => { app.sim.params.mobilityMode = e.target.value; });
+  document.getElementById("fieldMobilityMode").addEventListener("change", (e) => {
+    app.sim.params.mobilityMode = e.target.value;
+    if (app.simBase) app.simBase.params.mobilityMode = e.target.value;
+  });
   document.getElementById("fieldAiEnabled").checked = app.sim.params.aiEnabled;
   document.getElementById("fieldAiEnabled").addEventListener("change", (e) => {
+    // NOT mirrored onto the twin. aiEnabled is the single difference the pair exists to
+    // isolate, so the baseline stays off whatever this switch does.
     app.sim.params.aiEnabled = e.target.checked;
     app.sim.aiToggleEvents.push({ t: app.sim.t, enabled: e.target.checked });
     updateAiChip();
@@ -1175,6 +1242,7 @@ function applySnapshot(snap) {
     p.worldModel = null;
   }
   app.sim = createSim(p);
+  app.simBase = createBaselineSim(p);
   app.following = true;
   app.viewT = 0;
   app.selectedInst = null;
@@ -1291,6 +1359,84 @@ function markRebuildPending(pending) {
   }
 }
 
+// --- scenario codes: "AI-482" typed in, or landed on via a report heatmap click ----
+// A code names one cell of one report's grid — see the writer in build_report.js and
+// the matching codeForRealCell() in report.template.html, which must stay in step with
+// this: xi outer / yi inner, 1-based, real (unflipped) axis order.
+//
+// Looked up against window.CELL_INDEX, loaded (optionally — see the <script src> tag
+// near the top of this page) from data/cell-index.js. That file is regenerated by
+// build_report.js every time any of the three reports is built, and is NOT part of the
+// published Pages site (the reports themselves are not published there either), so a
+// code only resolves when this page is opened from within the repo.
+function lookupScenarioCode(code) {
+  const m = /^([A-Za-z]+)-(\d+)$/.exec((code || "").trim());
+  if (!m) return { error: "not a code (expected e.g. AI-482)" };
+  if (typeof CELL_INDEX === "undefined") return { error: "cell-index.js not loaded — run the report builds first" };
+  const report = CELL_INDEX[m[1]];
+  if (!report) return { error: "unknown prefix \"" + m[1] + "\"" };
+  const globalIndex = parseInt(m[2], 10);
+  if (!(globalIndex >= 1) || globalIndex > report.totalCells) {
+    return { error: "out of range (1.." + report.totalCells + ")" };
+  }
+  // Linear scan over ~9-21 experiments — only runs on a code lookup, not a hot path.
+  for (let i = 0; i < report.experiments.length; i++) {
+    const exp = report.experiments[i];
+    const n = exp.xValues.length * exp.yValues.length;
+    if (globalIndex <= exp.startOffset || globalIndex > exp.startOffset + n) continue;
+    const local = globalIndex - exp.startOffset - 1;
+    const ny = exp.yValues.length;
+    const xi = Math.floor(local / ny), yi = local % ny;
+    const params = Object.assign({}, exp.fixed);
+    // A heatmap cell is always the TREATMENT arm — the paired baseline is a separate
+    // run pairWithBaseline generates, never a cell of its own.
+    params[exp.xKey] = exp.xValues[xi];
+    params[exp.yKey] = exp.yValues[yi];
+    params.aiEnabled = true;
+    const note = m[1] + "-" + globalIndex + " (experiment " + exp.n + ") \u00b7 "
+      + exp.xKey + "=" + exp.xValues[xi] + ", " + exp.yKey + "=" + exp.yValues[yi];
+    return { params, note };
+  }
+  return { error: "code is in range but no experiment claims it \u2014 cell-index.js may be out of date" };
+}
+
+// --- settings handed over from a report heatmap -----------------------------------
+// Clicking a cell in report.html / structure_report.html / results_ACL.html opens this
+// page with `#c=CODE` in the URL hash — see lookupScenarioCode above. The older form,
+// where every parameter was spelled out in the hash directly, is still accepted here
+// for any link built before codes existed. Parsed ONCE at boot, before the first
+// rebuild, so the very first simulation is the one the reader asked for rather than a
+// default that is then mutated.
+//
+// Validated against DEFAULT_PARAMS rather than trusted: a hash is user-editable text,
+// and an unknown key would flow into initSim, past its own removed-parameter check, and
+// end up as a silent no-op the page still claimed to be running.
+const URL_PARAMS = (function () {
+  const out = {}, rejected = [];
+  let note = null;
+  const raw = (location.hash || "").replace(/^#/, "");
+  if (!raw) return { params: out, note, rejected };
+  const valid = new Set(Object.keys(DEFAULT_PARAMS));
+  raw.split("&").forEach((pair) => {
+    if (!pair) return;
+    const eq = pair.indexOf("=");
+    const k = decodeURIComponent(eq < 0 ? pair : pair.slice(0, eq));
+    const v = eq < 0 ? "" : decodeURIComponent(pair.slice(eq + 1));
+    if (k === "_from") { note = v; return; }
+    if (k === "c") {
+      const looked = lookupScenarioCode(v);
+      if (looked.error) { rejected.push("c=" + v + " (" + looked.error + ")"); }
+      else { Object.assign(out, looked.params); note = looked.note; }
+      return;
+    }
+    if (!valid.has(k)) { rejected.push(k); return; }
+    if (v === "true" || v === "false") { out[k] = v === "true"; return; }
+    const n = parseFloat(v);
+    out[k] = (v !== "" && Number.isFinite(n) && String(n) === v.trim()) ? n : v;
+  });
+  return { params: out, note, rejected };
+})();
+
 function readStructuralFields() {
   // Guarded: on the very first call the sidebar hasn't been built yet (buildSidebar()
   // runs later in rebuild()), so these fields don't exist in the DOM. Fall back to defaults.
@@ -1308,7 +1454,12 @@ function readStructuralFields() {
   // built while in a browser it does not — reading its absence would have made the test
   // and the real page disagree about what the simulator runs.
   const firstBoot = app.sim === null;
-  const useWM = !!worldModelState.loaded && (firstBoot || !!(toggle && toggle.checked));
+  // A report handover states its own graph, and it outranks the boot default: arriving
+  // from a BA experiment must not land on the world model.
+  const handedOver = firstBoot && URL_PARAMS.params.graphSource;
+  const useWM = handedOver
+    ? URL_PARAMS.params.graphSource === "worldModel"
+    : (!!worldModelState.loaded && (firstBoot || !!(toggle && toggle.checked)));
   const weighted = document.getElementById("fieldWeightedSizing");
   const out = {
     N: val("fieldN", WORLD_MODEL_PARAMS.N),
@@ -1329,6 +1480,18 @@ function rebuild(preserveLive) {
   const structural = readStructuralFields();
   const liveParams = preserveLive && app.sim ? Object.assign({}, app.sim.params) : {};
   const params = Object.assign({}, liveParams, structural);
+
+  // A handover from a report wins over both, but only on the FIRST build: after that the
+  // sidebar is authoritative, so a Rebuild reflects what the reader has since changed
+  // rather than snapping back to the URL they arrived on.
+  if (!preserveLive && !app.urlApplied) {
+    Object.assign(params, URL_PARAMS.params);
+    app.urlApplied = true;
+    // graphSource travels in the hash, and the structure experiments are all BA. Without
+    // this the first-boot rule below would put a BA cell onto the world-model graph and
+    // then throw, because M is stated and world-model mode derives it.
+    if (params.graphSource === "ba") params.worldModel = null;
+  }
   // Same contract for M: in world-model mode it is derived from the data and engine.js
   // rejects a config that also states it. readStructuralFields() already omits it, but
   // the previous run's params carry one, so it has to be dropped here too. (The private
@@ -1336,6 +1499,7 @@ function rebuild(preserveLive) {
   // is the class of drift that copy existed to enable.)
   if (params.graphSource === "worldModel") delete params.M;
   app.sim = createSim(params);
+  app.simBase = createBaselineSim(params);
   app.following = true;
   app.viewT = 0;
   app.selectedInst = null;
@@ -1406,6 +1570,9 @@ btnLive.addEventListener("click", () => {
 // and nothing else, exactly as it does under batch_run.js.
 function doTick() {
   tick(app.sim);
+  // The twin advances in lockstep. Ticked SECOND so a thrown error in the arm the page
+  // actually displays surfaces before any work is spent on the comparison.
+  if (app.simBase) tick(app.simBase);
   const { Ebar, count, Teach, experts, capability, capabilityHuman } = institutionStats(app.sim);
   const sim = app.sim;
   pushInstHistory(sim.instHistory, sim.M, Ebar, Teach, count, experts, capability, capabilityHuman);
@@ -1770,6 +1937,9 @@ function drawHistogram() {
 function drawSpreadChart() {
   const dark = currentTheme() === "dark";
   drawSeriesChart("spreadCanvas", [
+    // The twin's mean, dashed: the same world's average expertise had AI never arrived.
+    // The distance to the solid mean below it is the whole comparison.
+    { key: "meanE", arm: "base", color: cssVar("--ink-faint"), label: "mean, no AI", width: 1.5, dash: [4, 3] },
     { key: "p90E", color: seqColor(0.85, dark), label: "top 10%", width: 1.5 },
     { key: "meanE", color: seqColor(0.55, dark), label: "mean", width: 2.5 },
     { key: "p50E", color: seqColor(0.55, dark), label: "median", width: 1.5, dash: [3, 2] },
@@ -1784,6 +1954,18 @@ function drawMiniChart(canvasId, key, color, options) {
 // series: [{ key, color, label, width, dash }] — all plotted on ONE shared y scale, so
 // the lines are comparable by eye. That matters here: the point of the spread chart is
 // the DISTANCE between the deciles, which a per-series autoscale would destroy.
+// A series may name an ARM — "base" reads the paired no-AI twin instead of the AI arm —
+// or supply `derive(a, b)` to compute from both at the same tick. The two histories are
+// appended in lockstep by doTick, so index i is the same tick in each and no alignment
+// is needed.
+function seriesValue(sr, i) {
+  const a = app.sim.history[i];
+  const b = app.simBase && app.simBase.history[i];
+  if (sr.derive) return b ? sr.derive(a, b) : null;
+  const src = sr.arm === "base" ? b : a;
+  return src ? src[sr.key] : null;
+}
+
 function drawSeriesChart(canvasId, series, options) {
   options = options || {};
   const canvas = document.getElementById(canvasId);
@@ -1795,13 +1977,14 @@ function drawSeriesChart(canvasId, series, options) {
   const pad2 = options.legend ? 12 : 0;      // room for the legend strip
   const ax = axisTransform(options.log);
   let minV = Infinity, maxV = -Infinity;      // reassigned by padAxisSpan below
-  hist.forEach((e) => series.forEach((sr) => {
-    const v = e[sr.key]; if (v == null) return;
+  hist.forEach((e, i) => series.forEach((sr) => {
+    const v = seriesValue(sr, i); if (v == null || !Number.isFinite(v)) return;
     const t = ax.fwd(v);
     if (t < minV) minV = t; if (t > maxV) maxV = t;
   }));
   if (!isFinite(minV)) { minV = 0; maxV = 1; }
   if (options.zeroFloor && !options.log) minV = Math.min(0, minV);
+  if (options.fixedMin != null) minV = ax.fwd(options.fixedMin);
   if (options.fixedMax != null) maxV = ax.fwd(options.fixedMax);
   if (maxV - minV < 1e-6) maxV = minV + 1e-6;
   [minV, maxV] = padAxisSpan(minV, maxV, options);
@@ -1847,6 +2030,15 @@ function drawSeriesChart(canvasId, series, options) {
   ctx.setLineDash([]);
 
   // Expert threshold, where asked for: the deciles only mean something against it.
+  // Zero on a delta chart is not another gridline: it is the line between "AI cost the
+  // field something" and "AI left it better off". Drawn solid and thicker so the sign of
+  // a curve is readable without checking the axis labels.
+  if (options.zeroLine && minV < 0 && maxV > 0) {
+    ctx.strokeStyle = cssVar("--ink-muted"); ctx.lineWidth = 1.5;
+    const yz = toY(0);
+    ctx.beginPath(); ctx.moveTo(pad.l, yz); ctx.lineTo(w - pad.r, yz); ctx.stroke();
+  }
+
   if (options.threshold != null && ax.fwd(options.threshold) >= minV && ax.fwd(options.threshold) <= maxV) {
     ctx.strokeStyle = cssVar("--ink-faint"); ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.7;
@@ -1860,8 +2052,8 @@ function drawSeriesChart(canvasId, series, options) {
     if (sr.dash) ctx.setLineDash(sr.dash);
     ctx.beginPath();
     let started = false;
-    hist.forEach((e) => {
-      const v = e[sr.key]; if (v == null) return;
+    hist.forEach((e, i) => {
+      const v = seriesValue(sr, i); if (v == null || !Number.isFinite(v)) return;
       const x = toX(e.t), y = toY(ax.fwd(v));
       if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     });
@@ -1955,8 +2147,43 @@ function renderDiffusion() {
 function drawCapabilityChart() {
   drawSeriesChart("capCanvas", [
     { key: "systemCapability", color: cssVar("--accent"), label: "with AI", width: 2 },
+    // The paired world that never had AI. Distinct from "unaugmented" below it, which is
+    // this world's people valued without their tool — same arm, multiplier removed.
+    { key: "systemCapability", arm: "base", color: cssVar("--accent2"), label: "no AI", width: 2 },
     { key: "systemCapabilityHuman", color: cssVar("--ink-faint"), label: "unaugmented", width: 1.5, dash: [3, 2] },
   ], { log: true, legend: true });
+}
+
+// AI's effect as a SHARE of the world that never had it. Expertise and capability cannot
+// share a linear axis — one lives in [0,1] and the other in the thousands to millions, so
+// on one scale the expertise line is pinned flat against the axis. Divided by their own
+// baselines they both become "what fraction of it changed", which is comparable.
+//
+// SIGNED as the change, not as the loss: below zero is capability or expertise the field
+// no longer has, above zero is what AI added. A line falling means things got worse,
+// which is the reading a chart should not need a caption to explain.
+//
+// Axis pinned to -1..+1 so the scale never moves under the reader — a plot whose axis
+// rescales as a run develops makes two moments impossible to compare by eye. Note that
+// a strongly amplifying setting can gain MORE than the whole baseline (leverage runs to
+// x1.43 while the arms also diverge), and those values ride the top edge rather than
+// pushing the scale out.
+// Named rather than inlined so the sign convention is testable against known inputs.
+// `a` is the AI arm, `b` the twin. Getting the operands the wrong way round renders a
+// perfectly plausible chart with its meaning inverted, which nothing downstream notices.
+function aiChangeFrac(key) {
+  return (a, b) => {
+    const base = b[key], treat = a[key];
+    return base && base > 0 && treat != null ? (treat - base) / base : null;
+  };
+}
+
+function drawDeltaChart() {
+  const change = aiChangeFrac;
+  drawSeriesChart("deltaCanvas", [
+    { derive: change("systemCapability"), color: cssVar("--accent"), label: "capability", width: 2 },
+    { derive: change("meanE"), color: cssVar("--accent2"), label: "expertise", width: 2 },
+  ], { legend: true, zeroLine: true, fixedMin: -1, fixedMax: 1 });
 }
 
 function drawMixChart() {
@@ -2131,6 +2358,7 @@ function refreshAll() {
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
   drawMixChart();
   drawCapabilityChart();
+  drawDeltaChart();
   renderDiffusion();
   if (app.selectedInst != null) renderInspector();
 }
@@ -2140,6 +2368,7 @@ function renderSnapshotViews() {
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });
   drawMixChart();
   drawCapabilityChart();
+  drawDeltaChart();
   renderDiffusion();
   if (app.selectedInst != null) renderInspector();
 }
@@ -2233,6 +2462,47 @@ function setSidebarCollapsed(on) { sidebarState.collapsed = on; applySidebarWidt
 window.addEventListener("resize", () => { drawNetwork(); refreshAll(); });
 new MutationObserver(() => { drawNetwork(); refreshAll(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawNetwork(); refreshAll(); });
+
+// --- scenario-code box: type a code, reload running it -------------------------
+// A fresh page load rather than hot-swapping the live simulation's parameters: reusing
+// the exact boot path a report's own "#c=..." link takes means there is exactly one
+// place (lookupScenarioCode, above) that turns a code into a running scenario, not two
+// that could drift apart.
+{
+  const input = document.getElementById("scenarioCodeInput");
+  const go = document.getElementById("scenarioCodeGo");
+  const submit = () => {
+    const code = input.value.trim();
+    if (!code) return;
+    const looked = lookupScenarioCode(code);
+    if (looked.error) {
+      input.classList.add("is-invalid");
+      input.title = "Enter a scenario code from a report, e.g. AI-482 \u2014 " + looked.error;
+      return;
+    }
+    location.hash = "c=" + encodeURIComponent(code);
+    location.reload();
+  };
+  go.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.addEventListener("input", () => {
+    input.classList.remove("is-invalid");
+    input.title = "Enter a scenario code from a report, e.g. AI-482";
+  });
+}
+
+// Say where the settings came from, and say so about anything that was refused. A hash
+// is editable text: a mistyped key silently doing nothing is exactly the failure the
+// reader cannot see.
+if (URL_PARAMS.note || URL_PARAMS.rejected.length) {
+  const chip = document.getElementById("fromChip");
+  const bits = [];
+  if (URL_PARAMS.note) bits.push("from " + URL_PARAMS.note);
+  if (URL_PARAMS.rejected.length) bits.push("ignored unknown: " + URL_PARAMS.rejected.join(", "));
+  chip.textContent = bits.join(" · ");
+  chip.title = "This page was opened with settings supplied in its URL";
+  chip.hidden = false;
+}
 
 rebuild(false);
 requestAnimationFrame(frame);

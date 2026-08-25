@@ -557,11 +557,21 @@ const PIPELINE_PARAMS = {
 const FIELD_DIVISOR = 200;
 
 const WORLD_MODEL_PARAMS = {
-  // The round figure the calibration was fitted at. The identity-exact value is 10,504
-  // (= suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR)), which is what the experiment
-  // generator uses; the 4-person difference is immaterial and this set is kept at the
-  // number the fit actually used. test_world_model.js asserts the two agree.
-  N: 10500,                   // matches the world model's own size distribution
+  // The round figure nearest the identity. That identity moved in 2026-08 when the
+  // world model gained its public-sector, asset-owner and market-infrastructure layers
+  // — 245 organisations became 330 and annual intake 52,518 became 56,608, so
+  // suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR) went from 10,504 to 11,322.
+  //
+  // The calibration (learningCap, learningRateSpread, teachTopN) was fitted at 10,500
+  // and has NOT been re-fitted at this scale. The population-per-institution figure it
+  // was tuned against has changed twice over: more people, and more institutions to
+  // spread them across. Worth re-running calibrate_worldmodel.js before treating the
+  // shipped numbers as calibrated rather than merely carried forward.
+  // The identity value EXACTLY — suggestedN(wm, CAREER_YEARS, FIELD_DIVISOR) — not a
+  // round number near it. Rounding bought nothing and put the two experiment sets on
+  // different populations, because the world-model generator computes the identity
+  // directly while everything else follows this constant.
+  N: 11322,                   // matches the world model's own size distribution
   baseMoveProb: 0.01,         // a move every ~7 years, not every 20 months
   learningCap: 0.0048,
   learningRateSpread: 1.0,

@@ -50,6 +50,11 @@ const OUT_PATH = argOf("--out", "report.html");
 // Directory stem under results/. The world-model and BA sets both write
 // results/experiment.N/; the structure set writes results/structure.N/.
 const STEM = argOf("--stem", "experiment");
+// Tab title. Derived from STEM by default — "experiment" is the world-model AI
+// dampening/level sweeps, "structure" is the M x graphAttachment set, "acl" is the
+// Dell'Acqua/Stromberg scenario set — and overridable with --title for a one-off page.
+const TITLE_BY_STEM = { experiment: "AI Params", structure: "Structure Params", acl: "Capability Params" };
+const TITLE = argOf("--title", TITLE_BY_STEM[STEM] || "Experiment Report");
 const METRIC_SET = argOf("--metrics", "expertise");
 
 const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, MANIFEST_PATH), "utf8"));
@@ -57,20 +62,53 @@ const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, MANIFEST_PA
 // A metric may be a plain CSV column, or DERIVED from several via `from(row)`.
 // `log: true` stores log10 of the aggregated value — capability runs from thousands
 // to millions, and on a linear ramp every cell but the largest collapses to one shade.
+// Reads the signed `_change` column, falling back to the legacy `_shortfall` with its
+// sign flipped. Both name the same comparison — treatment against the paired baseline —
+// but in opposite directions, and results predating 2026-08 carry only the old one. The
+// fallback is what keeps the archived world-model set (17 CPU-hours) readable without
+// re-running it.
+function changeOf(key) {
+  return (row) => {
+    const now = num(row[key + "_change"]);
+    if (now != null) return now;
+    const legacy = num(row[key + "_shortfall"]);
+    return legacy == null ? null : -legacy;
+  };
+}
+
+// Sign-convention guard for every _change metric: "treatment below baseline" must come
+// out negative. Checked against the RAW CSV row rather than the built page's payload,
+// because baseline/treatment level columns are deliberately not shipped to the reader
+// (see the comment on METRIC_SETS) — a check that could only compare displayed metrics
+// against each other would have nothing left to verify a flipped operand against. Runs
+// once per row for every experiment, on every build, regardless of which --metrics set
+// is being rendered.
+function checkChangeSign(rawKey, row) {
+  const b = num(row[rawKey + "_baseline"]), t = num(row[rawKey + "_treatment"]);
+  if (b == null || t == null) return;
+  const c = changeOf(rawKey)(row);
+  if (c == null) return;
+  if (t < b - 1e-6 && c >= 0) {
+    throw new Error(`[build_report] sign inverted: ${rawKey} treatment ${t} is below baseline ${b} but change reads ${c}`);
+  }
+  if (t > b + 1e-6 && c <= 0) {
+    throw new Error(`[build_report] sign inverted: ${rawKey} treatment ${t} is above baseline ${b} but change reads ${c}`);
+  }
+}
+const SIGN_CHECK_KEYS = ["meanE", "shareExpert", "systemCapability"];
+
 const METRIC_SETS = {
+  // ABSOLUTE LEVELS (meanE_baseline/treatment, shareExpert_baseline/treatment) were
+  // removed in 2026-08. What a reader of this report wants is whether AI moved the
+  // field and by how much, not the raw level of either arm on its own — the level
+  // metrics answered a question nobody was asking and, on a log-free linear scale,
+  // made it easy to mistake "this cell is a big number" for "AI mattered here". The
+  // paired _change metrics ARE the comparison; keep only those.
   expertise: [
-    { key: "meanE_shortfall", label: "Mean expertise shortfall (E)",
-      help: "How much lower the average skill level is with AI than without it, at this point in the run. Bigger numbers mean AI cost more. Below zero means the AI run ended up ahead." },
-    { key: "shareExpert_shortfall", label: "Expert-share shortfall",
-      help: "The drop in how much of the workforce counts as expert, comparing the AI run to the same run without it. 0.2 means a fifth of the population fell below the expert line." },
-    { key: "meanE_baseline", label: "Mean E — no-AI baseline",
-      help: "The average skill level across everyone, in the run without AI. A number between 0 and 1, where 0.585 is the level this model calls expert." },
-    { key: "meanE_treatment", label: "Mean E — with AI",
-      help: "The average skill level across everyone, in the run with AI. Compare it to the no-AI baseline to see which way AI moved things." },
-    { key: "shareExpert_baseline", label: "Expert share — no-AI baseline",
-      help: "The fraction of people at or above the expert level, without AI. 0.6 means three in five." },
-    { key: "shareExpert_treatment", label: "Expert share — with AI",
-      help: "The fraction of people at or above the expert level, with AI. 0.6 means three in five." },
+    { key: "meanE_change", label: "Mean expertise, change from no-AI", from: changeOf("meanE"),
+      help: "How the average skill level differs with AI, against the same world without it. Below zero means AI cost the field skill; above zero means it added some." },
+    { key: "shareExpert_change", label: "Expert share, change from no-AI", from: changeOf("shareExpert"),
+      help: "How much of the workforce counts as expert, against the same world without AI. -0.2 means a fifth of the population fell below the expert line." },
   ],
   capability: [
     // The headline, and derived rather than taken raw for a reason: the absolute
@@ -78,20 +116,17 @@ const METRIC_SETS = {
     // capability they hold at all — a structure sweep would then colour by how big the
     // field is rather than by how much of it AI cost. The FRACTION is comparable across
     // every cell in the grid.
-    { key: "capabilityLostFrac", label: "Share of capability lost to AI",
-      help: "How much of the work the field could do was lost. 0.4 means it gets four tenths less done than the same field without AI. Below zero means AI left it better off.",
+    { key: "capabilityChangeFrac", label: "Capability, share gained or lost",
+      help: "Change in what the field can get done, versus the same world without AI. Below zero: AI cost capability. Above zero: AI added it.",
       from: (r) => { const b = num(r.systemCapability_baseline), t = num(r.systemCapability_treatment);
-        return b && b > 0 && t != null ? 1 - t / b : null; } },
-    { key: "systemCapability_shortfall", label: "Capability shortfall (expert-equivalents)",
-      help: "The same loss counted in people rather than percentages: how many experts' worth of work the field no longer gets done. Below zero means AI added capability." },
-    { key: "systemCapability_baseline", label: "Capability — no-AI baseline (log₁₀)", log: true,
-      help: "What the whole field can get done without AI, measured in experts' worth of work. Written as a power of ten, so 5 means 100,000 and 4 means 10,000." },
-    { key: "systemCapability_treatment", label: "Capability — with AI (log₁₀)", log: true,
-      help: "The same measure for the run with AI. Also a power of ten, so a drop of 1 means the field gets a tenth as much done." },
-    // What the humans alone are worth in the AI arm: the field after AI has eroded it,
-    // with the multiplier taken back off. The gap to the row above is the leverage.
-    { key: "systemCapabilityHuman_treatment", label: "Capability — humans alone, under AI (log₁₀)", log: true,
-      help: "What the people in the AI run could do if the AI were taken away. The gap between this and the line above is how much the AI itself is contributing." },
+        return b && b > 0 && t != null ? (t - b) / b : null; } },
+    { key: "systemCapability_change", label: "Capability, change in expert-equivalents", from: changeOf("systemCapability"),
+      help: "The same change counted in people rather than percentages: how many experts' worth of work the field gained or lost. Below zero means work it no longer gets done." },
+    // systemCapability_baseline/treatment and systemCapabilityHuman_treatment (all
+    // absolute log10 LEVELS) were removed alongside the expertise levels above, for the
+    // same reason: capabilityChangeFrac and systemCapability_change already say what
+    // changed, and aiLeverage below already says how much of the with-AI total is the
+    // AI's own contribution — nothing here needed a third, unpaired absolute number.
     { key: "aiLeverage", label: "AI leverage (× over unaugmented)",
       help: "How much more the field gets done with AI than the same people manage without it. 1.2 means a fifth more work.",
       from: (r) => { const t = num(r.systemCapability_treatment), h = num(r.systemCapabilityHuman_treatment);
@@ -170,6 +205,35 @@ function loadExperiment(entry) {
   const mm = axisMismatch(xKey, entry.xValues, xValues) || axisMismatch(yKey, entry.yValues, yValues);
   if (mm) { degenerate.push({ n: entry.n, xKey, yKey, why: mm + " — stale results from an earlier generation?" }); return null; }
 
+  // Held-fixed parameters, checked the same way and for the same reason as the axes.
+  // A run's identity is its whole configuration, not just what it swept: changing N or
+  // the horizon leaves every axis and the replicate count untouched, so both guards
+  // above pass and the page then describes results produced at a different scale. That
+  // exact case happened — the manifest said N=10,500 over N=4,000 data.
+  //
+  // Compared over the INTERSECTION of what the manifest fixed and what the CSV records,
+  // skipping the swept axes (fixed carries a per-experiment default for those) and
+  // anything non-scalar (a loaded world model is not a CSV column).
+  if (manifest.baseFixed && rows.length) {
+    const drifted = [];
+    Object.keys(manifest.baseFixed).forEach((k) => {
+      if (k === xKey || k === yKey) return;
+      const want = manifest.baseFixed[k];
+      if (want === null || typeof want === "object") return;
+      if (!(k in rows[0])) return;                      // not recorded, nothing to compare
+      const got = rows[0][k];
+      const same = typeof want === "number"
+        ? Math.abs(num(got) - want) < 1e-9
+        : String(want) === String(got);
+      if (!same) drifted.push(`${k}: manifest ${want}, results ${got}`);
+    });
+    if (drifted.length) {
+      degenerate.push({ n: entry.n, xKey, yKey,
+        why: drifted.join("; ") + " — stale results from an earlier generation?" });
+      return null;
+    }
+  }
+
   // Replicate count, checked the same way and for the same reason. Changing replicates
   // leaves the axes untouched, so the check above sees nothing wrong — and the page then
   // states a replicate count in its header that the data does not have, which is exactly
@@ -208,6 +272,7 @@ function loadExperiment(entry) {
 
   // Accumulate in place — this collapses the replicate dimension via averaging.
   for (const row of rows) {
+    SIGN_CHECK_KEYS.forEach((k) => checkChangeSign(k, row));
     const p = (xi.get(num(row[xKey])) * NY + yi.get(num(row[yKey]))) * NT + ti.get(num(row.t));
     counts[p]++;
     for (const k of NUMERIC_METRIC_KEYS) {
@@ -254,6 +319,9 @@ function loadExperiment(entry) {
 
   return {
     n: entry.n, xKey, yKey, xValues, yValues, ticks, fixed, runs: entry.runs,
+    // Names the SCENARIO where a set's experiments all share one axis pair. Optional:
+    // the sweep sets do not set it and the list falls back to the axis names.
+    label: entry.label,
     m, reps: uniform, repsPerCell: uniform === null ? Array.from(counts) : undefined,
   };
 }
@@ -286,6 +354,67 @@ if (degenerate.length) {
 if (!experiments.length) {
   console.error(`[build_report] no experiment results found under ${RESULTS_DIR}/ — run ./run_experiments.sh first`);
   process.exit(1);
+}
+
+// --- cell index: a short code for every heatmap cell, dereferenced by simulator.html --
+// "AI-482" means: the 482nd cell (1-based, counting up through every experiment in this
+// set in order, xi outer / yi inner within each) of whichever report PREFIX_BY_STEM maps
+// this STEM to. Typing that code into simulator.html reproduces the exact scenario that
+// cell represents, paused at t=0 — see data/cell-index.js and simulator.html's
+// applyScenarioCode().
+//
+// STORED PER-EXPERIMENT, not per-cell. A flat table of ~12,000 cells x ~28 params each
+// would run several megabytes; the "fixed" dict is identical for every cell in one
+// experiment; storing it once per experiment (45 experiments total across all three
+// report sets) and reconstructing each cell's params on the fly from
+// {fixed, xValues[xi], yValues[yi]} keeps the whole merged file under a few hundred KB.
+//
+// MERGED, not overwritten: this file is written by three separate build scripts
+// (report.html / structure_report.html / results_ACL.html), each responsible for one
+// PREFIX. A single build only knows its own experiments, so it reads whatever the other
+// two builds already wrote and replaces only its own prefix's block.
+const PREFIX_BY_STEM = { experiment: "AI", structure: "STR", acl: "CAP" };
+const CELL_INDEX_PREFIX = PREFIX_BY_STEM[STEM];
+if (CELL_INDEX_PREFIX) {
+  const scalarFixed = (fixed) => {
+    const out = {};
+    Object.keys(fixed).forEach((k) => {
+      const v = fixed[k];
+      if (v !== null && typeof v === "object") return;   // a loaded world model cannot be looked up from a code
+      if (v !== undefined) out[k] = v;
+    });
+    return out;
+  };
+  let offset = 0;
+  const cellIndexExperiments = experiments.map((e) => {
+    const entry = {
+      n: e.n, xKey: e.xKey, yKey: e.yKey,
+      xValues: e.xValues, yValues: e.yValues,
+      fixed: scalarFixed(e.fixed),
+      startOffset: offset,
+    };
+    offset += e.xValues.length * e.yValues.length;
+    return entry;
+  });
+
+  const jsonPath = path.resolve(paths.DATA, "cell-index.json");
+  const jsPath = path.resolve(paths.DATA, "cell-index.js");
+  let merged = {};
+  if (fs.existsSync(jsonPath)) {
+    try { merged = JSON.parse(fs.readFileSync(jsonPath, "utf8")); }
+    catch (err) { console.error(`[build_report] cell-index.json is unreadable (${err.message}) — starting fresh`); }
+  }
+  merged[CELL_INDEX_PREFIX] = { totalCells: offset, experiments: cellIndexExperiments };
+
+  fs.writeFileSync(jsonPath, JSON.stringify(merged, null, 2) + "\n");
+  // The .js wrapper is what simulator.html actually loads, via a plain <script src> —
+  // same reason world-model-data.js is a script and not fetched: this page has to keep
+  // working when opened straight off disk (file://), where fetch() of a sibling file is
+  // blocked by the browser's CORS policy but a <script src> is not.
+  fs.writeFileSync(jsPath,
+    "// Generated by build_report.js from cell-index.json. Do not edit by hand.\n"
+    + "var CELL_INDEX = " + JSON.stringify(merged) + ";\n");
+  console.log(`[build_report] cell-index: ${CELL_INDEX_PREFIX}-1..${CELL_INDEX_PREFIX}-${offset} (${cellIndexExperiments.length} experiments) -> data/cell-index.js`);
 }
 
 // Global, stable color domain per metric — computed once across every loaded
@@ -327,6 +456,7 @@ const meta = {
   replicates: manifest.replicates,
   horizon: manifest.horizon,
   metricSet: METRIC_SET,
+  stem: STEM,
   grid: [manifest.studyParams[manifest.experiments[0].x].values.length,
          manifest.studyParams[manifest.experiments[0].y].values.length],
   manifest: MANIFEST_PATH,
@@ -337,7 +467,10 @@ const meta = {
 
 const templatePath = paths.src("report.template.html");
 const outPath = path.resolve(paths.DOC, OUT_PATH);
-const template = fs.readFileSync(templatePath, "utf8");
+let template = fs.readFileSync(templatePath, "utf8");
+const titleTag = "<title>Experiment Report — Capability Decay Simulator</title>";
+if (!template.includes(titleTag)) throw new Error(`report.template.html is missing the expected <title> tag`);
+template = template.replace(titleTag, `<title>${TITLE}</title>`);
 const placeholder = "/*__REPORT_DATA__*/";
 if (!template.includes(placeholder)) throw new Error(`report.template.html is missing the ${placeholder} marker`);
 const [head, tail] = template.split(placeholder);

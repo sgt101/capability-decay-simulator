@@ -216,6 +216,10 @@ const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/);
 if (!scriptMatch) throw new Error("no <script> found");
 
 const driver = `
+// Captured before this driver touches anything. Everything below plays the simulation,
+// so a boot-state check further down would be reading the consequence of its own
+// interaction rather than the state the page opened in.
+const BOOT_T = app.sim.t, BOOT_PLAYING = app.playing;
 function pumpRAF(times, dtMs) {
   let ts = 0;
   for (let i = 0; i < times; i++) {
@@ -358,6 +362,101 @@ if (document.getElementById("inspector").innerHTML.indexOf("Institution 0") === 
 // Driven through real events. The charts size themselves from getBoundingClientRect at
 // draw time, so a resize that does not trigger a redraw leaves every canvas rendering
 // at its old width — which looks like a rendering bug, not a layout one.
+// --- the paired no-AI twin -----------------------------------------------------
+// The comparison is only valid if the two runs differ by aiEnabled and nothing else.
+// That is an invariant, not a rendering detail, so it is checked directly rather than
+// inferred from a chart that would look plausible either way.
+// --- settings handed over from a report heatmap --------------------------------
+// Only runs when the harness was given a hash. A handover that silently did nothing
+// boots perfectly well and shows defaults, so what is checked is that the parameters
+// ARRIVED, not that the page survived.
+if (SIM_HASH_SET) {
+  console.log("--- opened from a report cell ---");
+  const p = app.sim.params;
+  if (p.graphSource !== "ba") throw new Error("handover asked for the BA graph, got " + p.graphSource);
+  if (p.M !== 9) throw new Error("handover M=9 was not applied, got " + p.M);
+  if (p.N !== 4000) throw new Error("handover N=4000 was not applied, got " + p.N);
+  if (p.aiLevelFraction !== 0.2) throw new Error("handover aiLevelFraction=0.2 was not applied, got " + p.aiLevelFraction);
+  if (p.aiEnabled !== true) throw new Error("handover aiEnabled=true was not applied, got " + p.aiEnabled);
+  if (app.simBase.params.aiEnabled !== false) throw new Error("the twin picked up aiEnabled from the URL");
+  if (app.simBase.params.M !== 9) throw new Error("the twin did not get the handover parameters");
+  // Ready to go: at the start, not running.
+  if (BOOT_T !== 0) throw new Error("page opened at t=" + BOOT_T + ", not 0");
+  if (BOOT_PLAYING) throw new Error("page opened already running");
+  const chip = document.getElementById("fromChip");
+  if (chip.hidden) throw new Error("nothing told the reader the settings came from a URL");
+  if (chip.textContent.indexOf("structure.1 cell") === -1) throw new Error("provenance chip does not name the source: " + chip.textContent);
+  // Unknown keys must be refused AND reported, not absorbed. Driven off what the parser
+  // actually rejected rather than a key hardcoded here, so the check holds for any hash
+  // the harness is given.
+  URL_PARAMS.rejected.forEach((k) => {
+    if (k in p) throw new Error("an unknown URL key reached the simulation params: " + k);
+    if (chip.textContent.indexOf(k) === -1) throw new Error("rejected key " + k + " was not reported: " + chip.textContent);
+  });
+  console.log("OK: " + chip.textContent);
+}
+
+console.log("--- paired with/without-AI runs ---");
+{
+  if (!app.simBase) throw new Error("no paired baseline simulation was created");
+  if (app.simBase.params.aiEnabled !== false) throw new Error("the baseline arm has AI enabled");
+  if (app.simBase.N !== app.sim.N || app.simBase.M !== app.sim.M) {
+    throw new Error("arms differ in scale: N " + app.sim.N + "/" + app.simBase.N + ", M " + app.sim.M + "/" + app.simBase.M);
+  }
+  if (app.simBase.params.seed !== app.sim.params.seed) throw new Error("arms were built from different seeds");
+  if (app.simBase.history.length !== app.sim.history.length) {
+    throw new Error("arms are out of step: " + app.sim.history.length + " vs " + app.simBase.history.length + " ticks");
+  }
+  if (app.simBase.startTopE !== app.sim.startTopE) {
+    throw new Error("arms started from different populations: startTopE " + app.sim.startTopE + " vs " + app.simBase.startTopE);
+  }
+
+  // A slider must move BOTH arms, or the pair differs by something other than AI.
+  const root = document.getElementById("sidebar").querySelector('.field[data-key="decayRate"]');
+  const inp = root.querySelector("input");
+  inp.value = "0.031";
+  inp.dispatch("input", { target: inp });
+  if (app.simBase.params.decayRate !== app.sim.params.decayRate) {
+    throw new Error("a slider changed only one arm: " + app.sim.params.decayRate + " vs " + app.simBase.params.decayRate);
+  }
+
+  // ...but the AI switch must move only the treatment arm.
+  const aiBox = document.getElementById("fieldAiEnabled");
+  aiBox.checked = true;
+  aiBox.dispatch("change", { target: aiBox });
+  if (app.simBase.params.aiEnabled !== false) {
+    throw new Error("toggling AI switched it on in the baseline arm too");
+  }
+  // The delta chart must draw from BOTH arms. A derive() that quietly returned null —
+  // the twin missing, the histories misaligned — renders an empty chart, not an error.
+  drawnText.length = 0;
+  drawDeltaChart();
+  const drew = drawnText.filter((d) => d.align === "right").length;
+  if (drew < 2) throw new Error("the delta chart drew no axis, so it has no data: " + drew + " labels");
+
+  // The sign convention, tested on the chart's OWN function with known inputs rather
+  // than on the run's outcome. Asserting the outcome was tried and is wrong: the model
+  // shows a genuine early GAIN (leverage lands immediately, erosion compounds over
+  // decades — measured +8.5% at year 1, -33% by year 5), so a live run legitimately sits
+  // either side of zero depending on when you look.
+  const f = aiChangeFrac("x");
+  if (f({ x: 80 }, { x: 100 }) !== -0.2) {
+    throw new Error("less capability with AI must read NEGATIVE, got " + f({ x: 80 }, { x: 100 }));
+  }
+  if (Math.abs(f({ x: 120 }, { x: 100 }) - 0.2) > 1e-12) {
+    throw new Error("more capability with AI must read positive, got " + f({ x: 120 }, { x: 100 }));
+  }
+  if (f({ x: 5 }, { x: 0 }) !== null) throw new Error("a zero baseline must yield null, not Infinity");
+
+  const a = app.sim.history[app.sim.history.length - 1];
+  const b = app.simBase.history[app.simBase.history.length - 1];
+  const change = (a.systemCapability - b.systemCapability) / b.systemCapability;
+  if (!Number.isFinite(change)) throw new Error("capability change is not finite: " + change);
+  console.log("OK: twin runs in lockstep at " + app.simBase.history.length + " ticks, shares every parameter but aiEnabled");
+  console.log("    delta chart drew; capability change vs no-AI = "
+    + (change > 0 ? "+" : "") + (change * 100).toFixed(1) + "%");
+}
+
 console.log("--- parameter panel resize / collapse ---");
 {
   const layout = document.getElementById("layout");
@@ -813,7 +912,15 @@ console.log("\\n--- steady-state preset ---");
   // careers — the population has to reach a stationary tenure structure before
   // "drift" means anything. Measured, meanE is still rising at t=1200 and level from
   // t=2000. Starting earlier would score the transient as drift.
+  //
+  // Skipped when the page booted from a report handover. The preset restores the
+  // calibrated LEARNING parameters but not the scale, so a run that opened at some
+  // experiment's N and M is not the configuration the stationarity claim was measured
+  // at — it would be scoring a different model against this model's number.
   const before = app.sim.history.length;
+  if (SIM_HASH_SET) {
+    console.log("SKIP: stationarity check — page booted at a handover configuration (N=" + app.sim.N + ", M=" + app.sim.M + ")");
+  } else {
   for (let i = 0; i < 3000; i++) doTick();
   const h = app.sim.history;
   const at2000 = h[2000 - 1 + before].meanE, at3000 = h[3000 - 1 + before].meanE;
@@ -823,6 +930,7 @@ console.log("\\n--- steady-state preset ---");
   }
   console.log("OK: baseline held — meanE", at2000.toFixed(4), "->", at3000.toFixed(4),
     "drift", (drift >= 0 ? "+" : "") + drift.toFixed(4), "over 1,000 ticks past the transient");
+  }
 }
 
 console.log("\\n--- entrant pipeline: the page boots with a ladder, not a blob ---");
@@ -1184,8 +1292,13 @@ class FakeFileReader {
   }
 }
 
+// The page reads its handover settings from the URL hash. Overridable per-run via
+// SIM_HASH so a driver can boot the page as if it had been opened from a report cell.
+const location = { hash: process.env.SIM_HASH || "" };
+const SIM_HASH_SET = !!process.env.SIM_HASH;
+
 const sandbox = {
-  document, window, MutationObserver, getComputedStyle, Date,
+  document, window, MutationObserver, getComputedStyle, Date, location, SIM_HASH_SET,
   requestAnimationFrame: window.requestAnimationFrame.bind(window),
   console, Math, Set, Array, Object, Float32Array, Float64Array, Int32Array, Uint32Array,
   parseInt, parseFloat, isFinite, JSON,
@@ -1277,6 +1390,8 @@ console.log("\n--- bundled world-model data: ready at boot ---");
   };
   const sandbox2 = {
     document: doc2,
+    // No hash: this sandbox exercises the ordinary boot path, not a report handover.
+    location: { hash: "" },
     window: { matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {},
               requestAnimationFrame: () => 1, devicePixelRatio: 1 },
     requestAnimationFrame: () => 1,
@@ -1297,7 +1412,18 @@ console.log("\n--- bundled world-model data: ready at boot ---");
     " error: worldModelState.error, graphSource: app.sim.params.graphSource, N: app.sim.N, status: worldModelStatusText() })", sandbox2);
   if (!state.M) throw new Error("bundled data did not build a world model: " + state.error);
   if (state.source !== "bundled") throw new Error("source should be 'bundled', got " + state.source);
-  if (state.M !== 245) throw new Error("expected 245 institutions from the bundle, got " + state.M);
+  // Derived from the data, not written down: the world model gained its public-sector,
+  // asset-owner and market-infrastructure layers in 2026-08 and went from 245 to 330
+  // organisations. A hardcoded count turns every future addition into a test failure
+  // that says nothing about whether the page works.
+  {
+    const declared = JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8"))
+      .nodes.filter((n) => n.node_type === "Organisation").length;
+    if (state.M !== declared) {
+      throw new Error("bundle built " + state.M + " institutions but world-model.json declares " + declared
+        + " — stale bundle? run: node src/build_world_model_data.js");
+    }
+  }
   // The page BOOTS into the world model when the bundle is present: WORLD_MODEL_PARAMS
   // was fitted on that graph at N=10500, so booting on the BA graph would show a
   // configuration nothing was calibrated for. Unticking the switch still gets you BA.

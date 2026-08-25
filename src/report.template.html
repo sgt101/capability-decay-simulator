@@ -15,11 +15,11 @@
     --accent2-soft: #dfe9ea;
     --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
     --diverge-zero: #e4e2dc;
-    --diverge-pos-mid: #a8502c;
-    --diverge-pos-end: #5c2712;
-    --diverge-neg-mid: #2a78d6;
-    --diverge-neg-end: #0d366b;
-    --ref-line: #cc3333;
+    --diverge-pos-mid: #2f7d6c;
+    --diverge-pos-end: #0f4a3d;
+    --diverge-neg-mid: #a8502c;
+    --diverge-neg-end: #5c2712;
+    --ref-line: #6b3fa0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -36,11 +36,11 @@
       --accent2-soft: #1c2b2d;
       --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
       --diverge-zero: #2c3335;
-      --diverge-pos-mid: #dd8259;
-      --diverge-pos-end: #ffb38c;
-      --diverge-neg-mid: #3987e5;
-      --diverge-neg-end: #9ec5f4;
-      --ref-line: #ff6b66;
+      --diverge-pos-mid: #5fc9ac;
+      --diverge-pos-end: #a8f0d6;
+      --diverge-neg-mid: #dd8259;
+      --diverge-neg-end: #ffb38c;
+      --ref-line: #c79bff;
     }
   }
   :root[data-theme="dark"] {
@@ -57,11 +57,11 @@
     --accent2-soft: #1c2b2d;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     --diverge-zero: #2c3335;
-    --diverge-pos-mid: #dd8259;
-    --diverge-pos-end: #ffb38c;
-    --diverge-neg-mid: #3987e5;
-    --diverge-neg-end: #9ec5f4;
-    --ref-line: #ff6b66;
+    --diverge-pos-mid: #5fc9ac;
+    --diverge-pos-end: #a8f0d6;
+    --diverge-neg-mid: #dd8259;
+    --diverge-neg-end: #ffb38c;
+    --ref-line: #c79bff;
   }
   :root[data-theme="light"] {
     --bg: #eef0ee;
@@ -77,11 +77,11 @@
     --accent2-soft: #dfe9ea;
     --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
     --diverge-zero: #e4e2dc;
-    --diverge-pos-mid: #a8502c;
-    --diverge-pos-end: #5c2712;
-    --diverge-neg-mid: #2a78d6;
-    --diverge-neg-end: #0d366b;
-    --ref-line: #cc3333;
+    --diverge-pos-mid: #2f7d6c;
+    --diverge-pos-end: #0f4a3d;
+    --diverge-neg-mid: #a8502c;
+    --diverge-neg-end: #5c2712;
+    --ref-line: #6b3fa0;
   }
 
   * {
@@ -231,6 +231,7 @@
     font-size: 0.7rem;
     color: var(--ink-faint);
   }
+  .exp-item .scenario { display: block; font-size: 0.78rem; color: var(--ink); font-weight: 600; margin: 0.1rem 0 0.05rem; }
   .exp-item .pair {
     font-size: 0.86rem;
     font-weight: 600;
@@ -407,6 +408,14 @@
     display: flex;
     justify-content: space-between;
     gap: 1rem;
+  }
+  /* The code row is the one line meant to be COPIED elsewhere (into a paper, into the
+     simulator's code box), so it is set apart from the metric readouts around it. */
+  .chart-tooltip .code-row {
+    font-weight: 700;
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.3rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
   }
 
   table.data-table {
@@ -842,8 +851,14 @@
     DATA.experiments.forEach((exp, i) => {
       const li = document.createElement("li");
       li.className = "exp-item" + (i === app.expIndex ? " selected" : "");
+      // A set whose experiments all share the same axis pair — a scenario set, where
+      // what separates them is what was HELD FIXED — would otherwise render fifteen
+      // identical rows. `label` in the manifest names the scenario; the axis pair is
+      // still shown beneath it, because it is the same for every entry and a reader
+      // still needs to know what they are looking at.
       li.innerHTML =
         '<span class="n">EXPERIMENT ' + exp.n + "</span>" +
+        (exp.label ? '<span class="scenario">' + exp.label + "</span>" : "") +
         '<span class="pair"><span class="sym">' + sym(exp.xKey) + "</span>" + pretty(exp.xKey) +
         ' <span style="color:var(--ink-faint)">×</span> ' +
         '<span class="sym">' + sym(exp.yKey) + "</span>" + pretty(exp.yKey) + "</span>";
@@ -1017,6 +1032,27 @@
   function realIndices(dxi, dyi) { return realAxisOf("x") === "x" ? [dxi, dyi] : [dyi, dxi]; }
   function flatIndex(exp, rxi, ryi, ti) { return (rxi * exp.yValues.length + ryi) * exp.ticks.length + ti; }
 
+  // --- cell codes: a short reference number for every cell, dereferenced by
+  // simulator.html (see applyScenarioCode there and the writer in build_report.js) --
+  // Same mapping build_report.js uses, kept in sync by hand rather than shared code —
+  // both sides are ~one line and a build-time/runtime split makes sharing more trouble
+  // than it saves.
+  const PREFIX_BY_STEM = { experiment: "AI", structure: "STR", acl: "CAP" };
+  const REPORT_PREFIX = PREFIX_BY_STEM[DATA.stem] || "X";
+  // Cumulative cell count before each experiment, in DATA.experiments' own order — the
+  // same order build_report.js iterated in when it wrote startOffset into cell-index.js,
+  // so a code computed here and a code looked up there name the same cell.
+  const CELL_OFFSETS = (function () {
+    let acc = 0;
+    return DATA.experiments.map((e) => { const off = acc; acc += e.xValues.length * e.yValues.length; return off; });
+  })();
+  // 1-based, xi outer / yi inner, using REAL (unflipped) indices — a code must mean the
+  // same cell regardless of which axis the reader currently has on which side.
+  function codeForRealCell(expArrIdx, rxi, ryi) {
+    const exp = DATA.experiments[expArrIdx];
+    return REPORT_PREFIX + "-" + (CELL_OFFSETS[expArrIdx] + rxi * exp.yValues.length + ryi + 1);
+  }
+
   // Single metric value at a DISPLAY grid position and tick index.
   function metricAt(exp, dxi, dyi, ti, key) {
     const [rxi, ryi] = realIndices(dxi, dyi);
@@ -1043,8 +1079,11 @@
   // a shortfall is a difference against the paired no-AI run while a baseline or a
   // leverage is a level — one label cannot honestly describe both.
   function trajAxisTitle(key) {
-    if (/_shortfall$|LostFrac$/.test(key)) {
-      return "\u2212 AI helped \u00b7 against the same run without AI \u00b7 AI hurt +";
+    // Signed as the CHANGE now: below zero is what AI cost, above is what it added. The
+    // cue therefore runs "lost" first (the bottom of the rotated axis) and "gained"
+    // last, which is the opposite way round from the old shortfall convention.
+    if (/_change$|ChangeFrac$/.test(key)) {
+      return "\u2212 AI cost the field \u00b7 against the same world without AI \u00b7 AI added +";
     }
     const m = DATA.metrics.find((x) => x.key === key);
     return m ? m.label : key;
@@ -1176,10 +1215,13 @@
     const exp = currentExperiment();
     const cell = cellAt(exp, hit.xi, hit.yi, exp.ticks[app.tickIndex]);
     if (!cell) { tt.hidden = true; drawHeatmap(); return; }
+    const [rxi, ryi] = realIndices(hit.xi, hit.yi);
+    const code = codeForRealCell(app.expIndex, rxi, ryi);
     const rows = DATA.metrics.map((m) =>
       '<div class="row"><span>' + m.label + "</span><span>" + fmtNum(cell[m.key]) + "</span></div>"
     ).join("");
     tt.innerHTML =
+      '<div class="row code-row"><span>code</span><span>' + code + "</span></div>" +
       '<div class="row"><b>' + pretty(axisKey(exp, "x")) + "</b><span>" + fmtAxis(axisKey(exp, "x"), cellField(cell, "x")) + "</span></div>" +
       '<div class="row"><b>' + pretty(axisKey(exp, "y")) + "</b><span>" + fmtAxis(axisKey(exp, "y"), cellField(cell, "y")) + "</span></div>" +
       '<div class="row"><span>replicates</span><span>' + cell.n + "</span></div>" + rows;
@@ -1190,6 +1232,31 @@
     drawHeatmap();
   });
   heatmapCanvas.addEventListener("mouseleave", () => { hoverCell = null; if (tooltipEl) tooltipEl.hidden = true; drawHeatmap(); });
+
+  // Clicking a cell opens the simulator set up to reproduce it, paused at t=0.
+  //
+  // Relative because the report is a file on disk as often as a served page: doc/ to
+  // src/ is the layout the repository has. The published Pages site does not carry the
+  // reports at all, so there is no second path to satisfy.
+  const SIMULATOR_HREF = "../src/simulator.html";
+
+  // The short code IS the link now: "#c=AI-482" is what simulator.html parses (see
+  // applyScenarioCode there), and it looks up the same {fixed, xValues, yValues} this
+  // page already has, rather than carrying all ~25 params in the URL itself. The old
+  // form — every param spelled out in the hash — is still accepted by simulator.html for
+  // anything that predates this, but no longer produced.
+  function simulatorURLFor(expArrIdx, rxi, ryi) {
+    const code = codeForRealCell(expArrIdx, rxi, ryi);
+    return SIMULATOR_HREF + "#c=" + encodeURIComponent(code);
+  }
+
+  heatmapCanvas.style.cursor = "pointer";
+  heatmapCanvas.addEventListener("click", (evt) => {
+    const hit = hitTest(heatmapCanvas, evt);
+    if (!hit) return;
+    const [rxi, ryi] = realIndices(hit.xi, hit.yi);
+    window.open(simulatorURLFor(app.expIndex, rxi, ryi), "_blank", "noopener");
+  });
 
   /* ---------- table view ---------- */
   function renderTable() {
@@ -1534,8 +1601,13 @@
         '<span class="mono" style="color:var(--accent2)">' + sym(axisKey(exp, "x")) + "</span> " + pretty(axisKey(exp, "x")) +
         ' <span style="color:var(--ink-faint)">×</span> ' +
         '<span class="mono" style="color:var(--accent2)">' + sym(axisKey(exp, "y")) + "</span> " + pretty(axisKey(exp, "y"));
-      document.getElementById("heatmapSub").textContent =
-        DATA.metrics.find((m) => m.key === app.metricKey).label + " — " + exp.runs + " runs, " + DATA.replicates + " replicates/cell";
+      // A plain-English sentence, not the run count. "N runs, M replicates/cell" told
+      // the reader nothing about what the colours MEAN — this is the same explanation
+      // the ? tooltip gives, just always visible rather than needing a hover to find.
+      {
+        const m = DATA.metrics.find((x) => x.key === app.metricKey);
+        document.getElementById("heatmapSub").textContent = (m && m.help) || m.label;
+      }
       const isTable = app.viewMode === "table";
       document.getElementById("heatmapCanvas").style.display = isTable ? "none" : "block";
       document.getElementById("tableWrap").style.display = isTable ? "block" : "none";

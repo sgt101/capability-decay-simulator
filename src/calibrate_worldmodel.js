@@ -35,11 +35,16 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { initSim, tick, EXPERT_THRESHOLD, TICKS_PER_YEAR, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS } = require("./engine.js");
+const { initSim, tick, EXPERT_THRESHOLD, TICKS_PER_YEAR, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS,
+        WORLD_MODEL_PARAMS } = require("./engine.js");
 const { loadWorldModel } = require("./world_model.js");
 const paths = require("./paths.js");
 
-const N = 10500;
+// Follows the shipped configuration rather than restating it. This was a literal 10500,
+// which silently stopped matching when the world model gained its public-sector layers
+// and WORLD_MODEL_PARAMS.N moved to 11,320 — a calibration script fitting at a different
+// scale from the one it is calibrating FOR is the one thing it must never do.
+const N = WORLD_MODEL_PARAMS.N;
 // Overridable so the fallback (teachTopN 8, which costs almost no individual spread to
 // begin with) can be scanned without editing this file. Guarded: a non-numeric value
 // here would silently switch a mechanism off and the scan would report a different

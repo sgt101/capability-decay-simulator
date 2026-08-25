@@ -137,6 +137,7 @@ results/*
 !results/steady_state/
 report.html
 structure_report.html
+results_ACL.html
 # The same template with a different metric set injected, built by
 #   node src/build_report.js --metrics expertise   --out graph-results-expertise.html
 #   node src/build_report.js --metrics capability  --out graph-results-capability.html

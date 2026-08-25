@@ -1,3 +1,5 @@
+[Claude must not edit this file]: #
+
 # Capability Decay Simulator
 
 [![LHS Shows a simulation without AI, yeilding a steady state with strong expertise and relatively low centralisation, RHS shows an AI simulation with low expertise and high centralisation](doc/images/no-ai-vs-ai.png)](doc/images/no-ai-vs-ai.png).
@@ -21,7 +23,7 @@ Running the batchs takes about 1hr 40 on a MBP-5 with 48GB ram, and you will nee
 
 ## Background
 
-[![A visualisation of risk propagation in the financial system](doc/images/dynamic-matrix-bw.svg)](doc/images/dynamic-matrix-bw.svg).
+[![A visualisation of risk propagation in the financial system](doc/images/dynamic-matrix-bw.svg)](doc/images/dynamic-matrix-bw.svg)
 Figure 1. A visualisation of a risk propagation model of a financial system. On the LHS causal factors impact on human psychology and insitutional culture, changes in behaviour and capability (positive or negative) then propagate into the functions of the finacial system resulting in the potential creation of harm RHS[^†]
 
 The question that motivated the development of this simulation was "what significant harms could arise from the deployment of modern AI by actors in the Financial system". A significant harm is considered as something that would create political pressure, for example the kind of harm to an individual or small group that would make them the focus of national attention (think - [https://en.wikipedia.org/wiki/British_Post_Office_scandal](subpost masters) in the uk) or create widespread economic damage that might not be grievous for an individual but is noticable at regional, national or super national levels (for example the [https://en.wikipedia.org/wiki/2008_financial_crisis](GFC)).
@@ -64,7 +66,15 @@ A data driven graph is created using the data in [data\world-model.json](data\wo
 
 Two types of tool are provided to explore and use the simuation.
 
-- [src\similator.html](src\simulator.html) : this is an interactive html page that you can open as a file on your file system when you download the repo or open at [[sgt101.github.io/capability-decay-simulator](https://sgt101.github.io/capability-decay-simulator/)
+- [src\similator.html](src\simulator.html) : this is an interactive html page that you can open as a file on your file system when you download the repo or open at [[sgt101.github.io/capability-decay-simulator](https://sgt101.github.io/capability-decay-simulator/)]. The interactive simulator is useful for developing intuitions about the behavior of the system and for investigating specific scenarios and points of interest and curiosity.
+
+- Another set of tools are the javascript files that allow bulk simulations to be run exploiting the astonishing power of modern compute platforms in order to review the space of potential outcomes and overall effect of particular free parameters in the simulation. These scripts are used to run experiments, but they also have counterparts which are then used to generate reports that can be browsed interactively.
+
+- run_experiments.sh is paired with build_report.js to produce doc\report.html
+
+- run_structure_experiments.sh is paired with build_structure_report.js to produce doc\report_struture.html
+
+The data that run_experiment.sh and run_structure_experiments.sh produce is stored in \data\experiments and \data\experiments-structure
 
 [^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinking and scholarship behind this work was developed. Thanks folks!
 
@@ -77,3 +87,5 @@ Fabrizio Dell’Acqua, , Edward McFowland III, , Ethan Mollick, et al. ‘Naviga
 Albert, Reka, and Albert-Laszlo Barabasi. ‘Statistical Mechanics of Complex Networks’. Reviews of Modern Physics 74, no. 1 (2002): 47–97. https://doi.org/10.1103/RevModPhys.74.47.
 
 David Stromberg, Victor Lei, and Yanhui Wu. ‘The Generative AI Learning Penalty: Evidence from Chinese Secondary Education by David Stromberg, Victor Lei, Yanhui Wu :: SSRN’. Accessed 20 August 2026. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6868618.
+
+[Claude must not edit this file]: #
