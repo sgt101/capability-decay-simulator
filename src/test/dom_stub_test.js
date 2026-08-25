@@ -1428,7 +1428,42 @@ console.log("\n--- bundled world-model data: ready at boot ---");
   // was fitted on that graph at N=10500, so booting on the BA graph would show a
   // configuration nothing was calibrated for. Unticking the switch still gets you BA.
   if (state.graphSource !== "worldModel") throw new Error("bundle present but page did not boot into the world model, got " + state.graphSource);
-  if (state.N !== 10500) throw new Error("expected the calibrated N=10500 at boot, got " + state.N);
+  // DERIVED, for the same reason the institution count above is: a hardcoded N turns
+  // every future addition to the world model into a red build that says nothing about
+  // whether the page works. This one was hardcoded at 10500, the model grew to 11322,
+  // and the test failed for being out of date rather than for finding anything.
+  //
+  // Two checks, because "N is whatever the engine says" alone would pass while the
+  // engine's own constant went stale against the data — which is exactly what happened.
+  //
+  //   1. the page boots at the engine's declared world-model population, and
+  //   2. that constant still equals the intake identity the bundle implies:
+  //      headcount = annual intake x career years / FIELD_DIVISOR (world_model.js's
+  //      suggestedN, world-model-plan.md section 4).
+  //
+  // Both are scale-free. The world model can grow tenfold and neither needs editing;
+  // what fails is the engine and the data disagreeing, which is a real defect.
+  {
+    const engine = require("../engine.js");
+    const wmMod = require("../world_model.js");
+    const declaredN = engine.WORLD_MODEL_PARAMS.N;
+    if (state.N !== declaredN) {
+      throw new Error("page booted at N=" + state.N + " but engine.js declares WORLD_MODEL_PARAMS.N="
+        + declaredN + " — the page is not running the shipped world-model calibration");
+    }
+    // Both files, in the same order generate_worldmodel_experiments.js loads them —
+    // loadWorldModel rejects a costs argument without geoTiers/sectorTiers.
+    const wm = wmMod.loadWorldModel(
+      JSON.parse(fs.readFileSync(paths.data("world-model.json"), "utf8")),
+      JSON.parse(fs.readFileSync(paths.data("mobility-costs.json"), "utf8")));
+    const identity = wmMod.suggestedN(wm, engine.CAREER_YEARS, engine.FIELD_DIVISOR);
+    if (declaredN !== identity) {
+      throw new Error("engine.js WORLD_MODEL_PARAMS.N=" + declaredN + " but the world model's intake identity"
+        + " now gives " + identity + " — the model changed size and the constant did not follow."
+        + " Update WORLD_MODEL_PARAMS.N to " + identity
+        + " and consider re-running: node src/calibrate_worldmodel.js");
+    }
+  }
   if (!/bundled with this page/.test(state.status)) throw new Error("status line does not say where the data came from: " + state.status);
   console.log("OK: booted with the bundle —", state.M, "institutions ready, booted into the world model at N=" + state.N);
 
