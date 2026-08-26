@@ -95,6 +95,10 @@ if (missingIds.length) throw new Error("the page no longer declares these ids: "
 // window.open calls, so a cell click can be inspected rather than merely survived.
 const openCalls = [];
 
+// Filled by the driver's table-view step; asserted after the run, in Node scope, where
+// LaTeX backslashes only need escaping once.
+const latexProbe = {};
+
 const documentElement = new FakeElement("html");
 documentElement.getAttribute = () => null;
 const document = {
@@ -433,6 +437,23 @@ if (app.viewMode !== "table") throw new Error("table tab did not switch app.view
 const tableHtml = document.getElementById("tableWrap").innerHTML;
 if (!tableHtml.includes("<table")) throw new Error("table view did not render a table");
 console.log("OK: table view rendered,", (tableHtml.match(/<tr>/g) || []).length, "rows");
+
+// --- the LaTeX copy ---------------------------------------------------------------
+// Generated here, ASSERTED IN NODE SCOPE below. This driver is a template literal, so
+// every backslash in it would need doubling a second time — unreadable for a format
+// that is mostly backslashes, and a source of escaping bugs in the test rather than in
+// the code under test. The string is handed out through the sandbox instead.
+{
+  if (document.getElementById("tableToolbar").style.display !== "flex") {
+    throw new Error("table view is showing but the LaTeX copy toolbar is hidden");
+  }
+  const exp = currentExperiment();
+  latexProbe.tex = tableToLatex();
+  latexProbe.cols = exp.xValues.length;
+  latexProbe.rows = exp.yValues.length;
+  console.log("OK: LaTeX copy produced", latexProbe.tex.length, "characters");
+}
+
 document.getElementById("tabHeatmap").dispatch("click");
 if (app.viewMode !== "heatmap") throw new Error("heatmap tab did not switch back");
 
@@ -566,13 +587,57 @@ console.log("\\nALL REPORT FLOWS COMPLETED WITHOUT THROWING");
 const sandbox = {
   document, window, MutationObserver, getComputedStyle,
   console, Math, Set, Array, Object, JSON, parseInt, parseFloat, isFinite,
-  drawnText, openCalls,
+  drawnText, openCalls, latexProbe,
 };
 vm.createContext(sandbox);
 try {
   vm.runInContext(scriptMatch[1] + "\n" + driver, sandbox, { filename: "report+driver.js" });
 } catch (err) {
   console.error("\nTHREW:", err.stack || err);
+  process.exitCode = 1;
+}
+
+// The LaTeX the table view produced. Checked as TEXT, not merely "did not throw": the
+// failure that matters is a table which copies cleanly and then will not compile, and
+// nothing else in this repository would catch that.
+if (latexProbe.tex) {
+  const tex = latexProbe.tex, cols = latexProbe.cols, rows = latexProbe.rows;
+  const fail = (msg) => { console.error("\nLaTeX copy: " + msg); process.exitCode = 1; };
+
+  const need = ["\\begin{table}", "\\begin{tabular}", "\\toprule", "\\midrule",
+    "\\bottomrule", "\\end{tabular}", "\\end{table}", "\\caption{", "\\label{tab:"];
+  const absent = need.filter((s) => !tex.includes(s));
+  if (absent.length) fail("output is missing " + absent.join(", "));
+
+  // Column spec must match the grid: one l for the row header, one r per x value.
+  const spec = /\\begin\{tabular\}\{([^}]*)\}/.exec(tex);
+  const wantSpec = "l" + "r".repeat(cols);
+  if (!spec || spec[1] !== wantSpec) {
+    fail("tabular spec is " + (spec && spec[1]) + ", expected " + wantSpec);
+  }
+  // Header plus one row per y value, each with exactly `cols` unescaped separators.
+  const ruled = tex.split("\n").filter((l) => /\\\\$/.test(l.trim()));
+  if (ruled.length !== rows + 1) {
+    fail("expected " + (rows + 1) + " ruled rows (header + " + rows + "), got " + ruled.length);
+  }
+  const badRow = ruled.findIndex((l) => (l.match(/(?<!\\)&/g) || []).length !== cols);
+  if (badRow >= 0) {
+    fail("row " + badRow + " has " + (ruled[badRow].match(/(?<!\\)&/g) || []).length
+      + " separators, expected " + cols);
+  }
+  const opens = (tex.match(/(?<!\\)\{/g) || []).length;
+  const closes = (tex.match(/(?<!\\)\}/g) || []).length;
+  if (opens !== closes) fail("unbalanced braces: " + opens + " { against " + closes + " }");
+  // Nothing from the page's display glyphs (σ_L, γ_below, ×, —) may reach a .tex file.
+  const stray = tex.match(/[^\x00-\x7F]/g);
+  if (stray) fail("non-ASCII survived into the output: " + [...new Set(stray)].join(" "));
+
+  if (!process.exitCode) {
+    console.log("OK: LaTeX copy — " + ruled.length + " rows x " + (cols + 1)
+      + " cols, ASCII-clean, braces balanced");
+  }
+} else {
+  console.error("\nLaTeX copy: the driver never reached the table view");
   process.exitCode = 1;
 }
 

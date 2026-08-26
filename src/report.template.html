@@ -349,6 +349,36 @@
   :root[data-theme="dark"] .stats-strip .sn-weak   { color: #e0be6a; }
   :root[data-theme="dark"] .stats-strip .sn-strong { color: #7fd4a2; }
 
+  /* Sits above the table only — the heatmap has nothing to copy as a tabular. */
+  .table-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+  }
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.28rem 0.6rem;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .copy-btn:active { transform: translateY(1px); }
+  .copy-btn.is-done { color: #2e7d4f; border-color: #2e7d4f; }
+  .copy-btn.is-fail { color: #c0392b; border-color: #c0392b; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .copy-btn.is-done { color: #7fd4a2; border-color: #7fd4a2; }
+    :root:not([data-theme="light"]) .copy-btn.is-fail { color: #f08a80; border-color: #f08a80; }
+  }
+  :root[data-theme="dark"] .copy-btn.is-done { color: #7fd4a2; border-color: #7fd4a2; }
+  :root[data-theme="dark"] .copy-btn.is-fail { color: #f08a80; border-color: #f08a80; }
+
   .heatmap-wrap {
     position: relative;
   }
@@ -624,6 +654,18 @@
           <span class="sub" id="heatmapSub"></span>
         </div>
         <div class="stats-strip" id="statsStrip"></div>
+        <div class="table-toolbar" id="tableToolbar" style="display: none">
+          <button type="button" id="copyLatexBtn" class="copy-btn"
+                  title="Copy this table as a LaTeX tabular (booktabs + graphicx)">
+            <!-- Two offset rounded rectangles: the conventional copy glyph. Inline
+                 rather than an icon font or a data: URI, so the page stays one file. -->
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <rect x="5.5" y="5.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg>
+            <span id="copyLatexLabel">Copy as LaTeX</span>
+          </button>
+        </div>
         <div class="heatmap-wrap" id="heatmapWrap">
           <canvas id="heatmapCanvas"></canvas>
           <div class="table-scroll" id="tableWrap" style="display: none"></div>
@@ -1404,6 +1446,181 @@
     wrap.innerHTML = html;
   }
 
+  /* ---------- table → LaTeX ---------- */
+  // The page's SYMBOL map carries display glyphs ("σ_L", "γ_below") that are Unicode
+  // text, not math — pasting them into a .tex file gives an inputenc error or a literal
+  // underscore, depending on the engine. These are the same parameters written as real
+  // math, so the copied table compiles as-is under pdflatex.
+  const LATEX_SYMBOL = {
+    turnoverRate: "r", learningRateSpread: "\\sigma_L", transferRate: "\\beta", decayRate: "\\delta",
+    aiDampeningBelow: "\\gamma_{\\mathrm{below}}", aiDampeningAbove: "\\gamma_{\\mathrm{above}}",
+    aiLevelFraction: "\\lambda",
+    expertiseMean: "\\mu_E", entrantExpertiseMean: "\\mu_{\\mathrm{ent}}",
+    M: "M", graphAttachment: "m", frontierBreadth: "b",
+  };
+  // Escapes the ten characters TeX treats specially. Applied to every piece of PROSE
+  // that reaches the output — parameter names, metric labels, captions — but never to
+  // the math above or the numbers, which are already valid.
+  function texEscape(s) {
+    return String(s)
+      .replace(/\\/g, "\\textbackslash{}")
+      .replace(/([&%$#_{}])/g, "\\$1")
+      .replace(/~/g, "\\textasciitilde{}")
+      .replace(/\^/g, "\\textasciicircum{}")
+      // The page speaks in typographic characters; TeX wants its own.
+      .replace(/−/g, "$-$").replace(/–/g, "--").replace(/—/g, "---")
+      .replace(/×/g, "$\\times$").replace(/·/g, "$\\cdot$")
+      .replace(/…/g, "\\ldots{}").replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  }
+  // A column header, in math where the parameter has a symbol and as escaped text
+  // otherwise — so an axis this report has never seen still comes out compilable.
+  function texAxisName(key) {
+    const s = LATEX_SYMBOL[key];
+    return (s ? "$" + s + "$ " : "") + texEscape(pretty(key));
+  }
+  // fmtNum's exponential ("-1.2e-4") is JavaScript notation, not maths. Everything else
+  // it produces is already a plain decimal and passes through untouched.
+  function texNum(v) {
+    if (v == null) return "---";
+    const body = texMath(v);
+    return body === fmtNum(v) ? body : "$" + body + "$";
+  }
+  // The same number WITHOUT delimiters, for dropping into an existing math group. Keeping
+  // these separate is not fussiness: "$\pm$" + texNum(x) produced "$\pm$$6.0 \times
+  // 10^{-4}$", two adjacent math groups, which typesets with a spurious gap.
+  function texMath(v) {
+    if (v == null) return "---";
+    const s = fmtNum(v);
+    const m = /^(-?[\d.]+)e([+-]?\d+)$/.exec(s);
+    return m ? m[1] + " \\times 10^{" + parseInt(m[2], 10) + "}" : s;
+  }
+
+  // The whole table as a standalone float. Deliberately a complete `table` environment
+  // rather than a bare `tabular`: the caption is where the tick, the replicate count and
+  // the noise floor go, and a grid copied without those is exactly the decontextualised
+  // number this report has been trying to stop people quoting.
+  //
+  // \resizebox because these grids run to 21 columns and overrun \textwidth at any
+  // readable font size. It needs graphicx; the rules need booktabs. Both are named in a
+  // comment at the top of the output so a paste into a fresh document says what it wants.
+  function tableToLatex() {
+    const exp = currentExperiment();
+    const t = exp.ticks[app.tickIndex];
+    const metric = DATA.metrics.find((x) => x.key === app.metricKey);
+    const dispXValues = axisValues(exp, "x"), dispYValues = axisValues(exp, "y");
+    const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
+
+    const L = [];
+    // ASCII throughout, this provenance comment included: a .tex file carrying a stray
+    // em dash is an inputenc error under pdflatex, and the report's own prose is full of
+    // typographic characters that must not follow the numbers out.
+    L.push("% " + texEscape(DATA.stem) + "." + exp.n + ": generated by build_report.js, "
+      + DATA.generatedAt);
+    L.push("% requires: \\usepackage{booktabs,graphicx}");
+    L.push("\\begin{table}[htbp]");
+    L.push("  \\centering");
+
+    // Caption: what the numbers are, at what tick, over how many replicates, and how
+    // much of what the reader sees is noise. Same figures as the on-screen stats strip.
+    const st = exp.stats && exp.stats[app.metricKey];
+    const i = app.tickIndex;
+    let caption = texEscape(metric ? metric.label : app.metricKey)
+      + " at $t=" + t + "$ months, "
+      + texAxisName(dispYKey) + " (rows) against " + texAxisName(dispXKey) + " (columns).";
+    if (st && st.mean[i] != null) {
+      caption += " Grid mean " + texNum(st.mean[i])
+        + ", range " + texNum(st.min[i]) + " to " + texNum(st.max[i]) + ".";
+      if (st.sem[i] != null) {
+        caption += " Single-cell noise $\\pm " + texMath(2 * st.sem[i]) + "$ ($2\\sigma$"
+          + (exp.reps ? ", " + exp.reps + " replicates" : "") + ")";
+        if (st.sn[i] != null) {
+          caption += "; signal-to-noise " + st.sn[i].toFixed(1)
+            + (st.sn[i] < 2 ? ", i.e. no variation above the replicate noise" : "");
+        }
+        caption += ".";
+      }
+    }
+    L.push("  \\caption{" + caption + "}");
+    L.push("  \\label{tab:" + DATA.stem + "-" + exp.n + "-" + app.metricKey.replace(/_/g, "-") + "-t" + t + "}");
+    L.push("  \\resizebox{\\textwidth}{!}{%");
+    L.push("  \\begin{tabular}{l" + "r".repeat(dispXValues.length) + "}");
+    L.push("    \\toprule");
+    L.push("    " + texAxisName(dispYKey) + " $\\backslash$ " + texAxisName(dispXKey)
+      + " & " + dispXValues.map((x) => texEscape(fmtAxis(dispXKey, x))).join(" & ") + " \\\\");
+    L.push("    \\midrule");
+    // Rows top-down in the same order the on-screen table shows them (highest y first),
+    // so a reader comparing the two is looking at the same shape.
+    for (let yi = dispYValues.length - 1; yi >= 0; yi--) {
+      const cells = [];
+      for (let xi = 0; xi < dispXValues.length; xi++) {
+        cells.push(texNum(metricAt(exp, xi, yi, app.tickIndex, app.metricKey)));
+      }
+      L.push("    " + texEscape(fmtAxis(dispYKey, dispYValues[yi])) + " & " + cells.join(" & ") + " \\\\");
+    }
+    L.push("    \\bottomrule");
+    L.push("  \\end{tabular}%");
+    L.push("  }");
+    L.push("\\end{table}");
+    // Trailing newline: this lands in an editor at a cursor, and a file that ends
+    // mid-line makes the next paste start on the same one.
+    return L.join("\n") + "\n";
+  }
+
+  // navigator.clipboard is unavailable outside a secure context, and these reports are
+  // routinely opened straight off disk — so the textarea fallback is the path that
+  // actually runs for a lot of readers, not a legacy nicety. Failure is reported on the
+  // button rather than swallowed: silently copying nothing is worse than saying so.
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      // Off-screen rather than hidden: display:none and visibility:hidden are not
+      // selectable, and execCommand("copy") copies the selection.
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.setAttribute("readonly", "");
+      document.body.appendChild(ta);
+      try {
+        ta.select();
+        if (document.execCommand("copy")) resolve(); else reject(new Error("execCommand refused"));
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+
+  let copyResetTimer = null;
+  function copyTableAsLatex() {
+    const btn = document.getElementById("copyLatexBtn");
+    const label = document.getElementById("copyLatexLabel");
+    if (!btn || !label) return;
+    const done = (cls, text) => {
+      btn.classList.remove("is-done", "is-fail");
+      btn.classList.add(cls);
+      label.textContent = text;
+      clearTimeout(copyResetTimer);
+      copyResetTimer = setTimeout(() => {
+        btn.classList.remove("is-done", "is-fail");
+        label.textContent = "Copy as LaTeX";
+      }, 2200);
+    };
+    let tex;
+    try {
+      tex = tableToLatex();
+    } catch (err) {
+      done("is-fail", "Could not build table");
+      throw err;   // rethrown: a broken generator is a bug, not a user-facing outcome
+    }
+    copyText(tex).then(
+      () => done("is-done", "Copied"),
+      () => done("is-fail", "Copy blocked — select the table instead"));
+  }
+
   /* ---------- axis resolution (shared by heatmap, table, and trajectories) ---------- */
   // "x"/"y" below always mean the DISPLAY axis (what's currently drawn horizontal vs
   // vertical); realAxisOf maps that to the experiment's actual xKey/yKey identity,
@@ -1735,6 +1952,9 @@
       const isTable = app.viewMode === "table";
       document.getElementById("heatmapCanvas").style.display = isTable ? "none" : "block";
       document.getElementById("tableWrap").style.display = isTable ? "block" : "none";
+      // The LaTeX copy is a tabular of the grid, so it is offered only where a grid is
+      // actually on screen.
+      document.getElementById("tableToolbar").style.display = isTable ? "flex" : "none";
       renderStatsStrip();
       if (isTable) renderTable(); else drawHeatmap();
       renderLegend();
@@ -1758,6 +1978,9 @@
 
   document.getElementById("metaLine").textContent = "generated " + DATA.generatedAt + " · horizon t=" + DATA.horizon;
   buildMetricSelect();
+  // Bound once at boot, not inside render(): render() runs on every tick drag and would
+  // otherwise stack a fresh listener per frame.
+  document.getElementById("copyLatexBtn").addEventListener("click", copyTableAsLatex);
   onExperimentChange();
   window.addEventListener("resize", render);
   new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
