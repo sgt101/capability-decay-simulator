@@ -11,13 +11,15 @@ real expertise (`E`) behind their output over time.
 
 You will need to download this repository and then you do the following:
 
-- See [simulator.html](https://sgt101.github.io/capability-decay-simulator/) for the interactive visualizer.
+- See [simulator.html](https://sgt101.github.io/capability-decay-simulator/simulator.html) for the interactive visualizer.
 
 - Run the experiments "src/run_experiments.sh --workers 14"
 
 - Run "node src/build_report.js" and you can then browse [report.html](report.html) to review your results
   d
   See [machine_generated.md](machine_generated.md) for an (mostly AI) generated set of more detailed instructions for setting up and running batch experiements.
+
+- alternatively access precanned result reports from [index.html](https://sgt101.github.io/capability-decay-simulator/index.html)
 
 Running the batchs takes about 1hr 40 on a MBP-5 with 48GB ram, and you will need a few GB of disk free as the results files are quite big.
 
@@ -35,6 +37,15 @@ This focus motivated an analysis of different psychological, cultural and insitu
 One of these risk factors is the potential for AI to impede human learning, particularly the acquisition of expertise. The assumption is that expertise is required by the financial system both during it's normal functioning to create maximal efficiency (getting as close to market efficiency as non-rational agents might) but also to effectively manage crisis situations. If the system fails in a crisis and (for example) the payments system collapses because there was insufficient expertise to shape an effective set of mitigations significant harm will clearly accrue (people die, the economy collapses, chaos reigns...).
 
 This simulation models how AI might impact the development and transmission of expertise. There are a bunch of caveats about its validity and working but it's now at a point where it produces interesting behaviours and so it's time to share it.
+
+## Contribution
+
+As far as I am aware no one has done the following:
+
+- Constructed a simulator of a human knowledge insitution that includes dynamics that capture the breaks and amplifications on learning and capability that AI plausibly creates.
+- Implemented it using the data that is provided by the empirical studies that are available for measured impacts on expertise acquisition and capability amplification/negation
+- Run the simulation to generate results showing long term impacts over a number of scenarios
+- Analysed the results to provide information and outcomes for policy makers and prudential officers at insitutions.
 
 ## Model
 
@@ -76,13 +87,17 @@ Two types of tool are provided to explore and use the simuation.
 
 The data that run_experiment.sh and run_structure_experiments.sh produce is stored in \data\experiments and \data\experiments-structure
 
+## Results & Recommedations.
+
+A paper providing a write up of the results is included in this repository: [doc\main.pdf](doc\main.pdf).
+
 [^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinking and scholarship behind this work was developed. Thanks folks!
 
 However, all mistakes, errors, and ommissions are attributable to the author directly and no collaborator should be considered to bear any responsibility of any kind for the quality and provenance of the work presented.
 
 ## References
 
-Fabrizio Dell’Acqua, , Edward McFowland III, , Ethan Mollick, et al. ‘Navigating the Jagged Technological Frontier: Field Experimental Evidence of the Effects of Artificial Intelligence on Knowledge Worker Productivity and Quality’. Organization Science, n.d. Accessed 20 August 2026. https://pubsonline.informs.org/doi/abs/10.1287/orsc.2025.21838.
+Fabrizio Dell’Acqua, Edward McFowland III, Ethan Mollick, et al. ‘Navigating the Jagged Technological Frontier: Field Experimental Evidence of the Effects of Artificial Intelligence on Knowledge Worker Productivity and Quality’. Organization Science, n.d. Accessed 20 August 2026. https://pubsonline.informs.org/doi/abs/10.1287/orsc.2025.21838.
 
 Albert, Reka, and Albert-Laszlo Barabasi. ‘Statistical Mechanics of Complex Networks’. Reviews of Modern Physics 74, no. 1 (2002): 47–97. https://doi.org/10.1103/RevModPhys.74.47.
 
