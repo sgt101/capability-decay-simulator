@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Capability Decay Simulator</title>
+<style>
+  /* Palette lifted from report.template.html so the landing page and the pages it links
+     to are not two different sites. Light by default, dark by preference; no toggle,
+     because there is nothing here worth a control. */
+  :root {
+    --bg: #eef0ee; --panel: #ffffff; --ink: #14181a; --ink-muted: #5c6360;
+    --ink-faint: #8b918d; --rule: #d7dad6; --accent: #35636b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101314; --panel: #171b1d; --ink: #e6e8e6; --ink-muted: #9aa19d;
+      --ink-faint: #6d746f; --rule: #2a2f31; --accent: #7fb3bd;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.6rem; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-muted); margin: 0 0 2.2rem; max-width: 38rem; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.95rem 1.1rem;
+    margin-bottom: 0.7rem;
+  }
+  li a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 1rem; }
+  li a:hover { text-decoration: underline; }
+  li p { margin: 0.35rem 0 0; color: var(--ink-muted); }
+  /* Counts, grid sizes, file size — monospace so figures line up down the column and
+     read as data rather than as prose. */
+  li .facts {
+    margin-top: 0.45rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+  }
+  footer {
+    margin-top: 2.4rem; padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.78rem; color: var(--ink-faint);
+  }
+  footer a { color: var(--ink-faint); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Capability Decay Simulator</h1>
+  <p class="lede">
+    An agent-based model of how expertise accumulates and is lost in a population of
+    people moving between institutions, and of what changes when a fraction of their
+    work is done with AI assistance. Each page below is self-contained and runs in the
+    browser.
+  </p>
+  <ul>
+<!--__PAGES__-->
+  </ul>
+  <footer>
+<!--__FOOTER__-->
+  </footer>
+</main>
+</body>
+</html>

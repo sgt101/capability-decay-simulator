@@ -1,8 +1,12 @@
 # Publishes the interactive simulator to GitHub Pages.
 #
-# Only the simulator goes up, not the whole repository: see src/build_pages.js for what
-# it assembles and why. The generated reports are deliberately excluded — they are
-# 27-53 MB each and gitignored, so they are not in the checkout to publish.
+# Only the simulator and the three report browsers go up, not the whole repository: see
+# src/build_pages.js for what it assembles and why.
+#
+# The reports are COMMITTED build artifacts. They are generated from results/ — 2.1 GB of
+# CSV that is not in the repository — so this workflow cannot rebuild them; it publishes
+# whatever was last committed. Rebuild and commit them with ./src/build_reports.sh when
+# the experiments change, or the site keeps serving the previous run.
 name: Deploy simulator to Pages
 
 on:
@@ -16,6 +20,12 @@ on:
       - data/world-model-data.js
       - src/build_pages.js
       - .github/workflows/pages.yml
+      # The generated report browsers. Committed rather than built here: they come from
+      # results/, 2.1 GB of CSV that is not in the repository, so CI cannot rebuild them
+      # and a push of the built file is the only thing that can update them on the site.
+      - doc/report.html
+      - doc/structure_report.html
+      - doc/results_ACL.html
   workflow_dispatch:
 
 permissions:
@@ -56,10 +66,19 @@ jobs:
       # Boot the ASSEMBLED page, not the source one. This is what catches a dependency
       # that failed to copy or a path that no longer resolves — the page degrades to the
       # generated graph rather than erroring, so nothing else would notice.
+      #
+      # site/simulator.html, not site/index.html: index.html is the landing page now.
       - name: Built page boots and loads the world model
         run: |
-          node src/test/dom_stub_test.js site/index.html | tee /tmp/boot.log
+          node src/test/dom_stub_test.js site/simulator.html | tee /tmp/boot.log
           grep -q "booted with the bundle" /tmp/boot.log
+
+      # The landing page links to the simulator and to whichever reports were present at
+      # build time. Cheap to check and easy to break: the reports are optional, so the
+      # list is generated rather than written down, and a bad href here is a 404 on the
+      # site's front door.
+      - name: Landing page links resolve
+        run: node src/test/test_landing_links.js
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

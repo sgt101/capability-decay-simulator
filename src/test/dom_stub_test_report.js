@@ -331,7 +331,11 @@ console.log("--- checking per-figure captions (axis explanations + held-fixed va
     // String slicing, not a regex: this block is spliced into the driver as a template
     // literal, which silently eats backslashes that are not one of JS's own recognised
     // escapes — \d in a regex literal here would parse back out as a literal "d".
-    const marker = "simulator.html#c=";
+    // Taken from the page, not written down: the href differs between the on-disk copy
+    // (../src/simulator.html) and the published one (index.html), and build_pages.js
+    // rewrites it when it copies a report into site/. A hardcoded "simulator.html#c="
+    // passed on doc/ and failed on the very copy that goes live.
+    const marker = DATA.simulatorHref + "#c=";
     const at = url.indexOf(marker);
     if (at === -1) throw new Error("cell link is not a scenario code: " + url);
     const code = url.slice(at + marker.length);

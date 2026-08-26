@@ -56,6 +56,10 @@ const STEM = argOf("--stem", "experiment");
 const TITLE_BY_STEM = { experiment: "AI Params", structure: "Structure Params", acl: "Capability Params" };
 const TITLE = argOf("--title", TITLE_BY_STEM[STEM] || "Experiment Report");
 const METRIC_SET = argOf("--metrics", "expertise");
+// Where a heatmap cell click sends the reader. Defaults to the on-disk layout (doc/ to
+// src/), which is how these pages are opened most of the time; build_reports.sh passes
+// the published layout's value instead. See SIMULATOR_HREF in report.template.html.
+const SIMULATOR_HREF = argOf("--simulator-href", "../src/simulator.html");
 
 const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, MANIFEST_PATH), "utf8"));
 
@@ -550,6 +554,7 @@ const meta = {
   replicates: manifest.replicates,
   horizon: manifest.horizon,
   metricSet: METRIC_SET,
+  simulatorHref: SIMULATOR_HREF,
   stem: STEM,
   grid: [manifest.studyParams[manifest.experiments[0].x].values.length,
          manifest.studyParams[manifest.experiments[0].y].values.length],

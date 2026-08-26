@@ -1401,10 +1401,16 @@
 
   // Clicking a cell opens the simulator set up to reproduce it, paused at t=0.
   //
-  // Relative because the report is a file on disk as often as a served page: doc/ to
-  // src/ is the layout the repository has. The published Pages site does not carry the
-  // reports at all, so there is no second path to satisfy.
-  const SIMULATOR_HREF = "../src/simulator.html";
+  // BUILD-TIME, because the report has two homes with different layouts and a single
+  // hardcoded path can only be right in one of them:
+  //
+  //   on disk        doc/report.html  ->  ../src/simulator.html
+  //   on Pages       report.html      ->  index.html   (both at the site root)
+  //
+  // It was hardcoded to the first for as long as the published site carried no reports.
+  // Now that it does, the wrong value here is not a broken link in the abstract — it is
+  // every heatmap cell click 404ing. Set with build_report.js's --simulator-href.
+  const SIMULATOR_HREF = DATA.simulatorHref;
 
   // The short code IS the link now: "#c=AI-482" is what simulator.html parses (see
   // applyScenarioCode there), and it looks up the same {fixed, xValues, yValues} this
