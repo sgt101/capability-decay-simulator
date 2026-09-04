@@ -1,0 +1,89 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recruitment shock set: definitions and method</title>
+<style>
+:root{--bg:#eef0ee;--panel:#fff;--ink:#14181a;--muted:#5c6360;--rule:#d7dad6;--accent:#35636b}
+@media(prefers-color-scheme:dark){:root{--bg:#101314;--panel:#171b1d;--ink:#e6e8e6;--muted:#9aa19d;--rule:#2a2f31;--accent:#7fb3bd}}
+*{box-sizing:border-box}
+body{margin:0;padding:2.5rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
+font:15px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:44rem;margin:0 auto}
+h1{font-size:1.2rem;margin:0 0 1.4rem;font-weight:600}
+h2{font-size:0.95rem;margin:1.8rem 0 0.5rem;font-weight:600}
+p{margin:0 0 0.8rem;color:var(--ink-muted,#5c6360)}
+@media(prefers-color-scheme:dark){p{color:#9aa19d}}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.88em}
+table{border-collapse:collapse;width:100%;font-size:0.86rem;margin:0 0 0.9rem;background:var(--panel);border:1px solid var(--rule)}
+th,td{padding:0.35rem 0.55rem;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{font-weight:600}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:1.4rem;font-size:0.85rem}
+</style></head><body><main>
+<a class="back" href="/tmp/claude-1000/-workspace/ae587f28-acf1-4c70-a998-165ab6ad5635/scratchpad/recruitment_smoke.html">&larr; back to the report</a>
+<h1>Recruitment shock set: definitions and method</h1>
+
+  <h2>Scope</h2>
+  <p>The set applies a temporary reduction in hiring to a field that has already reached
+  its equilibrium distribution, crossed with freeze duration, freeze depth, and each of
+  the three AI parameters in turn.</p>
+
+  <h2>Timing</h2>
+  <p>Horizon 2640 ticks (one tick is one month), so 220
+  years. The freeze is applied at t = 1440 (year 120 = 3
+  careers at the 40-year career length used throughout), not at t = 0: mean
+  expertise and expert share reach their stationary band within about one career and hold
+  it flat afterward on this calibration; system capability has a slower initial ramp,
+  driven by the tenure structure rather than by mean expertise, that levels out by roughly
+  year 100. An earlier freeze risks measuring the shock against a population still moving
+  on its own rather than against an equilibrium; both the start (<code>--shock-start-years</code>)
+  and the aftermath length (<code>--aftermath-years</code>) are flags to the generator, not
+  fixed choices baked into this text. In the pairings that fix duration at
+  5 years, the freeze runs from month 1441 to month
+  1500 (year 125). Where duration is itself an
+  axis, the freeze runs from month 1441 for 12Y months.
+  100 years remain after the freeze ends in every
+  case.</p>
+
+  <h2>Mechanism</h2>
+  <p>For the duration of the freeze, a fraction of retirements are refilled and the
+  remainder leave the post vacant; that fraction is <code>recruitmentFraction</code>, shown
+  in the report as hiring retained. 0 is a total freeze; 1 is normal hiring. The axis is
+  therefore ordered from most severe (0) to least (1), the reverse of a severity axis.</p>
+  <p>There is no catch-up hiring. After the freeze, retirements are refilled at the normal
+  rate, which does not exceed replacement, so vacancies opened during the freeze are not
+  recovered and the headcount reduction is permanent for the remainder of the run. This
+  keeps two effects separable: removal of a cohort from the expertise ladder, and reduction
+  in field size.</p>
+
+  <h2>Baseline</h2>
+  <p>Unlike the other sets, in which the baseline arm differs from the treatment arm only
+  in <code>aiEnabled</code>, this baseline also sets <code>recruitmentShockYears = 0</code>
+  (<code>baselineParams</code>). The baseline is therefore a field with neither AI nor the
+  freeze. Change panels report the combined effect of both; level panels are read from the
+  treatment arm, since the baseline's headcount is 1.0 by construction and carries no
+  information about the freeze.</p>
+
+  <h2>Design</h2>
+  <p>4 experiments. The first varies freeze duration
+  (1 to 10 years) against freeze depth. The
+  remaining three fix duration at 5 years and vary depth against
+  <code>aiDampeningAbove</code>, <code>aiDampeningBelow</code>, and
+  <code>aiLevelFraction</code> respectively. Each is a grid at 3 replicates.
+  Total 2,580 runs.</p>
+
+  <h2>Metrics</h2>
+  <p>Mean expertise is not the primary metric for this set. The freeze removes entrants,
+  who are the lowest-expertise members of the field, so mean expertise among the remaining
+  population can be stable or increase while the field is losing headcount. Headcount
+  retained and capability per head are reported together to distinguish two outcomes: a
+  smaller field with unchanged per-head capability, against a field that has also lost
+  teaching capacity. A ratio of 1.0 on capability-per-head indicates the former; a ratio
+  below 1.0 indicates the latter.</p>
+  <p>Values are taken at the tick selected above, averaged over 3 replicates.
+  Baseline and treatment arms of a replicate share a seed. The two arms diverge in their
+  random draw sequence once the freeze changes how many draws a tick consumes, so
+  replicate variance in this set is higher than in a set where the arms differ only by a
+  multiplier. Population statistics are computed over staffed posts; a vacant post is
+  excluded, not counted as zero expertise.</p>
+
+</main></body></html>

@@ -124,6 +124,21 @@
     flex-direction: column;
     min-height: 100vh;
   }
+  /* Set-level note. Deliberately above the heatmap rather than in the sidebar: it says
+     what the numbers on this page ARE, and a reader who misses it misreads every panel. */
+  .set-note { padding: 0.75rem 1rem; border-left: 3px solid var(--accent); }
+  .set-note a { color: var(--accent); }
+  .set-note h2 { font-size: 0.85rem; margin: 0 0 0.4rem; }
+  .set-note p { margin: 0 0 0.45rem; font-size: 0.82rem; line-height: 1.55; color: var(--ink-muted); max-width: 62rem; }
+  .set-note p:last-child { margin-bottom: 0; }
+  .set-note b { color: var(--ink); }
+  .set-note details { margin-top: 0.5rem; }
+  .set-note summary { cursor: pointer; font-size: 0.8rem; color: var(--accent); }
+  /* Image-export toolbar. Sits with the figure it exports rather than in the topbar,
+     because there are three exportable figures on this page (the heatmap and the two
+     trajectory panels) and a single global button could not say which one it meant. */
+  .fig-toolbar { display: flex; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
+  .fig-toolbar.right { justify-content: flex-end; margin: 0.35rem 0 0; }
   .topbar {
     display: flex;
     align-items: center;
@@ -648,6 +663,9 @@
     </aside>
 
     <main class="main">
+      <!-- Set-level note, filled from manifest.setNote. Hidden unless the manifest
+           carries one, so the sets that need no explanation are unchanged. -->
+      <section class="panel set-note" id="setNote" hidden></section>
       <section class="panel" id="heatmapPanel">
         <div class="heatmap-head">
           <h2 id="heatmapTitle">—</h2>
@@ -664,6 +682,24 @@
               <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
             </svg>
             <span id="copyLatexLabel">Copy as LaTeX</span>
+          </button>
+        </div>
+        <!-- Hidden in the table view, where #tableToolbar's LaTeX button is the export
+             that makes sense; render() toggles the pair. -->
+        <div class="fig-toolbar" id="heatmapImgToolbar">
+          <button type="button" id="figCopyHeatmap" class="copy-btn" data-fig="heatmap" data-act="copy"
+                  title="Copy this heatmap to the clipboard as a PNG">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <rect x="5.5" y="5.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg><span id="figCopyHeatmapLabel">Copy PNG</span>
+          </button>
+          <button type="button" id="figSaveHeatmap" class="copy-btn" data-fig="heatmap" data-act="save"
+                  title="Save this heatmap as a PNG file">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M8 2v8m0 0 3-3m-3 3-3-3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M2.5 11.5v2h11v-2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+            </svg><span id="figSaveHeatmapLabel">Download PNG</span>
           </button>
         </div>
         <div class="heatmap-wrap" id="heatmapWrap">
@@ -708,11 +744,43 @@
             <div class="traj-canvas-wrap" id="trajWrapA">
               <canvas id="trajCanvasA"></canvas>
             </div>
+            <div class="fig-toolbar right">
+              <button type="button" id="figCopyTrajA" class="copy-btn" data-fig="trajA" data-act="copy"
+                      title="Copy this panel to the clipboard as a PNG">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <rect x="5.5" y="5.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg><span id="figCopyTrajALabel">Copy PNG</span>
+              </button>
+              <button type="button" id="figSaveTrajA" class="copy-btn" data-fig="trajA" data-act="save"
+                      title="Save this panel as a PNG file">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <path d="M8 2v8m0 0 3-3m-3 3-3-3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M2.5 11.5v2h11v-2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg><span id="figSaveTrajALabel">Download PNG</span>
+              </button>
+            </div>
           </div>
           <div>
             <div class="traj-panel-head" id="trajHeadB">—</div>
             <div class="traj-canvas-wrap" id="trajWrapB">
               <canvas id="trajCanvasB"></canvas>
+            </div>
+            <div class="fig-toolbar right">
+              <button type="button" id="figCopyTrajB" class="copy-btn" data-fig="trajB" data-act="copy"
+                      title="Copy this panel to the clipboard as a PNG">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <rect x="5.5" y="5.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg><span id="figCopyTrajBLabel">Copy PNG</span>
+              </button>
+              <button type="button" id="figSaveTrajB" class="copy-btn" data-fig="trajB" data-act="save"
+                      title="Save this panel as a PNG file">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                  <path d="M8 2v8m0 0 3-3m-3 3-3-3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M2.5 11.5v2h11v-2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                </svg><span id="figSaveTrajBLabel">Download PNG</span>
+              </button>
             </div>
           </div>
         </div>
@@ -738,6 +806,12 @@
     transferRate: "transfer rate", decayRate: "decay rate",
     aiDampeningBelow: "AI dampening (below)", aiDampeningAbove: "AI dampening (above)", aiLevelFraction: "AI level fraction",
     expertiseMean: "expertise mean (start)", entrantExpertiseMean: "entrant expertise mean",
+    // Recruitment set. "retained", NOT "cut": the stored value is the share of retirements
+    // still refilled, so 0 is the WORST cell and 0.9 the mildest. An axis labelled with the
+    // bare parameter name reads backwards to anyone who assumes it counts the loss.
+    recruitmentFraction: "hiring retained", recruitmentShockYears: "freeze duration (years)",
+    // Entrant set. The mean already had an entry above; these two are its shape.
+    entrantExpertiseSpread: "entrant expertise spread", entrantExpertiseFloor: "entrant expertise floor",
   };
   const SYMBOL = {
     turnoverRate: "r", learningRateSpread: "σ_L", transferRate: "β", decayRate: "δ",
@@ -745,6 +819,10 @@
     expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
     // Structure set (generate_structure_experiments.js).
     M: "M", graphAttachment: "m", frontierBreadth: "b",
+    // Recruitment set (generate_recruitment_experiments.js).
+    recruitmentFraction: "f_hire", recruitmentShockYears: "Y_freeze",
+    // Entrant set (generate_entrant_experiments.js). mu_ent is already mapped above.
+    entrantExpertiseSpread: "s_ent", entrantExpertiseFloor: "min_ent",
   };
   // These two are stored (in every config/CSV) as a raw multiplier on the learning
   // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
@@ -756,10 +834,16 @@
   const DIRECTION_HINT = {
     aiDampeningBelow: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
     aiDampeningAbove: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
+    // Runs the OPPOSITE way to severity, which is the whole reason it is spelled out: LOW is
+    // the deep freeze. Stored as the retained share because that is what the engine
+    // multiplies by, and left that way rather than displayed as its complement so the axis
+    // still ascends with the number printed on it.
+    recruitmentFraction: "share of retirements still refilled · 0 = total freeze (a 100% cut) · 0.9 = a 10% cut · 1 = normal hiring",
   };
   const DIRECTION_HINT_SHORT = {
     aiDampeningBelow: "(−1=max dampening, 0=neutral, +1=max amplified)",
     aiDampeningAbove: "(−1=max dampening, 0=neutral, +1=max amplified)",
+    recruitmentFraction: "(0=total freeze, 0.9=10% cut, 1=normal hiring)",
   };
 
   // NOTE for archived data: results produced before 2026-08 carry an
@@ -889,6 +973,14 @@
     M: "how many institutions the population is divided between — with N fixed, more institutions means fewer people in each.",
     graphAttachment: "how many existing institutions each new one connects to as the network is built, which sets how densely connected it ends up.",
     frontierBreadth: "how much of the work falls inside the AI's competence, derived from the AI's level: lower widens that reach, higher narrows it.",
+    // Recruitment set. Both are stated in the direction a reader will assume they run:
+    // the freeze's LENGTH, and the share of hiring that SURVIVES it -- the second of which
+    // decreases with severity, hence the explicit "0 is a total freeze".
+    recruitmentShockYears: "how long the hiring freeze lasts, in years, beginning once the field has reached equilibrium.",
+    recruitmentFraction: "the share of retirements still replaced during the freeze: 0 is a total freeze, 0.9 is a 10% cut, 1 is normal hiring.",
+    // Entrant set. entrantExpertiseMean is explained above with the other AI-sweep axes.
+    entrantExpertiseSpread: "how much new entrants differ from one another: a wide draw brings some in near the expert threshold and others at the floor.",
+    entrantExpertiseFloor: "the lowest expertise a new entrant can arrive with; above the entrant mean it becomes the value nearly all of them arrive at.",
   };
 
   function buildFigureCaptions() {
@@ -976,7 +1068,14 @@
         (hint ? ' <span style="text-decoration:underline dotted;">ⓘ</span>' : "") +
         "</span><b>" + fmtAxis(k, exp.fixed[k]) + "</b></div>";
     }).join("") +
-      '<div class="fixed-kv"><span>N / M</span><b>' + exp.fixed.N + " / " + exp.fixed.M + "</b></div>" +
+      // M is DERIVED from the world model when graphSource is "worldModel", so a config
+      // cannot set it and a manifest may not carry it. build_report.js backfills it from
+      // the results where every row agrees; where it still cannot, the population is the
+      // only figure there is, and the label drops the slash rather than printing
+      // "11322 / undefined" — which read as a broken build rather than an absent number.
+      (exp.fixed.M == null
+        ? '<div class="fixed-kv"><span>N</span><b>' + exp.fixed.N + "</b></div>"
+        : '<div class="fixed-kv"><span>N / M</span><b>' + exp.fixed.N + " / " + exp.fixed.M + "</b></div>") +
       '<div class="fixed-kv"><span>replicates</span><b>' + DATA.replicates + "</b></div>";
   }
 
@@ -1132,6 +1231,208 @@
     return v.toExponential(1);
   }
 
+  // The set-level note. HTML from the manifest, not escaped, because it is authored in
+  // the generator alongside the experiment definitions -- the same trust level as the
+  // metric help strings above, and for the same reason: it has to carry emphasis and a
+  // collapsible block to be readable at all. Nothing here comes from a CSV.
+  function renderSetNote() {
+    const el = document.getElementById("setNote");
+    if (!el) return;
+    // A linked notes page takes precedence over an inline block. Method notes belong
+    // beside the numbers but not in front of them: a panel of prose above the grid is
+    // read once and skipped on every load afterwards, at which point it is only taking
+    // up the space the figure should have.
+    if (DATA.notesHref) {
+      el.innerHTML = '<p style="margin:0"><a href="' + DATA.notesHref + '">'
+        + (DATA.notesTitle || "Notes on this set") + "</a>"
+        + " \u2014 what is varied, why these axes, and how the numbers are measured.</p>";
+      el.hidden = false;
+      return;
+    }
+    if (!DATA.setNote) return;
+    el.innerHTML = DATA.setNote;
+    el.hidden = false;
+  }
+
+  /* ---------- figure export: PNG to clipboard or to file ---------- */
+  // The heatmap and trajectory panels are <canvas>, so the pixels are already there and
+  // there is no rasterising to do. What IS missing from a bare canvas is everything the
+  // page draws in HTML around it: the title, and — for the heatmap — the colour ramp
+  // without which the image cannot be read at all. So the export COMPOSITES: title,
+  // subtitle, the canvas, a redrawn legend, and a provenance footer, onto an opaque
+  // background. A transparent PNG pasted into a light document with a dark-theme figure
+  // in it is unreadable, which is why the background is painted rather than left clear.
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#ffffff";
+  }
+
+  // Describes one exportable figure. Kept as a lookup rather than three near-identical
+  // handlers so the button wiring below is one delegated listener.
+  function figureSpec(kind) {
+    const exp = currentExperiment();
+    const metric = DATA.metrics.find((m) => m.key === app.metricKey);
+    // CLAMPED. app.tickIndex belongs to whichever experiment was last rendered, and
+    // experiments in a set need not share a tick list -- switching to a shorter one leaves
+    // the index past its end, and an unguarded read put the literal string "undefined" in
+    // the exported filename and footer. Caught by the export test, which is the only place
+    // it would ever have shown up.
+    const t = exp.ticks[Math.min(Math.max(app.tickIndex, 0), exp.ticks.length - 1)];
+    const stem = (DATA.stem || "report") + "-exp" + exp.n;
+    const foot = DATA.stem + " · experiment " + exp.n + " · "
+      + pretty(axisKey(exp, "x")) + " × " + pretty(axisKey(exp, "y"))
+      + " · t=" + t + " · " + DATA.replicates + " replicates · generated " + DATA.generatedAt;
+    if (kind === "heatmap") {
+      const domain = DATA.domains[app.metricKey];
+      return {
+        canvas: document.getElementById("heatmapCanvas"),
+        title: metric.label,
+        subtitle: document.getElementById("heatmapSub").textContent,
+        foot: foot,
+        legend: { min: fmtCell(domain[0]), max: fmtCell(domain[1]),
+                  color: (f) => divergingColor(domain[0] + (domain[1] - domain[0]) * f, domain) },
+        file: stem + "-" + app.metricKey + "-t" + t + ".png",
+      };
+    }
+    const which = kind === "trajA" ? "A" : "B";
+    const isDark = currentTheme() === "dark";
+    return {
+      canvas: document.getElementById("trajCanvas" + which),
+      title: metric.label + " over time",
+      subtitle: document.getElementById("trajHead" + which).textContent,
+      foot: foot,
+      legend: { min: document.getElementById("trajLegendMin").textContent,
+                max: document.getElementById("trajLegendMax").textContent,
+                label: document.getElementById("trajLegendLabel").textContent,
+                color: (f) => seqRamp(f, isDark) },
+      file: stem + "-" + app.metricKey + "-t" + t + "-panel" + which + ".png",
+    };
+  }
+
+  // Composites at the SOURCE canvas's device pixel ratio, so an export from a retina
+  // screen is not silently downsampled and one from a 1x screen is not upscaled into
+  // blur. All layout below is in CSS pixels and scaled once at the end.
+  function composeFigure(spec) {
+    const src = spec.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const cw = src.width / dpr, chh = src.height / dpr;
+    const pad = 14, titleH = 22, subH = spec.subtitle ? 16 : 0, legH = spec.legend ? 30 : 0, footH = 16;
+    const W = cw + pad * 2, H = pad + titleH + subH + chh + legH + footH + pad;
+    const out = document.createElement("canvas");
+    out.width = Math.round(W * dpr); out.height = Math.round(H * dpr);
+    const c = out.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = cssVar("--panel"); c.fillRect(0, 0, W, H);
+    const ink = cssVar("--ink"), muted = cssVar("--ink-muted");
+    const font = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    let y = pad;
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillStyle = ink; c.font = "600 14px " + font;
+    c.fillText(spec.title, pad, y); y += titleH;
+    if (spec.subtitle) { c.fillStyle = muted; c.font = "11px " + font; c.fillText(spec.subtitle, pad, y); y += subH; }
+    // The canvas itself. drawImage takes the backing store, so this is a pixel copy at
+    // full resolution rather than a re-render.
+    c.drawImage(src, 0, 0, src.width, src.height, pad, y, cw, chh);
+    y += chh;
+    if (spec.legend) {
+      const rampY = y + 8, rampH = 9, labelW = 62;
+      const x0 = pad + labelW, x1 = W - pad - labelW;
+      for (let px = x0; px < x1; px++) {
+        c.fillStyle = spec.legend.color((px - x0) / (x1 - x0));
+        c.fillRect(px, rampY, 1, rampH);
+      }
+      c.strokeStyle = cssVar("--rule"); c.lineWidth = 1;
+      c.strokeRect(x0 + 0.5, rampY + 0.5, x1 - x0 - 1, rampH - 1);
+      c.fillStyle = muted; c.font = "10px " + font;
+      c.textAlign = "right"; c.fillText(spec.legend.min, x0 - 6, rampY - 1);
+      c.textAlign = "left"; c.fillText(spec.legend.max, x1 + 6, rampY - 1);
+      if (spec.legend.label) { c.textAlign = "center"; c.fillText(spec.legend.label, W / 2, rampY + rampH + 2); }
+      y += legH;
+    }
+    // Provenance. An exported figure outlives the page it came from, and a heatmap with
+    // no tick or replicate count on it is not something anyone can check later.
+    c.textAlign = "left"; c.fillStyle = muted; c.font = "9px " + font;
+    c.fillText(spec.foot, pad, H - pad - 9);
+    return out;
+  }
+
+  function figureBlob(spec) {
+    return new Promise((resolve, reject) => {
+      composeFigure(spec).toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob returned null"))), "image/png");
+    });
+  }
+
+  // Feedback goes on the button that was pressed. Both paths can fail for reasons the
+  // reader can do nothing about — see the copy handler — so silence is not an option.
+  // Takes the label element, not the button: this page addresses everything by id, and
+  // querySelector would be the only structural DOM query in it — see the export binding
+  // below for why that matters.
+  function flashButton(btn, label, text) {
+    if (!label) return;
+    const was = label.textContent;
+    label.textContent = text;
+    btn.classList.add("ok");
+    setTimeout(() => { label.textContent = was; btn.classList.remove("ok"); }, 2000);
+  }
+
+  function copyFigure(spec, btn, label) {
+    // ClipboardItem is given the PROMISE, not an awaited blob: Safari drops the user
+    // activation that authorises a clipboard write if you await anything first, and the
+    // promise form is what its API is designed around. Chrome accepts it too.
+    //
+    // This fails in two situations worth telling the reader apart from a bug: a browser
+    // without image clipboard support, and any browser on file:// — which is not a secure
+    // context, so navigator.clipboard is simply absent. Downloading still works there,
+    // which is what the message points at.
+    if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) {
+      flashButton(btn, label, "Use Download");
+      return;
+    }
+    try {
+      const item = new ClipboardItem({ "image/png": figureBlob(spec) });
+      navigator.clipboard.write([item]).then(
+        () => flashButton(btn, label, "Copied"),
+        () => flashButton(btn, label, "Use Download"));
+    } catch (e) {
+      flashButton(btn, label, "Use Download");
+    }
+  }
+
+  function saveFigure(spec, btn, label) {
+    figureBlob(spec).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = spec.file;
+      document.body.appendChild(a); a.click(); a.remove();
+      // Revoked on the next turn of the event loop: revoking synchronously can beat the
+      // download starting in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      flashButton(btn, label, "Saved");
+    }, () => flashButton(btn, label, "Failed"));
+  }
+
+  // Bound per button at boot, not delegated from document. These six buttons are static
+  // markup — render() never recreates them — so there is nothing for delegation to buy,
+  // and a document-level listener would also need Element.closest, which is more DOM than
+  // this page otherwise depends on.
+  // Addressed by id rather than by a [data-fig] selector: getElementById is the only
+  // lookup this page uses anywhere, and keeping it that way is what lets the DOM stub in
+  // src/test/ stay a few hundred lines instead of a DOM implementation.
+  [["figCopyHeatmap", "heatmap", "copy"], ["figSaveHeatmap", "heatmap", "save"],
+   ["figCopyTrajA", "trajA", "copy"], ["figSaveTrajA", "trajA", "save"],
+   ["figCopyTrajB", "trajB", "copy"], ["figSaveTrajB", "trajB", "save"]].forEach(([id, fig, act]) => {
+    const btn = document.getElementById(id);
+    const label = document.getElementById(id + "Label");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const spec = figureSpec(fig);
+      // The trajectory canvases have no pixels until that view has been opened once, and
+      // a 0x0 canvas exports a blank PNG rather than failing. Caught here.
+      if (!spec.canvas || !spec.canvas.width) { flashButton(btn, label, "Nothing drawn"); return; }
+      if (act === "copy") copyFigure(spec, btn, label);
+      else saveFigure(spec, btn, label);
+    });
+  });
+
   function renderStatsStrip() {
     const el = document.getElementById("statsStrip");
     if (!el) return;
@@ -1174,6 +1475,27 @@
   }
 
   /* ---------- heatmap ---------- */
+  // Shared by the heatmap and both trajectory tooltips. Positioned to the lower-right of
+  // the cursor by default, but flipped to whichever side keeps the box fully inside its
+  // wrap element — a tooltip is placed by evt.clientX offset with no clamp otherwise, and
+  // near the right or bottom edge of a wide canvas (the recruitment report's long
+  // "hiring retained" / "AI dampening (below)" labels make the box wide enough for this
+  // to matter) that placement pushed part of the box outside the visible area.
+  //
+  // Measured AFTER innerHTML is set, not assumed: the box's width depends on which labels
+  // it happens to be showing, so a fixed offset budget would either clip a long tooltip or
+  // waste space around a short one.
+  function positionTooltip(tt, wrapRect, evt) {
+    const w = tt.offsetWidth, h = tt.offsetHeight;
+    const cx = evt.clientX - wrapRect.left, cy = evt.clientY - wrapRect.top;
+    const fitsRight = cx + 14 + w <= wrapRect.width;
+    const left = fitsRight ? cx + 14 : Math.max(0, cx - 14 - w);
+    const fitsBelow = cy - 10 + h <= wrapRect.height;
+    const top = fitsBelow ? Math.max(0, cy - 10) : Math.max(0, cy - 10 - h);
+    tt.style.left = left + "px";
+    tt.style.top = top + "px";
+  }
+
   let hoverCell = null;
   let tooltipEl = null;
   function ensureTooltip() {
@@ -1392,9 +1714,7 @@
       '<div class="row"><b>' + pretty(axisKey(exp, "y")) + "</b><span>" + fmtAxis(axisKey(exp, "y"), cellField(cell, "y")) + "</span></div>" +
       '<div class="row"><span>replicates</span><span>' + cell.n + "</span></div>" + rows;
     tt.hidden = false;
-    const wrapRect = document.getElementById("heatmapWrap").getBoundingClientRect();
-    let left = evt.clientX - wrapRect.left + 14, top = evt.clientY - wrapRect.top - 10;
-    tt.style.left = left + "px"; tt.style.top = Math.max(0, top) + "px";
+    positionTooltip(tt, document.getElementById("heatmapWrap").getBoundingClientRect(), evt);
     drawHeatmap();
   });
   heatmapCanvas.addEventListener("mouseleave", () => { hoverCell = null; if (tooltipEl) tooltipEl.hidden = true; drawHeatmap(); });
@@ -1463,6 +1783,9 @@
     aiLevelFraction: "\\lambda",
     expertiseMean: "\\mu_E", entrantExpertiseMean: "\\mu_{\\mathrm{ent}}",
     M: "M", graphAttachment: "m", frontierBreadth: "b",
+    // Recruitment set (generate_recruitment_experiments.js).
+    recruitmentFraction: "f_{\\mathrm{hire}}", recruitmentShockYears: "Y_{\\mathrm{freeze}}",
+    entrantExpertiseSpread: "\\sigma_{\\mathrm{ent}}", entrantExpertiseFloor: "E^{\\min}_{\\mathrm{ent}}",
   };
   // Escapes the ten characters TeX treats specially. Applied to every piece of PROSE
   // that reaches the output — parameter names, metric labels, captions — but never to
@@ -1721,9 +2044,28 @@
     return [min, max];
   }
 
+  // The trajectory line colours. Chosen against two measurable criteria rather than by
+  // eye, because the previous ramp failed both at its low end and the failure only showed
+  // up once these charts were being exported into papers and slides:
+  //
+  //   1. CONTRAST >= 3:1 against the panel behind it (the WCAG threshold for graphical
+  //      objects). The old light ramp ran 89 -> 23 in L*, so its first three stops scored
+  //      1.32, 1.79 and 2.50 against white — a thin line in the palest of them was
+  //      invisible on paper. The new one is 3.10 at worst.
+  //   2. ADJACENT SEPARATION >= 10 dE (CIE76), so neighbouring series stay tellable apart
+  //      despite the compressed lightness range. The new ramp is 10.1 at worst.
+  //
+  // Compressing lightness alone would have satisfied (1) and broken (2), so the range is
+  // narrowed from 66 L* points to 32 and the shortfall in separation is made up with hue,
+  // rotating blue -> indigo across the scale. Lightness still decreases monotonically, so
+  // the scale reads as ordered rather than as a rainbow.
+  //
+  // The two ramps are now INDEPENDENT rather than one reversed. Reversing put the darkest
+  // colour at the low end on a near-black panel, which reproduced exactly the same
+  // invisibility the light theme had — mirrored, and equally unnoticed.
   function seqRamp(t, isDark) {
-    const lightRamp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
-    const darkRamp = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"];
+    const lightRamp = ["#00A0BF", "#008FBA", "#007EB3", "#1F6CA7", "#385A97", "#474885", "#50366F"];
+    const darkRamp = ["#00969B", "#00A4B7", "#25B0D2", "#52BCEA", "#7AC7FF", "#A2D1FF", "#CADAFF"];
     const ramp = isDark ? darkRamp : lightRamp;
     const idx = clip01(t) * (ramp.length - 1);
     const lo = Math.floor(idx), hi = Math.min(ramp.length - 1, lo + 1), frac = idx - lo;
@@ -1793,6 +2135,68 @@
       ctx.textAlign = "left"; ctx.textBaseline = "bottom";
       ctx.fillText("0", w - pad.r - 12, toY(0) - 3);
     }
+
+    // Vertical reference lines for a one-off event in the experiment's timeline (e.g. the
+    // recruitment set's freeze window). DATA.markTicks is empty for every set without one,
+    // so this is a no-op everywhere else. Drawn BEFORE the series so the data lines sit on
+    // top of it rather than the mark obscuring a trajectory that happens to pass near it.
+    //
+    // Resolved and laid out in two passes rather than one: two marks can land only a few
+    // percent of the plot width apart (the recruitment set's start/end of a short freeze
+    // inside a 300-year horizon is the case that motivated this), and drawing each
+    // label independently produced overlapping, unreadable text at exactly those
+    // separations. Lines are cheap to draw regardless of how close together they are;
+    // labels are not, so only the labels need collision handling.
+    const resolvedMarks = (DATA.markTicks || []).map((m) => {
+      let tick = m.tick;
+      if (tick == null && m.param) {
+        // Resolved from a parameter's value in THIS panel: from the value the panel is
+        // fixed at, if that parameter is the fixed axis; from exp.fixed, if it is pinned
+        // (not swept by this experiment at all). If it is instead the axis varying across
+        // this panel's lines, one tick cannot represent every line, so the mark is skipped
+        // for that panel rather than drawn once at an arbitrary line's value.
+        let value = null;
+        if (axisKey(exp, fixAxis) === m.param) value = fixedValue;
+        else if (Object.prototype.hasOwnProperty.call(exp.fixed, m.param)) value = exp.fixed[m.param];
+        else return null; // m.param is the varying axis here — ambiguous, so no mark
+        tick = m.base + m.scale * value;
+      }
+      if (tick == null || tick < t0 || tick > t1) return null; // unresolved or out of this panel's horizon
+      return { label: m.label, x: toX(tick) };
+    }).filter(Boolean).sort((a, b) => a.x - b.x);
+
+    ctx.save();
+    ctx.strokeStyle = cssVar("--ink-faint");
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([4, 3]);
+    resolvedMarks.forEach((mk) => {
+      ctx.beginPath(); ctx.moveTo(mk.x, pad.t); ctx.lineTo(mk.x, pad.t + plotH); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = cssVar("--ink-faint");
+    ctx.font = "9px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textBaseline = "top";
+    const placed = []; // {x0, x1, row} of labels already drawn, for collision checks
+    const ROW_H = 10, LABEL_GAP = 4;
+    resolvedMarks.forEach((mk) => {
+      if (!mk.label) return;
+      // Flips to the left of its line near the right edge, so the label is not clipped by
+      // the panel's own boundary on a mark placed late in the horizon.
+      const flip = mk.x > pad.l + plotW * 0.7;
+      const width = ctx.measureText(mk.label).width;
+      const x0 = flip ? mk.x - LABEL_GAP - width : mk.x + LABEL_GAP;
+      const x1 = x0 + width;
+      // Drop to the next row down while this span overlaps an already-placed label in
+      // that row. Capped at 3 rows: beyond that the panel is too short on marks for this
+      // to matter, and continuing to stack would start colliding with the data itself.
+      let row = 0;
+      while (row < 3 && placed.some((p) => p.row === row && x0 < p.x1 + LABEL_GAP && p.x0 < x1 + LABEL_GAP)) row++;
+      placed.push({ x0, x1, row });
+      ctx.textAlign = flip ? "right" : "left";
+      ctx.fillText(mk.label, flip ? mk.x - LABEL_GAP : mk.x + LABEL_GAP, pad.t + 2 + row * ROW_H);
+    });
+    ctx.restore();
 
     const n = varyingValues.length;
     varyingValues.forEach((vv, i) => {
@@ -1886,9 +2290,7 @@
         '<div class="row"><span>t</span><span>' + res.point.t + "</span></div>" +
         '<div class="row"><span>' + metricLabel + '</span><span>' + fmtNum(res.point.v) + "</span></div>";
       tt.hidden = false;
-      const wrapRect = document.getElementById("trajWrap" + panelKey).getBoundingClientRect();
-      let left = evt.clientX - wrapRect.left + 14, top = evt.clientY - wrapRect.top - 10;
-      tt.style.left = left + "px"; tt.style.top = Math.max(0, top) + "px";
+      positionTooltip(tt, document.getElementById("trajWrap" + panelKey).getBoundingClientRect(), evt);
     });
     canvas.addEventListener("mouseleave", () => {
       trajHover[panelKey] = null;
@@ -1961,6 +2363,10 @@
       // The LaTeX copy is a tabular of the grid, so it is offered only where a grid is
       // actually on screen.
       document.getElementById("tableToolbar").style.display = isTable ? "flex" : "none";
+      // The image buttons export the heatmap CANVAS, which the table view replaces with
+      // an HTML table — there is nothing to rasterise there, and #tableToolbar offers the
+      // export that does make sense in that view.
+      document.getElementById("heatmapImgToolbar").style.display = isTable ? "none" : "flex";
       renderStatsStrip();
       if (isTable) renderTable(); else drawHeatmap();
       renderLegend();
@@ -1984,6 +2390,7 @@
 
   document.getElementById("metaLine").textContent = "generated " + DATA.generatedAt + " · horizon t=" + DATA.horizon;
   buildMetricSelect();
+  renderSetNote();
   // Bound once at boot, not inside render(): render() runs on every tick drag and would
   // otherwise stack a fresh listener per frame.
   document.getElementById("copyLatexBtn").addEventListener("click", copyTableAsLatex);

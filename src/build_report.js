@@ -53,7 +53,8 @@ const STEM = argOf("--stem", "experiment");
 // Tab title. Derived from STEM by default — "experiment" is the world-model AI
 // dampening/level sweeps, "structure" is the M x graphAttachment set, "acl" is the
 // Dell'Acqua/Stromberg scenario set — and overridable with --title for a one-off page.
-const TITLE_BY_STEM = { experiment: "AI Params", structure: "Structure Params", acl: "Capability Params" };
+const TITLE_BY_STEM = { experiment: "AI Params", structure: "Structure Params", acl: "Capability Params",
+  recruitment: "Recruitment Shock", entrant: "Entrant Expertise" };
 const TITLE = argOf("--title", TITLE_BY_STEM[STEM] || "Experiment Report");
 const METRIC_SET = argOf("--metrics", "expertise");
 // Where a heatmap cell click sends the reader. Defaults to the on-disk layout (doc/ to
@@ -136,10 +137,85 @@ const METRIC_SETS = {
       from: (r) => { const t = num(r.systemCapability_treatment), h = num(r.systemCapabilityHuman_treatment);
         return h && h > 0 && t != null ? t / h : null; } },
   ],
+  // The RECRUITMENT-SHOCK set is read differently from every other set, and the reason is
+  // in its config: it sets `baselineParams: { recruitmentShockYears: 0 }`, so the baseline
+  // arm has NEITHER AI NOR THE FREEZE. The reference is a healthy world, and the paired
+  // _change columns therefore carry the COMBINED cost of AI and the hiring freeze rather
+  // than AI's contribution on top of it.
+  //
+  // That makes the arms asymmetric, which changes which columns mean what. Absolute levels
+  // must be read from the TREATMENT arm, because the baseline is unshocked by construction
+  // and its activeFraction is 1.0 in every cell.
+  //
+  // meanE is deliberately not the headline. A freeze removes ENTRANTS, the least expert
+  // people in the field, so mean expertise per surviving person barely moves and can rise
+  // while the field is hollowed out. Headcount and capability per head are the pair that
+  // separate "a smaller field doing proportionally the same work" from "a field that has
+  // lost its ladder as well as its people".
+  recruitment: [
+    { key: "activeFraction_treatment", label: "Headcount retained", from: (r) => num(r.activeFraction_treatment),
+      help: "How much of the establishment is still staffed after the freeze, as a fraction. 0.88 means an eighth of the posts are empty and stay empty — there is no catch-up hiring in this model." },
+    { key: "capabilityChangeFrac", label: "Capability, share lost to AI + freeze",
+      help: "Change in what the field gets done, against a world with NEITHER AI NOR the freeze. This is the combined cost of the two, not AI's contribution on top of the freeze.",
+      from: (r) => { const b = num(r.systemCapability_baseline), t = num(r.systemCapability_treatment);
+        return b && b > 0 && t != null ? (t - b) / b : null; } },
+    // The ladder metric, and the one that separates the two kinds of damage.
+    // systemCapability is an absolute SUM over people, so it falls when the field shrinks
+    // whether or not anything happened to expertise; dividing by the surviving headcount
+    // takes that out. Compare it against the same quantity in the baseline arm — a cell
+    // where capability fell exactly as fast as headcount has lost people, not teaching.
+    { key: "capabilityPerHeadRatio", label: "Capability per head, vs no AI + no freeze",
+      help: "What the average remaining person is worth, relative to the same field with neither AI nor the freeze. 1.0 means the field only got smaller. Below 1 means the survivors are individually worth less — the ladder went too.",
+      from: (r) => {
+        const ct = num(r.systemCapability_treatment), at = num(r.activeFraction_treatment);
+        const cb = num(r.systemCapability_baseline), ab = num(r.activeFraction_baseline);
+        if (ct == null || cb == null || !at || !ab || cb <= 0) return null;
+        return (ct / at) / (cb / ab);
+      } },
+    { key: "shareExpert_treatment", label: "Expert share (AI + freeze)", from: (r) => num(r.shareExpert_treatment),
+      help: "The fraction of the surviving field at or above the expert threshold. This is the ladder itself, measured directly." },
+    { key: "meanE_change", label: "Mean expertise, change from no AI + no freeze", from: changeOf("meanE"),
+      help: "Read against the headcount panel: a flat mean over a shrinking field is not good news, because the people removed were the least expert." },
+    { key: "shareExpert_change", label: "Expert share, change from no AI + no freeze", from: changeOf("shareExpert"),
+      help: "The combined effect of AI and the freeze on the expert share." },
+  ],
+  // The ENTRANT set. Structurally this is an ordinary paired AI sweep -- both arms carry
+  // the same entrant distribution, and the baseline differs only in aiEnabled -- so it does
+  // NOT reuse the recruitment reading. Two of that set's panels are meaningless here:
+  // "headcount retained" is 1.0 in every cell because nothing removes people, and
+  // "capability per head" is then algebraically identical to the total-capability panel,
+  // since both arms have the same denominator.
+  //
+  // What it takes from that set instead is the PRINCIPLE: paired changes alone are not
+  // enough when the swept parameter moves the baseline itself a long way. An AI effect of
+  // -0.05 means something different in a field sitting at 0.40 than in one sitting at 0.65,
+  // and entrant expertise moves the baseline across most of that range. So the changes are
+  // carried alongside the levels they happened to.
+  entrant: [
+    { key: "meanE_change", label: "Mean expertise, change from no-AI", from: changeOf("meanE"),
+      help: "How the average skill level differs with AI, against the same world without it. Below zero means AI cost the field skill." },
+    { key: "meanE_baseline", label: "Mean expertise (no AI)", from: (r) => num(r.meanE_baseline),
+      help: "Where the field settles with no AI at all. This is what the entrant parameters do on their own, and it is the level the change panel should be read against." },
+    { key: "shareExpert_change", label: "Expert share, change from no-AI", from: changeOf("shareExpert"),
+      help: "How much of the workforce counts as expert, against the same world without AI. -0.2 means a fifth of the population fell below the expert line." },
+    { key: "shareExpert_baseline", label: "Expert share (no AI)", from: (r) => num(r.shareExpert_baseline),
+      help: "The ladder itself with no AI: what fraction of the field reaches the expert threshold given who is arriving." },
+    { key: "capabilityChangeFrac", label: "Capability, share gained or lost",
+      help: "Change in what the field can get done, versus the same world without AI. Below zero: AI cost capability. Above zero: AI added it.",
+      from: (r) => { const b = num(r.systemCapability_baseline), t = num(r.systemCapability_treatment);
+        return b && b > 0 && t != null ? (t - b) / b : null; } },
+    { key: "aiLeverage", label: "AI leverage (x over unaugmented)",
+      help: "How much more the field gets done with AI than the same people manage without it. 1.2 means a fifth more work.",
+      from: (r) => { const t = num(r.systemCapability_treatment), h = num(r.systemCapabilityHuman_treatment);
+        return h && h > 0 && t != null ? t / h : null; } },
+  ],
 };
 // Everything, for a single page whose dropdown carries both. The split pages exist so
 // each opens on the question it answers; this one exists so a set can be inspected
 // without deciding that question first.
+// Deliberately expertise + capability only. The recruitment set is NOT folded in: its
+// metrics read the baseline arm's absolute level, which on every other set is a number
+// nobody asked for — see the note on that set for why it needs levels at all.
 METRIC_SETS.all = METRIC_SETS.expertise.concat(METRIC_SETS.capability);
 
 if (!METRIC_SETS[METRIC_SET]) {
@@ -414,6 +490,24 @@ function loadExperiment(entry) {
   Object.keys(manifest.studyParams).forEach((k) => {
     if (k !== xKey && k !== yKey) fixed[k] = manifest.studyParams[k].default;
   });
+  // Backfilled from the RESULTS when a manifest does not carry them. M is the case that
+  // matters and it is not an oversight in one generator: with graphSource "worldModel" the
+  // institution count is DERIVED from the world model and setting it in a config throws,
+  // so no generator can write it into baseFixed and every world-model report has been
+  // rendering "N / undefined" in its fixed-parameters panel. The CSV records it per row,
+  // because batch_run writes full param provenance, so the value is right there.
+  //
+  // Only fills what is missing, and only from a value every row agrees on: a parameter
+  // that varies across rows is not a fixed parameter and must not be shown as one.
+  if (rows.length) {
+    ["N", "M"].forEach((k) => {
+      if (fixed[k] != null) return;
+      const v = num(rows[0][k]);
+      if (v == null) return;
+      for (const r of rows) if (num(r[k]) !== v) return;
+      fixed[k] = v;
+    });
+  }
 
   return {
     n: entry.n, xKey, yKey, xValues, yValues, ticks, fixed, runs: entry.runs,
@@ -554,6 +648,16 @@ const meta = {
   replicates: manifest.replicates,
   horizon: manifest.horizon,
   metricSet: METRIC_SET,
+  // Optional prose the generator wrote alongside the experiment definitions, rendered
+  // above the heatmap. Sets that need no explanation simply omit it and the panel stays
+  // hidden. HTML, and trusted as such -- it comes from a generator in this repository,
+  // never from a CSV.
+  setNote: manifest.setNote || null,
+  // A separate notes page, linked from the report rather than printed above the grid.
+  // Preferred over setNote for anything longer than a sentence: method notes belong
+  // beside the numbers, but not in front of them on every load.
+  notesHref: manifest.notesPage ? manifest.notesPage.file : null,
+  notesTitle: manifest.notesPage ? (manifest.notesPage.title || "Notes on this set") : null,
   simulatorHref: SIMULATOR_HREF,
   stem: STEM,
   grid: [manifest.studyParams[manifest.experiments[0].x].values.length,
@@ -562,9 +666,53 @@ const meta = {
   resultsDir: RESULTS_DIR,
   metrics: METRICS,
   domains,
+  // Vertical reference lines for the trajectory panels, at ticks the manifest names as
+  // meaningful. Written generically so any set gaining a similar one-off event does not
+  // need template changes to show it; empty/absent for every set without one.
+  //
+  // Each entry is either a fixed tick ({tick, label}) or one resolved per trajectory panel
+  // from a parameter's value ({param, base, scale, label}, tick = base + scale * value) --
+  // the recruitment set's freeze END needs the latter, since one of its four pairings
+  // sweeps freeze duration itself rather than holding it fixed. See
+  // report.template.html's drawTrajPanel for the resolution rule.
+  markTicks: manifest.markTicks || [],
 };
 
 const templatePath = paths.src("report.template.html");
+// The notes page, written beside the report so the link is a bare filename and both
+// travel together. Regenerated on every build: the manifest is its only source, so it
+// cannot drift from the set it documents.
+if (manifest.notesPage) {
+  const np = manifest.notesPage;
+  const notes = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${np.title || "Notes"}</title>
+<style>
+:root{--bg:#eef0ee;--panel:#fff;--ink:#14181a;--muted:#5c6360;--rule:#d7dad6;--accent:#35636b}
+@media(prefers-color-scheme:dark){:root{--bg:#101314;--panel:#171b1d;--ink:#e6e8e6;--muted:#9aa19d;--rule:#2a2f31;--accent:#7fb3bd}}
+*{box-sizing:border-box}
+body{margin:0;padding:2.5rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
+font:15px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:44rem;margin:0 auto}
+h1{font-size:1.2rem;margin:0 0 1.4rem;font-weight:600}
+h2{font-size:0.95rem;margin:1.8rem 0 0.5rem;font-weight:600}
+p{margin:0 0 0.8rem;color:var(--ink-muted,#5c6360)}
+@media(prefers-color-scheme:dark){p{color:#9aa19d}}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.88em}
+table{border-collapse:collapse;width:100%;font-size:0.86rem;margin:0 0 0.9rem;background:var(--panel);border:1px solid var(--rule)}
+th,td{padding:0.35rem 0.55rem;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{font-weight:600}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:1.4rem;font-size:0.85rem}
+</style></head><body><main>
+<a class="back" href="${OUT_PATH}">&larr; back to the report</a>
+<h1>${np.title || "Notes"}</h1>
+${np.html}
+</main></body></html>`;
+  fs.writeFileSync(path.resolve(paths.DOC, np.file), notes);
+  console.log(`[build_report] wrote ${np.file} (notes page)`);
+}
+
 const outPath = path.resolve(paths.DOC, OUT_PATH);
 let template = fs.readFileSync(templatePath, "utf8");
 const titleTag = "<title>Experiment Report — Capability Decay Simulator</title>";

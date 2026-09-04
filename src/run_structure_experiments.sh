@@ -88,6 +88,11 @@ else
   IFS=$'\n' NUMS=($(sort -n <<<"${NUMS[*]}")); unset IFS
 fi
 
+# Expanded with the ${arr[@]+"${arr[@]}"} guard everywhere below, not as a bare
+# "${WORKER_ARGS[@]}". Bash 3.2 -- still /bin/bash on macOS -- treats an EMPTY array as
+# unset under `set -u` and aborts with "WORKER_ARGS[@]: unbound variable". The bug was
+# fixed in bash 4.4, so this only ever fails for someone running the default system shell,
+# and only when --workers is omitted.
 WORKER_ARGS=()
 [ -n "$WORKERS" ] && WORKER_ARGS=(--workers "$WORKERS")
 
@@ -104,12 +109,12 @@ run_one() {
   # from N processes on one terminal is unreadable, and the log is what you go to when
   # one of them fails.
   if [ "$PARALLEL" -gt 1 ]; then
-    node src/batch_run.js --config "${CFG_DIR}/${STEM}.${n}.json" "${WORKER_ARGS[@]}" \
+    node src/batch_run.js --config "${CFG_DIR}/${STEM}.${n}.json" ${WORKER_ARGS[@]+"${WORKER_ARGS[@]}"} \
       --out "${outdir}/results.csv" \
       --summary-out "${outdir}/results_summary.csv" \
       --shortfall-out "${outdir}/results_shortfall.csv" > "${outdir}/run.log" 2>&1
   else
-    node src/batch_run.js --config "${CFG_DIR}/${STEM}.${n}.json" "${WORKER_ARGS[@]}" \
+    node src/batch_run.js --config "${CFG_DIR}/${STEM}.${n}.json" ${WORKER_ARGS[@]+"${WORKER_ARGS[@]}"} \
       --out "${outdir}/results.csv" \
       --summary-out "${outdir}/results_summary.csv" \
       --shortfall-out "${outdir}/results_shortfall.csv"

@@ -52,6 +52,11 @@ else
   IFS=$'\n' NUMS=($(sort -n <<<"${NUMS[*]}")); unset IFS
 fi
 
+# Expanded with the ${arr[@]+"${arr[@]}"} guard everywhere below, not as a bare
+# "${WORKER_ARGS[@]}". Bash 3.2 -- still /bin/bash on macOS -- treats an EMPTY array as
+# unset under `set -u` and aborts with "WORKER_ARGS[@]: unbound variable". The bug was
+# fixed in bash 4.4, so this only ever fails for someone running the default system shell,
+# and only when --workers is omitted.
 WORKER_ARGS=()
 [ -n "$WORKERS" ] && WORKER_ARGS=(--workers "$WORKERS")
 
@@ -77,7 +82,7 @@ for n in "${NUMS[@]}"; do
   # leave stale fragments lying around.
   rm -f "${outdir}"/*.part
   echo "=== ${cfg} -> ${outdir}/ ==="
-  node src/batch_run.js --config "$cfg" "${WORKER_ARGS[@]}" \
+  node src/batch_run.js --config "$cfg" ${WORKER_ARGS[@]+"${WORKER_ARGS[@]}"} \
     --out "${outdir}/results.csv" \
     --summary-out "${outdir}/results_summary.csv" \
     --shortfall-out "${outdir}/results_shortfall.csv"

@@ -4,7 +4,7 @@
 //
 // Usage:
 //   node src/batch_run.js --config data/sweep.json [--out results.csv] [--summary-out results_summary.csv]
-//                      [--workers N] [--max-runs 20000] [--force] [--dry-run]
+//                      [--workers N] [--no-raw] [--dry-run]
 //
 // Config file (JSON) shape:
 //   {
@@ -16,6 +16,7 @@
 //     "seed": 1,                        // default 1 — base seed; the whole sweep is reproducible from this
 //     "fixed": { "N": 500, "M": 40 },   // params held constant across every run
 //     "pairWithBaseline": true,         // default false — see below
+//     "baselineParams": { "recruitmentShockYears": 0 },  // optional — see below
 //     "params": {                       // params being swept — any key from engine.js DEFAULT_PARAMS
 //       "aiDampeningBelow": { "range": [0, 2], "steps": 5 },
 //       "aiLevelFraction": { "range": [0.4, 0.9], "steps": 4 },   // grid mode: linspace, inclusive
@@ -33,6 +34,19 @@
 // arms share, isolating what AI actually changed. This is how you measure expertise
 // *obliterated by AI* rather than a raw AI-on number that means nothing on its own — see
 // the auto-generated *_shortfall.csv, which is the point of this mode.
+// "baselineParams": extra parameters forced in the BASELINE arm only, on top of
+// aiEnabled:false. Without it the reference is "the same world without AI", which is the
+// right question for the AI sweeps. The recruitment set asks a different one — what AI
+// AND a hiring freeze cost together, against a world with neither — and that needs the
+// freeze switched off in the reference as well. The seed is still shared, so the arms
+// start from the same population; they will diverge in their random stream once the
+// override changes how many draws a tick takes, which is why such a set carries more
+// replicate noise than one whose arms differ only in a multiplier.
+//
+// Refused if it names aiEnabled (the baseline is the no-AI arm by definition) or a
+// parameter that config.params also sweeps (the baseline would be identical across that
+// axis, and the sweep would measure nothing while still drawing a plausible heatmap).
+//
 // See sweep.example.json and sweep.random.example.json for complete examples.
 
 "use strict";
@@ -49,6 +63,11 @@ const METRIC_KEYS = ["meanE", "p10E", "p50E", "p90E", "divergence", "topE", "aiL
   // nothing about it at all, so any sweep of an AI parameter that acts only on
   // capability (frontierBreadth) would have written 21 identical columns.
   "systemCapability", "systemCapabilityHuman",
+  // Headcount as a fraction of the establishment. 1 unless a recruitment freeze has left
+  // slots unfilled. Recorded because systemCapability is an absolute SUM over people, so
+  // it falls with headcount as well as with expertise; without this column the two are
+  // not separable in the output.
+  "activeFraction",
   // occupancy diagnostics — asymmetric mobility drains low-market-index
   // institutions by design, and a run where these get small is suspect
   "minOccupancy", "emptyInstitutions", "underOccupiedInstitutions"];
@@ -203,6 +222,26 @@ function buildJobs(config) {
   if (pairWithBaseline && ("aiEnabled" in fixed || "aiEnabled" in paramSpecs)) {
     throw new Error('config.pairWithBaseline sets aiEnabled itself — remove "aiEnabled" from config.fixed/config.params');
   }
+  const baselineParams = config.baselineParams || {};
+  if (!pairWithBaseline && Object.keys(baselineParams).length) {
+    throw new Error('config.baselineParams needs pairWithBaseline: true — there is no baseline arm to apply it to');
+  }
+  if ("aiEnabled" in baselineParams) {
+    throw new Error('config.baselineParams must not set aiEnabled — the baseline arm is the no-AI arm by definition');
+  }
+  // Overriding a parameter that is also SWEPT makes the baseline identical in every cell
+  // of that axis. That is legitimate and is usually the point -- a single fixed reference
+  // the whole grid is measured against -- but it changes what the axis means: the cells
+  // then differ only in the treatment arm, so a gradient along it is the treatment moving,
+  // not a paired difference narrowing. Said out loud rather than assumed, because the
+  // resulting heatmap looks the same either way.
+  Object.keys(baselineParams).forEach((k) => {
+    if (k in paramSpecs) {
+      console.error(`[batch] note: baselineParams pins "${k}", which is also swept. The baseline`
+        + ` is therefore the SAME run in every cell of that axis — a fixed reference, not a`
+        + ` per-cell twin. Gradients along it are the treatment arm moving.`);
+    }
+  });
 
   let combos;
   if (mode === "grid") {
@@ -228,7 +267,20 @@ function buildJobs(config) {
         // same seed for both arms — that's what makes "baseline vs treatment" a valid
         // paired comparison instead of two independently-noisy runs
         jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "treatment", worldModelSpec, params: Object.assign({}, fixed, combo, { aiEnabled: true }) });
-        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "baseline", worldModelSpec, params: Object.assign({}, fixed, combo, { aiEnabled: false }) });
+        // baselineParams lets the reference arm differ from the treatment arm in more
+        // than aiEnabled. It exists because "what did AI cost" is not always the question:
+        // the recruitment set asks what AI AND a hiring freeze together cost against a
+        // world with neither, which needs the freeze switched off in the baseline too.
+        // Applied AFTER aiEnabled:false, so a config cannot accidentally re-enable AI in
+        // the reference arm.
+        //
+        // The seed is still shared, so the two arms start from the same population and the
+        // comparison is paired. They will diverge in their RANDOM STREAM as soon as the
+        // overridden parameter changes how many draws a tick takes — unavoidable, and the
+        // reason the *_change columns of such a set carry more replicate noise than one
+        // where the arms differ only in a multiplier.
+        jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: "baseline", worldModelSpec,
+          params: Object.assign({}, fixed, combo, { aiEnabled: false }, baselineParams) });
       } else {
         jobs.push({ comboIndex, replicate: r, seed, recordAt, arm: null, worldModelSpec, params: Object.assign({}, fixed, combo) });
       }
@@ -247,18 +299,47 @@ function csvEscape(v) {
 // atomic within a filesystem, so a results file is either absent or complete —
 // never a truncated half-write from an interrupted run. run_experiments.sh
 // relies on this to decide what it can safely skip on resume.
-function writeCSVAtomic(filePath, contents) {
-  const tmp = filePath + ".part";
-  fs.writeFileSync(tmp, contents);
-  fs.renameSync(tmp, filePath);
-}
-
-function writeCSV(filePath, rows) {
-  if (!rows.length) { writeCSVAtomic(filePath, ""); return; }
-  const cols = Object.keys(rows[0]);
-  const lines = [cols.join(",")];
-  for (const row of rows) lines.push(cols.map((c) => csvEscape(row[c])).join(","));
-  writeCSVAtomic(filePath, lines.join("\n") + "\n");
+// STREAMED, not built as one array of lines and joined. That used to be:
+//   const lines = rows.map(rowToLine); writeFileSync(lines.join("\n"))
+// which for the largest sweeps in this repository (400 cells x 32 replicates x 2 arms x
+// 120 recorded ticks = ~3M rows for one experiment) holds three full-size copies of the
+// same data at once -- the row objects, the array of formatted line strings, and the
+// single joined mega-string -- on top of whatever else main() is holding. That is what
+// turned "raise --max-runs" into "JavaScript heap out of memory" the moment the replicate
+// count went up: removing the run-count guard did not create this cost, it only made it
+// reachable. Streaming keeps at most one row's worth of formatted text resident at a time;
+// the OS write buffer does the rest.
+//
+// `rows` is an ITERABLE, not necessarily an array — computeShortfall below is a generator
+// for the same reason: the merged rows it used to return as one array are exactly as
+// numerous as this file's rows, so building that array first would reintroduce the
+// problem this function exists to avoid.
+function writeCSVStream(filePath, rows) {
+  return new Promise((resolve, reject) => {
+    const tmp = filePath + ".part";
+    const ws = fs.createWriteStream(tmp);
+    ws.on("error", reject);
+    let cols = null;
+    let count = 0;
+    // Iterated with an explicit iterator, not for..of, so a synchronous throw partway
+    // through (a malformed row, say) still reaches the catch below with the stream
+    // already open — for..of over a generator behaves the same, but making the manual
+    // control flow explicit is what let this be written with backpressure in mind: a
+    // future change that needs to await ws's 'drain' event has a loop shape ready for it,
+    // rather than a for..of that would need restructuring first.
+    try {
+      for (const row of rows) {
+        if (!cols) { cols = Object.keys(row); ws.write(cols.join(",") + "\n"); }
+        ws.write(cols.map((c) => csvEscape(row[c])).join(",") + "\n");
+        count++;
+      }
+    } catch (e) { ws.destroy(); reject(e); return; }
+    ws.end(() => {
+      if (count === 0) { fs.writeFileSync(tmp, ""); }
+      fs.renameSync(tmp, filePath);
+      resolve(count);
+    });
+  });
 }
 
 function summarize(rows) {
@@ -295,9 +376,37 @@ function summarize(rows) {
 // what the field is worth with the AI multiplier taken back off, i.e. what AI has done
 // to the humans themselves. Its baseline column is redundant by construction (the no-AI
 // arm has no multiplier, so baseline human == baseline total) and costs one column.
-const SHORTFALL_KEYS = ["meanE", "shareExpert", "systemCapability", "systemCapabilityHuman"];
+// The metrics the PAIRED csv carries as _baseline/_treatment/_change. A strict subset of
+// METRIC_KEYS, and separate from it on purpose: results.csv records everything a run
+// produced, while this file exists to answer one question — what AI changed — and a
+// column that is identical in both arms only adds width.
+//
+// activeFraction is here despite being identical in both arms under the paired design
+// (a hiring freeze applies to both), because the RECRUITMENT set needs it as a LEVEL:
+// its report reads the baseline arm's headcount to separate a field that shrank from a
+// field that lost its ladder. Adding it to METRIC_KEYS alone was not enough — that only
+// reaches results.csv — which is exactly the trap this comment is here to close.
+const SHORTFALL_KEYS = ["meanE", "shareExpert", "systemCapability", "systemCapabilityHuman",
+  "activeFraction"];
 
-function computeShortfall(rows) {
+// A GENERATOR, not a function returning an array. The merged rows it yields are as
+// numerous as `rows` itself (one per baseline/treatment pair, so roughly half the total
+// row count), and materialising that many new objects into an array before writing was
+// the second-largest source of the same out-of-memory failure writeCSVStream's comment
+// describes — cols[k] copies of the treatment row, one per pair, all resident at once
+// purely so they could be sorted and then written. Consumed directly by writeCSVStream,
+// which writes and discards each one as it is produced.
+//
+// The one thing this drops relative to the old version: rows are no longer globally
+// sorted by (comboIndex, replicate, t) before writing, because sorting requires having
+// them all in memory at once, which is exactly what this exists to avoid. Nothing reads
+// results_shortfall.csv expecting a particular row order — build_report.js buckets every
+// row into a grid by its own key regardless of file order — so this is a change to a
+// human skimming the raw file, not to anything that parses it. Order instead follows
+// Map iteration order, which for a Map built by a single forward pass over `rows` is
+// insertion order — i.e. roughly job-completion order, not sorted, but not arbitrary
+// either.
+function* computeShortfall(rows) {
   const byPair = new Map(); // "comboIndex|replicate|t" -> { baseline, treatment }
   for (const row of rows) {
     if (!row.arm) continue;
@@ -305,7 +414,6 @@ function computeShortfall(rows) {
     if (!byPair.has(key)) byPair.set(key, {});
     byPair.get(key)[row.arm] = row;
   }
-  const out = [];
   for (const pair of byPair.values()) {
     if (!pair.baseline || !pair.treatment) continue; // one arm's job errored out — skip, don't half-report
     const base = Object.assign({}, pair.treatment);
@@ -325,10 +433,8 @@ function computeShortfall(rows) {
       // either and negates the legacy one.
       base[k + "_change"] = pair.treatment[k] - pair.baseline[k];
     });
-    out.push(base);
+    yield base;
   }
-  out.sort((a, b) => a.comboIndex - b.comboIndex || a.replicate - b.replicate || a.t - b.t);
-  return out;
 }
 
 /* ============================== parallel execution ============================== */
@@ -393,18 +499,17 @@ function runSequential(jobs) {
 
 /* ============================== CLI ============================== */
 function parseArgs(argv) {
-  const args = { out: "results.csv", summaryOut: "results_summary.csv", shortfallOut: "results_shortfall.csv", maxRuns: 20000, workers: null, force: false, dryRun: false };
+  const args = { out: "results.csv", summaryOut: "results_summary.csv", shortfallOut: "results_shortfall.csv", workers: null, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--config") args.config = argv[++i];
     else if (a === "--out") args.out = argv[++i];
+    else if (a === "--no-raw") args.out = null;
     else if (a === "--summary-out") args.summaryOut = argv[++i];
     else if (a === "--no-summary") args.summaryOut = null;
     else if (a === "--shortfall-out") args.shortfallOut = argv[++i];
     else if (a === "--no-shortfall") args.shortfallOut = null;
     else if (a === "--workers") args.workers = parseInt(argv[++i], 10);
-    else if (a === "--max-runs") args.maxRuns = parseInt(argv[++i], 10);
-    else if (a === "--force") args.force = true;
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
     else throw new Error("unknown argument: " + a);
@@ -420,14 +525,18 @@ Batch-run the capability-decay simulator across a parameter sweep.
 
 Options:
   --out <path>          per-run CSV output (default results.csv)
+  --no-raw              skip the per-run CSV -- nothing in this repository reads it back
+                        (build_report.js and friends read only the shortfall CSV), so
+                        it exists for manual inspection. Its cost scales with total
+                        recorded rows -- cells x replicates x arms x ticks -- which is
+                        the largest of the three output files by a wide margin on a big
+                        sweep, so this is worth passing when that inspection is not needed
   --summary-out <path>  per-parameter-combo mean/std CSV (default results_summary.csv)
   --no-summary          skip the summary CSV
   --shortfall-out <path>  baseline-vs-AI expertise shortfall CSV, only written when the
                           config sets "pairWithBaseline": true (default results_shortfall.csv)
   --no-shortfall        skip the shortfall CSV even if pairWithBaseline is set
   --workers <n>         parallel worker threads (default: min(cpus, 8))
-  --max-runs <n>        safety cap on total run count (default 20000)
-  --force               bypass the --max-runs cap
   --dry-run             print the run count and exit without simulating
 
 See engine.js DEFAULT_PARAMS for every sweepable key, and sweep.example.json
@@ -447,11 +556,6 @@ async function main() {
   console.error(`[batch] ${combos.length} parameter combination(s) x ${replicates} replicate(s)${armNote} = ${jobs.length} run(s)`);
   console.error(`[batch] each run simulates up to t=${jobs[0].recordAt[jobs[0].recordAt.length - 1]}, recording at t=${jobs[0].recordAt.join(",")}`);
 
-  if (jobs.length > args.maxRuns && !args.force) {
-    console.error(`[batch] refusing to run ${jobs.length} runs (> --max-runs ${args.maxRuns}). Narrow the sweep, raise --max-runs, or pass --force.`);
-    process.exit(1);
-    return;
-  }
   if (args.dryRun) { console.error("[batch] dry run — not executing."); return; }
 
   const workers = args.workers != null ? Math.max(1, args.workers) : Math.max(1, Math.min(os.cpus().length, 8));
@@ -462,18 +566,22 @@ async function main() {
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   console.error(`[batch] ${jobs.length} runs -> ${rows.length} rows in ${elapsed}s`);
 
-  writeCSV(args.out, rows);
-  console.error(`[batch] wrote ${args.out} (${rows.length} rows)`);
+  if (args.out) {
+    const n = await writeCSVStream(args.out, rows);
+    console.error(`[batch] wrote ${args.out} (${n} rows)`);
+  }
 
   if (args.summaryOut) {
+    // summarize() still returns a plain array: its output is one row per (combo, arm,
+    // tick) with replicates already collapsed, so for the sweeps that motivated
+    // streaming (32 replicates) it is 32x smaller than `rows` and was never the problem.
     const summaryRows = summarize(rows);
-    writeCSV(args.summaryOut, summaryRows);
-    console.error(`[batch] wrote ${args.summaryOut} (${summaryRows.length} rows, mean/std across replicates)`);
+    const n = await writeCSVStream(args.summaryOut, summaryRows);
+    console.error(`[batch] wrote ${args.summaryOut} (${n} rows, mean/std across replicates)`);
   }
 
   if (pairWithBaseline && args.shortfallOut) {
-    const shortfallRows = computeShortfall(rows);
-    writeCSV(args.shortfallOut, shortfallRows);
-    console.error(`[batch] wrote ${args.shortfallOut} (${shortfallRows.length} rows — baseline vs AI, negative change = AI eroded it)`);
+    const n = await writeCSVStream(args.shortfallOut, computeShortfall(rows));
+    console.error(`[batch] wrote ${args.shortfallOut} (${n} rows — baseline vs AI, negative change = AI eroded it)`);
   }
 }

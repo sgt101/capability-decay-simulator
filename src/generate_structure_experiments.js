@@ -3,6 +3,7 @@
 // graphAttachment / m (how densely a new one connects).
 //
 //   node src/generate_structure_experiments.js
+//   node src/generate_structure_experiments.js --replicates 32
 //
 // The question it exists to answer: the world-model set holds structure FIXED at the
 // real graph's 245 institutions, so it can say what AI does to a field but not whether
@@ -27,11 +28,26 @@ const OUT_DIR = paths.data("experiments-structure");
 const HORIZON = 1440;                       // 3 careers, matching the other sets
 const RECORD_AT = [];
 for (let t = TICKS_PER_YEAR; t <= HORIZON; t += TICKS_PER_YEAR) RECORD_AT.push(t);
-// 5, not the 3 the other sets use. Replicate noise falls as 1/sqrt(n), so this buys a
-// ~22% narrower error on every cell for a 67% larger run — worth it here because the
-// structural effects being measured are small next to the AI ones: capability loss
-// moves ~30 points across the whole M axis, where a dampening sweep moves ~100.
-const REPLICATES = 5;
+
+function argNum(flag, fallback) {
+  const i = process.argv.indexOf(flag);
+  if (i < 0) return fallback;
+  const v = Number(process.argv[i + 1]);
+  if (!Number.isFinite(v) || v <= 0) {
+    console.error(`[gen-structure] ${flag} needs a positive number, got "${process.argv[i + 1]}"`);
+    process.exit(1);
+  }
+  return v;
+}
+
+// Higher than the other sets' default, because the structural effects being measured are
+// small next to the AI ones -- capability loss moves ~30 points across the whole M axis,
+// where a dampening sweep moves ~100 -- and replicate noise falls only as 1/sqrt(n).
+// Raised from 5 to 32 (measured insufficient at 5 for the smaller structural effects to
+// separate cleanly from cell-to-cell noise): 32/5 buys a ~2.5x narrower standard error on
+// every cell, at 6.4x the run count. --replicates overrides it, so a quick check of the
+// grid or the report pipeline does not require paying for the full 32.
+const REPLICATES = argNum("--replicates", 32);
 const SEED = 1;
 
 // N is fixed across the whole set so that M alone moves the people-per-institution

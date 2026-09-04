@@ -79,7 +79,8 @@
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 0
       },
@@ -159,7 +160,8 @@
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 441
       },
@@ -239,7 +241,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 882
       },
@@ -319,7 +322,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 1323
       },
@@ -399,7 +403,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "expertiseMean": 0.28
+          "expertiseMean": 0.28,
+          "M": 330
         },
         "startOffset": 1764
       },
@@ -479,7 +484,8 @@
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 2205
       },
@@ -559,7 +565,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 2646
       },
@@ -639,7 +646,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 3087
       },
@@ -719,7 +727,8 @@
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "expertiseMean": 0.28
+          "expertiseMean": 0.28,
+          "M": 330
         },
         "startOffset": 3528
       },
@@ -798,7 +807,8 @@
           "learningRateSpread": 1,
           "aiDampeningBelow": 0.75,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 3969
       },
@@ -877,7 +887,8 @@
           "learningRateSpread": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 4410
       },
@@ -956,7 +967,8 @@
           "learningRateSpread": 1,
           "aiDampeningBelow": 0.75,
           "aiLevelFraction": 0.585,
-          "expertiseMean": 0.28
+          "expertiseMean": 0.28,
+          "M": 330
         },
         "startOffset": 4851
       },
@@ -1035,7 +1047,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 5292
       },
@@ -1114,7 +1127,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
-          "expertiseMean": 0.28
+          "expertiseMean": 0.28,
+          "M": 330
         },
         "startOffset": 5733
       },
@@ -1193,7 +1207,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "aiDampeningBelow": 0.75,
-          "aiLevelFraction": 0.585
+          "aiLevelFraction": 0.585,
+          "M": 330
         },
         "startOffset": 6174
       },
@@ -1273,7 +1288,8 @@
           "aiDampeningAbove": 1,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 6615
       },
@@ -1353,7 +1369,8 @@
           "aiDampeningAbove": 1,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 7056
       },
@@ -1432,7 +1449,8 @@
           "learningRateSpread": 1,
           "aiLevelFraction": 0.585,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 7497
       },
@@ -1511,7 +1529,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "expertiseMean": 0.28,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 7938
       },
@@ -1590,7 +1609,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "aiLevelFraction": 0.585,
-          "entrantExpertiseMean": 0.05
+          "entrantExpertiseMean": 0.05,
+          "M": 330
         },
         "startOffset": 8379
       },
@@ -1669,7 +1689,8 @@
           "learningRateSpread": 1,
           "aiDampeningAbove": 1,
           "aiLevelFraction": 0.585,
-          "expertiseMean": 0.28
+          "expertiseMean": 0.28,
+          "M": 330
         },
         "startOffset": 8820
       }
@@ -2343,7 +2364,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 0
       },
@@ -2387,7 +2409,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 18
       },
@@ -2431,7 +2454,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 36
       },
@@ -2475,7 +2499,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 54
       },
@@ -2519,7 +2544,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 72
       },
@@ -2563,7 +2589,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 90
       },
@@ -2607,7 +2634,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 108
       },
@@ -2651,7 +2679,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 126
       },
@@ -2695,7 +2724,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 144
       },
@@ -2739,7 +2769,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 162
       },
@@ -2783,7 +2814,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 180
       },
@@ -2827,7 +2859,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 198
       },
@@ -2871,7 +2904,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 216
       },
@@ -2915,7 +2949,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 234
       },
@@ -2959,7 +2994,8 @@
           "aboveMeanDrag": 16,
           "N": 11322,
           "baseMoveProb": 0.01,
-          "learningRateSpread": 1
+          "learningRateSpread": 1,
+          "M": 330
         },
         "startOffset": 252
       }

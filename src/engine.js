@@ -247,6 +247,25 @@ const DEFAULT_PARAMS = {
   // would silently re-run them under a different model. PIPELINE_PARAMS carries the
   // current value.
   personalLearningRate: 0.001,
+  // --- recruitment shock ------------------------------------------------------------
+  // A hiring freeze: for a window of years, only a FRACTION of retirements are refilled.
+  // Off by default (recruitmentShockYears = 0), so every existing config and archived
+  // result is untouched.
+  //
+  // Retirement and recruitment used to be one atomic event -- an agent left and the slot
+  // was refilled in the same statement -- so "fewer entrants" could not be expressed at
+  // all. They are now separate: retirement vacates a slot, and the slot is refilled only
+  // if a hire happens. state.active marks which slots hold a person.
+  //
+  // NO CATCH-UP, deliberately. Outside the window every retirement is replaced one for
+  // one, which is the original behaviour; it is also exactly the normal hiring rate, so
+  // vacancies accumulated during the freeze are never worked off and the headcount
+  // shortfall is PERMANENT. That separates the two things a freeze does -- it removes a
+  // cohort from the expertise ladder, and it shrinks the field -- rather than letting a
+  // recovery rule mix them. A model with catch-up hiring is a different experiment.
+  recruitmentShockStart: 0,     // tick the freeze begins; ignored when Years is 0
+  recruitmentShockYears: 0,     // length of the freeze, in years
+  recruitmentFraction: 1,       // share of retirements still refilled during it; 1 = no freeze
   mobilityMode: "hybrid", jumpProbability: 0.10,
   competitionAversion: 0.5, prestigeWeight: 0.3, baseMoveProb: 0.05,
   turnoverRate: 0.01,
@@ -704,8 +723,14 @@ function initSim(userParams) {
   // many are still where they began", this answers "how long has the average person been
   // where they are", and the second is what moves the instant mobility changes.
   const sinceMove = new Int32Array(N);
+  // Which slots hold a person. Everyone is present at t=0; a recruitment freeze is the
+  // only thing that ever clears a bit, and nothing sets one back except a hire. Every
+  // population statistic below is taken over active slots only -- a vacancy is an absent
+  // person, not a person with expertise 0, and averaging one in would read as a collapse.
+  const active = new Uint8Array(N).fill(1);
 
   return {
+    active, activeCount: N,
     params, rng, graph,
     N, M: params.M,
     E, L, tenure, aptitude, inst,
@@ -747,7 +772,9 @@ function institutionStats(state) {
   const capabilityHuman = new Float64Array(M);
   const aiOn = state.params.aiEnabled;
   const aiLevel = aiOn ? state.params.aiLevelFraction * state.startTopE : 0;
+  const active = state.active;
   for (let i = 0; i < state.N; i++) {
+    if (!active[i]) continue;                 // vacant slot: no person, no expertise
     sumE[inst[i]] += E[i]; count[inst[i]]++;
     if (E[i] >= EXPERT_THRESHOLD) experts[inst[i]]++;
     const wi = capabilityWeight(E[i]);
@@ -767,7 +794,7 @@ function institutionStats(state) {
     const minMonths = senior * TICKS_PER_YEAR;
     const sSum = new Float64Array(M), sCount = new Int32Array(M);
     for (let i = 0; i < state.N; i++) {
-      if (state.tenure[i] >= minMonths) { sSum[inst[i]] += E[i]; sCount[inst[i]]++; }
+      if (active[i] && state.tenure[i] >= minMonths) { sSum[inst[i]] += E[i]; sCount[inst[i]]++; }
     }
     Teach = new Float32Array(M);
     for (let j = 0; j < M; j++) Teach[j] = sCount[j] > 0 ? sSum[j] / sCount[j] : Ebar[j];
@@ -785,7 +812,7 @@ function institutionStats(state) {
     if (state.params.teachTopN > 0) {
       const nTop = state.params.teachTopN;
       const byInst = Array.from({ length: M }, () => []);
-      for (let i = 0; i < state.N; i++) if (state.tenure[i] >= minMonths) byInst[inst[i]].push(E[i]);
+      for (let i = 0; i < state.N; i++) if (active[i] && state.tenure[i] >= minMonths) byInst[inst[i]].push(E[i]);
       for (let j = 0; j < M; j++) {
         const a = byInst[j];
         if (!a.length) continue;                 // no seniors: keep the Ebar fallback
@@ -907,15 +934,19 @@ function softmaxPick(rng, ids, utils, n, temperature) {
 
 function tick(state) {
   const p = state.params;
-  const { N, M, E, L, tenure, aptitude, inst, rng, graph } = state;
+  const { N, M, E, L, tenure, aptitude, inst, rng, graph, active } = state;
   const { Ebar, count, Teach, transferEff } = institutionStats(state);
 
-  let topE = 0, sumE0 = 0;
-  for (let i = 0; i < N; i++) { if (E[i] > topE) topE = E[i]; sumE0 += E[i]; }
+  let topE = 0, sumE0 = 0, nActive = 0;
+  for (let i = 0; i < N; i++) {
+    if (!active[i]) continue;
+    if (E[i] > topE) topE = E[i];
+    sumE0 += E[i]; nActive++;
+  }
   // Reference for the above-mean brake: the population mean as it stands at the START
   // of this tick, so every person in this tick is braked against the same number and
   // the sweep order does not matter.
-  const refE = sumE0 / N;
+  const refE = nActive ? sumE0 / nActive : 0;
   // aiLevel is a fraction of the fixed t=0 top performer (state.startTopE), not of the
   // live/current one — a stable benchmark, not a moving target. topE above is the
   // live current top performer, still tracked and reported as its own metric, just
@@ -925,6 +956,7 @@ function tick(state) {
 
 
   for (let i = 0; i < N; i++) {
+    if (!active[i]) continue;
     const j = inst[i];
     // What you are climbing toward: your institution's teaching capability — the mean
     // of its best teachTopN seniors — and never past your own ceiling.
@@ -980,6 +1012,7 @@ function tick(state) {
   // rates, and credits expertise transfer to entrants who have none.
   let moves = 0, moveExpertiseFlux = 0, upgradingArrivals = 0;
   for (let i = 0; i < N; i++) {
+    if (!active[i]) continue;
     if (rng() >= p.baseMoveProb * L[i]) continue;
     const from = inst[i];
     const cands = state.scratchCand, utils = state.scratchUtil;
@@ -1007,29 +1040,60 @@ function tick(state) {
     }
   }
 
-  let removed = 0;
+  // --- retirement, then hiring ---------------------------------------------------
+  // Two steps, not one. They used to be a single statement -- an agent left and the slot
+  // was refilled in the same breath -- which conserved the population by construction and
+  // made "fewer entrants" inexpressible. Now a retirement VACATES a slot and a separate
+  // hire decision fills it.
+  //
+  // The hire probability is 1 outside the freeze window, which reproduces the old
+  // behaviour exactly: every retirement replaced, headcount conserved. Inside the window
+  // it is recruitmentFraction, so a share of retirements go unreplaced and the slots stay
+  // empty. See DEFAULT_PARAMS.recruitmentShockYears for why they are never worked off.
+  const shockYears = p.recruitmentShockYears || 0;
+  const shockFrom = p.recruitmentShockStart || 0;
+  const inShock = shockYears > 0
+    && state.t >= shockFrom
+    && state.t < shockFrom + shockYears * TICKS_PER_YEAR;
+  const hireProb = inShock ? p.recruitmentFraction : 1;
+
+  let removed = 0, hired = 0;
   for (let i = 0; i < N; i++) {
-    if (rng() < p.turnoverRate) {
-      const draw = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, 0);
-      E[i] = draw < p.entrantExpertiseFloor ? p.entrantExpertiseFloor : draw;
-      L[i] = sampleLognormal(rng, p.learningRateSpread);
-      if (state.tenure) state.tenure[i] = 0;      // a replacement starts from scratch
-      if (state.aptitude) {
-        state.aptitude[i] = p.aptitudeSpread > 0
-          ? drawAptitude(rng, p.aptitudeMean, p.aptitudeSpread) : 1;
-      }
-      // Same sampler as initial placement — see sampleInstitution(). Placing
-      // entrants uniformly here is what used to wash out any weighted sizing.
-      inst[i] = sampleInstitution(state, rng);
-      // A new person, so their career starts HERE. Recording the placement as their
-      // origin is what puts entrants into the mixing measure instead of retiring the
-      // slot out of it — without this the statistic only ever describes the t=0 cohort,
-      // and that cohort is mostly gone within two careers.
-      if (state.origin) state.origin[i] = inst[i];
-      if (state.sinceMove) state.sinceMove[i] = 0;
-      removed++;
-    }
+    if (!active[i]) continue;                   // already vacant; nothing retires from it
+    if (rng() >= p.turnoverRate) continue;
+    removed++;
+    // The draw is taken whether or not the slot is refilled, so the random stream does
+    // not depend on the freeze. Without this a frozen run and an unfrozen one would
+    // diverge in their RNG sequence and stop being comparable at the same seed, which is
+    // the whole basis of the paired design.
+    const draw = sampleSkewNormalClipped(rng, p.entrantExpertiseMean, p.entrantExpertiseSpread, 0);
+    const newL = sampleLognormal(rng, p.learningRateSpread);
+    const newApt = p.aptitudeSpread > 0 ? drawAptitude(rng, p.aptitudeMean, p.aptitudeSpread) : 1;
+    const newInst = sampleInstitution(state, rng);
+    // Short-circuited so no draw is consumed when there is no freeze. Consuming one
+    // unconditionally shifted the entire random stream relative to every run made before
+    // this mechanism existed, which silently changed results that had nothing to do with
+    // recruitment. With hireProb === 1 the sequence is byte-for-byte what it always was.
+    const takeIt = hireProb >= 1 || rng() < hireProb;
+    if (!takeIt) { active[i] = 0; continue; }   // nobody hired: the slot stays empty
+    hired++;
+    E[i] = draw < p.entrantExpertiseFloor ? p.entrantExpertiseFloor : draw;
+    L[i] = newL;
+    if (state.tenure) state.tenure[i] = 0;      // a replacement starts from scratch
+    if (state.aptitude) state.aptitude[i] = newApt;
+    // Same sampler as initial placement — see sampleInstitution(). Placing
+    // entrants uniformly here is what used to wash out any weighted sizing.
+    inst[i] = newInst;
+    // A new person, so their career starts HERE. Recording the placement as their
+    // origin is what puts entrants into the mixing measure instead of retiring the
+    // slot out of it — without this the statistic only ever describes the t=0 cohort,
+    // and that cohort is mostly gone within two careers.
+    if (state.origin) state.origin[i] = inst[i];
+    if (state.sinceMove) state.sinceMove[i] = 0;
   }
+  state.activeCount = 0;
+  for (let i = 0; i < N; i++) if (active[i]) state.activeCount++;
+  state.hiredTotal = (state.hiredTotal || 0) + hired;
 
   if (state.tenure) for (let i = 0; i < N; i++) state.tenure[i]++;
   if (state.sinceMove) for (let i = 0; i < N; i++) state.sinceMove[i]++;
@@ -1049,6 +1113,7 @@ function tick(state) {
   let sumE = 0, belowCount = 0, expertCount = 0;
   let systemCapability = 0, systemCapabilityHuman = 0;
   for (let i = 0; i < N; i++) {
+    if (!active[i]) continue;                 // a vacancy is an absent person, not E = 0
     sumE += E[i];
     const wi = capabilityWeight(E[i]);
     systemCapabilityHuman += wi;
@@ -1059,10 +1124,14 @@ function tick(state) {
     if (b < 0) b = 0; else if (b >= PCTL_BINS) b = PCTL_BINS - 1;
     eHist[b]++;
   }
-  const meanE = sumE / N;
+  // Over the ACTIVE headcount, not N. Under a recruitment freeze the two differ, and
+  // dividing by N would report a shrinking field as a falling mean -- mixing a headcount
+  // loss into a metric that is supposed to measure expertise per person.
+  const An = state.activeCount;
+  const meanE = An ? sumE / An : 0;
 
   // Nearest-rank percentiles, read off the cumulative histogram in one pass.
-  const wantAt = [Math.ceil(0.10 * N), Math.ceil(0.50 * N), Math.ceil(0.90 * N)];
+  const wantAt = [Math.ceil(0.10 * An), Math.ceil(0.50 * An), Math.ceil(0.90 * An)];
   const pctls = [0, 0, 0];
   {
     let cum = 0, k = 0;
@@ -1134,8 +1203,14 @@ function tick(state) {
     // field that is uniformly mediocre from one that is split into experts and novices.
     p10E, p50E, p90E,
     divergence: varEbar, topE, aiLevel,
-    shareBelowAI: p.aiEnabled ? belowCount / N : null,
-    shareExpert: expertCount / N,
+    shareBelowAI: p.aiEnabled ? (An ? belowCount / An : 0) : null,
+    shareExpert: An ? expertCount / An : 0,
+    // Headcount as a fraction of the establishment. 1 unless a recruitment freeze has
+    // left slots empty; reported so a capability or expertise change can be read against
+    // how much of the field is still there. systemCapability is an absolute SUM, so it
+    // falls with headcount as well as with expertise -- this is the column that separates
+    // the two.
+    activeFraction: An / N,
     turnover: removed,
     turnoverTotal: state.turnoverTotal,
     // --- diffusion of expertise across the network (2026-08) --------------------

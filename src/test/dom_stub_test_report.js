@@ -42,6 +42,11 @@ class FakeElement {
     this.style = {}; this._listeners = new Listeners();
     this.classList = { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false };
     this.children = [];
+    // A plausible fixed size for the tooltip elements: real enough that
+    // positionTooltip()'s clamp arithmetic runs on non-degenerate numbers, so a NaN
+    // introduced by a future edit shows up as a wrong-looking style.left rather than
+    // silently vanishing into an unstubbed `undefined + number`.
+    this.offsetWidth = 160; this.offsetHeight = 90;
   }
   get id() { return this._id; } set id(v) { this._id = v; registry.set(v, this); }
   get value() { return this._value; } set value(v) { this._value = String(v); }
@@ -51,8 +56,16 @@ class FakeElement {
   addEventListener(t, f) { this._listeners.add(t, f); }
   dispatch(t, e) { this._listeners.fire(t, e || { target: this }); }
   appendChild(c) { this.children.push(c); return c; }
+  // The download path creates an <a download=...>, clicks it and removes it. `click` is
+  // recorded rather than dispatched: the filename is the behaviour worth asserting.
+  click() { if (this.tagName === "A" && this.download) downloads.push(this.download); }
+  remove() { }
   getBoundingClientRect() { return { width: 900, height: 480, left: 0, top: 0 }; }
   getContext() { return CTX_STUB; }
+  // The PNG export composites onto an offscreen canvas and asks for a blob. Enough of
+  // toBlob to let that path RUN -- the point is that composeFigure() does not throw on a
+  // real page, not that the pixels are right, which no stub could check anyway.
+  toBlob(cb) { cb({ type: "image/png", size: 1 }); }
   setAttribute(k, v) { this._attrs = this._attrs || {}; this._attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return this._attrs && this._attrs[k] != null ? this._attrs[k] : null; }
 }
@@ -98,6 +111,9 @@ const openCalls = [];
 // Filled by the driver's table-view step; asserted after the run, in Node scope, where
 // LaTeX backslashes only need escaping once.
 const latexProbe = {};
+// Same pattern as latexProbe: filled by the driver, asserted below in Node scope.
+const figureProbe = {};
+const downloads = [];
 
 const documentElement = new FakeElement("html");
 documentElement.getAttribute = () => null;
@@ -105,9 +121,15 @@ const document = {
   documentElement,
   getElementById: (id) => registry.get(id) || null,
   createElement: (tag) => new FakeElement(tag),
+  // The download path appends a temporary <a> to the body and clicks it.
+  body: new FakeElement("body"),
 };
 const window = {
   devicePixelRatio: 1,
+  // No ClipboardItem: this is the file:// case, where navigator.clipboard is absent. The
+  // page must fall back to telling the reader to use Download rather than throwing, and
+  // that is the branch worth exercising by default.
+  URL: { createObjectURL: () => "blob:stub", revokeObjectURL: () => {} },
   matchMedia: () => ({ matches: false, addEventListener: () => {} }),
   addEventListener: () => {},
   // Recorded, not opened: a cell click hands a URL to the browser, and the URL is the
@@ -442,6 +464,24 @@ const tableHtml = document.getElementById("tableWrap").innerHTML;
 if (!tableHtml.includes("<table")) throw new Error("table view did not render a table");
 console.log("OK: table view rendered,", (tableHtml.match(/<tr>/g) || []).length, "rows");
 
+// --- PNG export from the heatmap and trajectory panels -----------------------------
+// These buttons composite the canvas with a title, a redrawn legend and a provenance
+// footer, then hand the result to the clipboard or to a download. The pixels are not
+// checkable here; what IS checkable, and what would break silently, is that the compositor
+// runs at all on a real page, and that the download filename carries the experiment,
+// metric and tick -- an exported figure outlives the page it came from.
+{
+  // Clicked here, ASSERTED in Node scope below: saveFigure() composites through
+  // canvas.toBlob and hands the result to a .then(), so the filename does not exist until
+  // microtasks have run and cannot be observed from inside this synchronous driver.
+  document.getElementById("figSaveHeatmap").dispatch("click");
+  // No ClipboardItem in this environment (the file:// case), so Copy must degrade to a
+  // message rather than throwing. Surviving the click is the whole assertion.
+  document.getElementById("figCopyHeatmap").dispatch("click");
+  figureProbe.clicked = true;
+  console.log("OK: heatmap PNG export buttons fired without throwing");
+}
+
 // --- the LaTeX copy ---------------------------------------------------------------
 // Generated here, ASSERTED IN NODE SCOPE below. This driver is a template literal, so
 // every backslash in it would need doubling a second time — unreadable for a format
@@ -468,6 +508,26 @@ const hit = hitTest(canvas, { clientX: 150, clientY: 100 });
 console.log("hitTest result:", JSON.stringify(hit));
 canvas.dispatch("mousemove", { clientX: 150, clientY: 100 });
 console.log("OK: mousemove handled without throwing");
+
+console.log("--- tooltip stays inside its wrap near the right/bottom edge ---");
+// getBoundingClientRect stubs every element at 900x480 (see FakeElement.getBoundingClientRect),
+// and the tooltip stub is 160x90 (see the offsetWidth/offsetHeight note on FakeElement). The
+// hover point has to be a real grid HIT, not just close to the wrap's outer edge -- hitTest
+// only recognises points inside the plotted grid (heatmap padding excludes a margin on every
+// side), and a point in that margin produces no hit, no tooltip update, and this check would
+// then be silently reading whatever position the PREVIOUS hover left behind. (870, 415) sits
+// inside the grid for every set in this repository (padding is fixed, not per-experiment) and
+// close enough to the right/bottom of the 900x480 wrap that an unclamped placement
+// (cursor + 14, cursor - 10) would push the 160x90 box outside it on both axes.
+canvas.dispatch("mousemove", { clientX: 870, clientY: 415 });
+{
+  const tt = document.getElementById("heatmapWrap").children.find((c) => c.className === "chart-tooltip");
+  if (!tt) throw new Error("heatmap tooltip element was never created");
+  const left = parseFloat(tt.style.left), top = parseFloat(tt.style.top);
+  if (!(left + 160 <= 900)) throw new Error("heatmap tooltip overflows right: left=" + left + ", width=160, wrap=900");
+  if (!(top + 90 <= 480)) throw new Error("heatmap tooltip overflows bottom: top=" + top + ", height=90, wrap=480");
+  console.log("OK: heatmap tooltip clamped inside its wrap near the edge (left=" + left + ", top=" + top + ")");
+}
 
 console.log("--- verifying every experiment renders without throwing ---");
 for (let i = 0; i < DATA.experiments.length; i++) {
@@ -591,7 +651,16 @@ console.log("\\nALL REPORT FLOWS COMPLETED WITHOUT THROWING");
 const sandbox = {
   document, window, MutationObserver, getComputedStyle,
   console, Math, Set, Array, Object, JSON, parseInt, parseFloat, isFinite,
-  drawnText, openCalls, latexProbe,
+  drawnText, openCalls, latexProbe, figureProbe,
+  // The export path schedules a label reset and an object-URL revoke. Both are fire and
+  // forget; running the callback immediately is closer to the truth than swallowing it,
+  // and it means a throw inside one still surfaces here.
+  setTimeout: (fn) => { try { fn(); } catch (e) { throw e; } return 0; },
+  // A browser global, not a window property, which is how the download path reaches it.
+  // Node has its own URL class but no createObjectURL, so it has to be shadowed here.
+  URL: { createObjectURL: () => "blob:stub", revokeObjectURL: () => {} },
+  // Shared with the Node scope so the driver can observe what the download path did.
+  downloads,
 };
 vm.createContext(sandbox);
 try {
@@ -604,6 +673,25 @@ try {
 // The LaTeX the table view produced. Checked as TEXT, not merely "did not throw": the
 // failure that matters is a table which copies cleanly and then will not compile, and
 // nothing else in this repository would catch that.
+// The exported filename is provenance: an image pasted into a document is separated from
+// this page forever, and a file called "chart.png" cannot be traced back to a cell.
+//
+// Deferred one turn of the event loop because the export resolves on a microtask -- see
+// the driver's export step for why it cannot assert this itself.
+setImmediate(() => {
+  if (!figureProbe.clicked) return;
+  if (!downloads.length) {
+    console.error("FAIL: the heatmap Download PNG button produced no file");
+    process.exitCode = 1;
+    return;
+  }
+  const f = downloads[downloads.length - 1];
+  if (!/\.png$/.test(f)) throw new Error("exported figure is not named as a .png: " + f);
+  if (!/-t\d+\.png$/.test(f)) throw new Error("exported filename carries no tick: " + f);
+  if (!/exp\d+/.test(f)) throw new Error("exported filename carries no experiment number: " + f);
+  console.log("OK: PNG filename carries set, experiment, metric and tick —", f);
+});
+
 if (latexProbe.tex) {
   const tex = latexProbe.tex, cols = latexProbe.cols, rows = latexProbe.rows;
   const fail = (msg) => { console.error("\nLaTeX copy: " + msg); process.exitCode = 1; };

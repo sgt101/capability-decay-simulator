@@ -1,0 +1,95 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrant expertise set: definitions and method</title>
+<style>
+:root{--bg:#eef0ee;--panel:#fff;--ink:#14181a;--muted:#5c6360;--rule:#d7dad6;--accent:#35636b}
+@media(prefers-color-scheme:dark){:root{--bg:#101314;--panel:#171b1d;--ink:#e6e8e6;--muted:#9aa19d;--rule:#2a2f31;--accent:#7fb3bd}}
+*{box-sizing:border-box}
+body{margin:0;padding:2.5rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
+font:15px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:44rem;margin:0 auto}
+h1{font-size:1.2rem;margin:0 0 1.4rem;font-weight:600}
+h2{font-size:0.95rem;margin:1.8rem 0 0.5rem;font-weight:600}
+p{margin:0 0 0.8rem;color:var(--ink-muted,#5c6360)}
+@media(prefers-color-scheme:dark){p{color:#9aa19d}}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.88em}
+table{border-collapse:collapse;width:100%;font-size:0.86rem;margin:0 0 0.9rem;background:var(--panel);border:1px solid var(--rule)}
+th,td{padding:0.35rem 0.55rem;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{font-weight:600}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:1.4rem;font-size:0.85rem}
+</style></head><body><main>
+<a class="back" href="entrant_report.html">&larr; back to the report</a>
+<h1>Entrant expertise set: definitions and method</h1>
+
+  <h2>Scope</h2>
+  <p>The set varies the distribution from which replacement agents are drawn at turnover,
+  crossed with the two AI parameters that act on agents below the AI's level.</p>
+
+  <h2>Rationale</h2>
+  <p>Entrant draws are the only mechanism in the model that introduces expertise not
+  derived from an agent already present. Every other agent moves toward its institution's
+  teaching level or decays away from it, so the entrant distribution sets the lower
+  boundary of the equilibrium distribution. Its parameters have not previously been swept
+  against the AI channels.</p>
+
+  <h2>Parameters varied</h2>
+  <table>
+    <tr><th>Parameter</th><th>Range</th><th>Definition</th></tr>
+    <tr><td><code>entrantExpertiseMean</code></td><td>0.05 to 0.5, 11 levels</td>
+        <td>Mean of the entrant draw. The upper bound is below the expert threshold
+        (0.585); entrants arriving already expert would be a different
+        model.</td></tr>
+    <tr><td><code>entrantExpertiseSpread</code></td><td>0.01 to 0.3, 11 levels</td>
+        <td>Spread of the draw. At the upper end the draw straddles the expert
+        threshold.</td></tr>
+    <tr><td><code>entrantExpertiseFloor</code></td><td>0 to 0.3, 11 levels</td>
+        <td>Lower bound applied after the draw. Zero reproduces the pre-2026-08
+        behaviour, in which entrants could arrive at exactly E = 0.</td></tr>
+    <tr><td><code>aiDampeningBelow</code></td><td>0 to 2, 11 levels</td>
+        <td>Multiplier on the learning increment for agents below the AI's level. 1 is no
+        effect; below 1 dampens, above 1 amplifies.</td></tr>
+    <tr><td><code>aiLevelFraction</code></td><td>0.01 to 1, 11 levels</td>
+        <td>The AI's level, as a fraction of the highest expertise in the starting
+        population. Determines which agents <code>aiDampeningBelow</code> governs.</td></tr>
+  </table>
+  <p>Both AI axes act on the population the entrant parameters define, which is the reason
+  for the pairing.</p>
+
+  <h2>Interaction between floor and mean</h2>
+  <p>The floor and the mean are not independent. The draw is skew-normal clipped to
+  [0, 1]; where the floor exceeds the mean, most of the draw is clipped and the realised
+  entrant distribution is a point mass at the floor rather than a distribution centred on
+  the mean. The floor pairings pin the mean at its calibrated value of
+  0.05, so the upper half of the floor axis is that
+  regime and should be read as every entrant arriving at the floor.</p>
+  <p>Without a floor, a low mean combined with a wide spread concentrates entrants at
+  exactly zero. That clipping fed the absorbing state observed at maximum de-skilling
+  (problems.md P19/R11). Sweeping the floor separates the contribution of the clipping from
+  that of the mechanism.</p>
+
+  <h2>Design</h2>
+  <p>6 experiments: 3 entrant parameters against
+  2 AI parameters. Each is a 11 x 11 grid at 3
+  replicates, horizon 1440 ticks. One tick is one month, so the horizon is
+  120 years, approximately three careers at the
+  40-year career length used throughout. Total
+  4,356 runs.</p>
+  <p>Paired design: each cell is run twice from the same seed, once with AI enabled and
+  once without, so the two arms share their initial population and their random stream.
+  Parameters not varied by a given pairing are pinned at the defaults listed above and
+  written into each config file, so an archived result is not reinterpreted by a later
+  change to the engine's defaults.</p>
+
+  <h2>Metrics</h2>
+  <p>Panels labelled <i>change</i> are the difference between the two arms. Panels labelled
+  <i>(no AI)</i> are absolute values from the baseline arm. Both are shown because the
+  entrant parameters move the baseline across a wide range: a given AI effect is not
+  equivalent in a field at meanE 0.40 and one at 0.65, and the change panels alone do not
+  distinguish those cases.</p>
+  <p>Capability is reported as a fractional change rather than in absolute
+  expert-equivalents, since cells differ several-fold in how much capability they hold.
+  See the capability ratio sensitivity results for how far capability magnitudes depend on
+  the assumed ratio between the expert threshold and the ceiling.</p>
+
+</main></body></html>
