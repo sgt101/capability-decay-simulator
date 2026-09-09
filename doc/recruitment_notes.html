@@ -19,7 +19,7 @@ th{font-weight:600}
 a{color:var(--accent)}
 .back{display:inline-block;margin-bottom:1.4rem;font-size:0.85rem}
 </style></head><body><main>
-<a class="back" href="/tmp/claude-1000/-workspace/ae587f28-acf1-4c70-a998-165ab6ad5635/scratchpad/recruitment_smoke.html">&larr; back to the report</a>
+<a class="back" href="recruitment_report.html">&larr; back to the report</a>
 <h1>Recruitment shock set: definitions and method</h1>
 
   <h2>Scope</h2>
@@ -68,8 +68,8 @@ a{color:var(--accent)}
   (1 to 10 years) against freeze depth. The
   remaining three fix duration at 5 years and vary depth against
   <code>aiDampeningAbove</code>, <code>aiDampeningBelow</code>, and
-  <code>aiLevelFraction</code> respectively. Each is a grid at 3 replicates.
-  Total 2,580 runs.</p>
+  <code>aiLevelFraction</code> respectively. Each is a grid at 32 replicates.
+  Total 27,520 runs.</p>
 
   <h2>Metrics</h2>
   <p>Mean expertise is not the primary metric for this set. The freeze removes entrants,
@@ -79,7 +79,7 @@ a{color:var(--accent)}
   smaller field with unchanged per-head capability, against a field that has also lost
   teaching capacity. A ratio of 1.0 on capability-per-head indicates the former; a ratio
   below 1.0 indicates the latter.</p>
-  <p>Values are taken at the tick selected above, averaged over 3 replicates.
+  <p>Values are taken at the tick selected above, averaged over 32 replicates.
   Baseline and treatment arms of a replicate share a seed. The two arms diverge in their
   random draw sequence once the freeze changes how many draws a tick consumes, so
   replicate variance in this set is higher than in a set where the arms differ only by a

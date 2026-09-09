@@ -1,0 +1,437 @@
+% Capability Decay Simulator -- parameter and equation reference.
+%
+% Every dial in the agent-based model of src/engine.js: symbol, definition,
+% calibrated default, and the equations it enters -- plus the 20 governing
+% equations themselves. Hand-maintained; transcribed from engine.js
+% (DEFAULT_PARAMS, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS, tick, institutionStats).
+% Sibling of doc/spec.html and doc/paper.md.
+%
+% Compile:  pdflatex parameter-reference.tex   (needs only standard packages)
+
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[colorlinks=true,linkcolor=BrickRed,urlcolor=BrickRed,citecolor=BrickRed]{hyperref}
+
+% Number every displayed equation E1, E2, ... so the tables can point at them.
+\renewcommand{\theequation}{E\arabic{equation}}
+
+\newcommand{\key}[1]{\texttt{\footnotesize #1}}
+\newcommand{\dither}{\textnormal{---}}
+\newcommand{\eqn}[1]{\eqref{eq:#1}}
+\newcommand{\dg}{\textsuperscript{\dag}}
+\newcommand{\eqnote}[1]{{\small\itshape #1}\par\addvspace{4pt}}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{K}[1]{>{\raggedright\arraybackslash\ttfamily\footnotesize}p{#1}}
+\newcolumntype{S}[1]{>{\raggedright\arraybackslash\footnotesize}p{#1}}
+
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.18}
+
+\title{Capability Decay Simulator\\[4pt]
+       {\large Parameter and equation reference}}
+\author{}
+\date{\small Transcribed from \texttt{src/engine.js}}
+
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\noindent
+The state is per-person latent expertise $E_i \in [0,1]$. Each tick runs
+institution statistics, then the expertise update, then mobility, then turnover,
+in that order. Capability is a read-out, never a state variable.
+
+\section*{Conventions}
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=3pt]
+  \item $1$ tick $=1$ month; a career is $40$ years $=480$ ticks.
+  \item Expertise and the AI level live on $[0,1]$.
+  \item Expert threshold $\theta = 0.585$ (anchors $w(\theta)=1$ and \key{shareExpert}).
+  \item Capability base $\rho = 1000$; move-selection temperature $\tau = 0.12$.
+  \item Defaults quoted below are the monthly calibration \key{simulator.html}
+        runs (\key{DEFAULT\_PARAMS} with \key{MONTHLY\_TICK\_PARAMS} applied). A
+        second value, where given, is the raw dimensionless default, the
+        entrant-pipeline overlay, or the world-model deployment value.
+\end{itemize}
+
+\bigskip
+\hrule
+\medskip
+\noindent\textbf{Notation clash.}
+\key{competitionAversion} is $\kappa$ here (following \texttt{doc/paper.md}) but
+$\rho$ on the simulator's slider panel; \key{prestigeWeight} is $\eta$ here and in
+the UI, $\psi$ in \texttt{paper.md}. \texttt{paper.md} also reuses $\rho$ for the
+capability base in \eqn{E18}.
+
+% =====================================================================
+\section{Governing equations}
+
+\subsection*{Setup ($t = 0$)}
+
+\begin{equation}\label{eq:E1}
+  G = \operatorname{BA}(M, m), \qquad
+  P_j = \text{normalised degree of institution } j .
+\end{equation}
+
+\begin{equation}\label{eq:E2}
+  E_i(0) \sim \operatorname{SkewNormal}(\mu_E,\, \omega_E,\, \alpha_E),
+  \ \text{clipped to } [0,1].
+\end{equation}
+
+\begin{equation}\label{eq:E3}
+  L_i = e^{\sigma_L Z}, \qquad Z \sim \mathcal{N}(0,1).
+\end{equation}
+\eqnote{The per-person rate multiplier: drawn once, fixed for the career. It
+scales learning, decay \emph{and} mobility, so a fast learner also moves more.}
+
+\begin{equation}\label{eq:E4}
+  a_i \sim \mathcal{N}(\mu_a,\, \omega_a) \ \text{on } [0,1]
+  \qquad (a_i = 1 \text{ when } \omega_a = 0).
+\end{equation}
+
+\begin{equation}\label{eq:E5}
+  A = \lambda \cdot \max_i E_i(0).
+\end{equation}
+\eqnote{The absolute AI level. Defined only when AI is enabled; fixed at $t=0$, so
+it never chases the live top performer.}
+
+\subsection*{Each tick --- institution statistics}
+
+\begin{equation}\label{eq:E6}
+  \bar E_j = \operatorname{mean}\{E_i : i \in j\}.
+\end{equation}
+
+\begin{equation}\label{eq:E7}
+  T_j = \operatorname{mean}\bigl(\text{top-}n_t \text{ by } E \text{ in } j,\
+        \text{tenure} \ge T_s \text{ yr}\bigr).
+\end{equation}
+\eqnote{Teaching level. Falls back to $\bar E_j$ when $T_s = 0$ or $j$ has no
+member past the tenure bar.}
+
+\begin{equation}\label{eq:E8}
+  \varphi_j = \frac{x_j^{\,h}}{x_j^{\,h} + n_0^{\,h}}, \qquad
+  x_j = \#\{\text{experts in } j\}.
+\end{equation}
+\eqnote{Critical-mass transfer efficiency, a Hill function of the expert count.
+$\varphi_j = 1$ everywhere when $n_0 = 0$.}
+
+\subsection*{Each tick --- expertise update (person $i$ in institution $j$)}
+
+\begin{equation}\label{eq:E9}
+  \operatorname{gap} = \min(a_i,\, T_j) - E_i, \qquad
+  \operatorname{below} = \bigl[\, \text{AI enabled} \wedge E_i < A \,\bigr].
+\end{equation}
+
+\begin{equation}\label{eq:E10}
+  \operatorname{gap} > 0 \ \text{(learning)}: \qquad
+  \Delta E_i = \beta \, \operatorname{gap} L_i \cdot
+    \bigl( \operatorname{below} \ ? \ \gamma_{\text{below}} : \gamma_{\text{above}} \bigr).
+\end{equation}
+\eqnote{The bracketed AI factor is applied only when AI is enabled; with AI off,
+$\Delta E_i = \beta\,\operatorname{gap} L_i$. Three modifiers are suppressed above
+for legibility, applied in this order \emph{before} the AI factor: the taught term
+is capped at $c\,L_i$, then divided by $1 + k_d \max(0,\, E_i - \bar E)$ ($\bar E$
+the live population mean), then multiplied by $\varphi_j$ (\eqn{E8}). The first two
+are active in the entrant-pipeline calibration; $\varphi_j = 1$ unless
+\key{criticalMass} is set.}
+
+\begin{equation}\label{eq:E11}
+  \begin{aligned}
+    \operatorname{gap} \le 0 \ \text{(decay)}: \quad
+    \Delta E_i &= \delta \, \operatorname{gap} L_i \;+\; \operatorname{ambient} \cdot
+      \bigl( \operatorname{below} \ ? \ \gamma_{\text{below}} : \gamma_{\text{above}} \bigr), \\
+    \operatorname{ambient} &= \mu_p \, \bar E_j^{\,0} \, L_i \max(0,\, a_i - E_i).
+  \end{aligned}
+\end{equation}
+\eqnote{The $\delta\,\operatorname{gap} L_i$ term is never AI-gated --- the
+bracketed factor multiplies \textup{ambient} only, and again only when AI is
+enabled. $\bar E_j^{\,0}$ is the institution's \emph{founding} mean, fixed at
+$t = 0$; $\mu_p$ may be negative.}
+
+\begin{equation}\label{eq:E12}
+  E_i \leftarrow \operatorname{clip}_{[0,1]}\!\bigl(E_i + \Delta E_i\bigr).
+\end{equation}
+
+\subsection*{Each tick --- mobility}
+
+\begin{equation}\label{eq:E13}
+  \Pr(\text{reconsider a move}) = p_{\text{move}}\, L_i .
+\end{equation}
+\eqnote{Candidate set $\mathcal{C}_i$: graph neighbours of the current
+institution, or --- hybrid mode, with probability $\varepsilon$ --- up to $25$
+institutions from anywhere. The current institution is always in
+$\mathcal{C}_i$.}
+
+\begin{equation}\label{eq:E14}
+  U_{ij} = (1-\kappa)\max(0,\, \bar E_j - E_i)
+         + \kappa\,(E_i - \bar E_j)
+         + \eta\, P_j .
+\end{equation}
+
+\begin{equation}\label{eq:E15}
+  \Pr(i \to j) = \frac{\exp(U_{ij}/\tau)}
+                      {\sum_{k \in \mathcal{C}_i} \exp(U_{ik}/\tau)},
+  \qquad \tau = 0.12 .
+\end{equation}
+
+\subsection*{Each tick --- turnover}
+
+\begin{equation}\label{eq:E16}
+  \text{retire } i \text{ w.p. } r; \qquad
+  \text{refill w.p. } 1 \text{ or } \texttt{recruitmentFraction}.
+\end{equation}
+\eqnote{The freeze runs while
+$\texttt{shockStart} \le t < \texttt{shockStart} + 12\,\texttt{shockYears}$; there
+is no catch-up hiring afterwards.}
+
+\begin{equation}\label{eq:E17}
+  E_i = \max\!\bigl(E_{\min},\
+        \operatorname{SkewNormal}(\mu_{\text{ent}},\, \omega_{\text{ent}},\, 0)
+        \big|_{[0,1]}\bigr).
+\end{equation}
+\eqnote{A new entrant also redraws its rate multiplier $L_i$ (\eqn{E3}) and
+ceiling $a_i$ (\eqn{E4}).}
+
+\subsection*{Capability metric --- diagnostic, never feeds back into $E$}
+
+\begin{equation}\label{eq:E18}
+  w(E) = \rho^{\frac{E - \theta}{1 - \theta}}, \qquad
+  \rho = 1000,\ \theta = 0.585
+  \;\Longrightarrow\; w(\theta) = 1,\ w(1) = \rho .
+\end{equation}
+\eqnote{Per-person value weight, in threshold-expert equivalents. Convex: one
+person at $E = 1$ is worth $\rho$ experts.}
+
+\begin{equation}\label{eq:E19}
+  \begin{aligned}
+    \ell(E) &= F\,\alpha(E) + (1 - F)\,\beta_A(E), \qquad
+              F = A^{\,b}, \qquad
+              m(E) = \frac{1}{1 + e^{\,s(E - A)}},\\[2pt]
+    \alpha(E) &= 1 + g_x + (g_n - g_x)\,m(E), \qquad
+    \beta_A(E) = 1 - d_n\,m(E).
+  \end{aligned}
+\end{equation}
+\eqnote{Asymmetric cognitive leverage (Dell'Acqua et al.): AI multiplies what a
+person is worth, more inside the frontier $F$ than outside it. $\ell(E) \equiv 1$
+whenever AI is disabled.}
+
+\begin{equation}\label{eq:E20}
+  C = \sum_i w(E_i)\,\ell(E_i), \qquad
+  C_{\text{human}} = \sum_i w(E_i).
+\end{equation}
+
+% =====================================================================
+\section{Input parameters}
+
+\noindent\footnotesize
+\begin{longtable}{L{1.6cm} K{2.9cm} L{6.8cm} S{2.5cm} S{2.0cm}}
+\toprule
+\textbf{Symbol} & \textnormal{\textbf{Parameter}} & \textbf{Definition} &
+\textbf{Default} & \textbf{Eqns} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symbol} & \textnormal{\textbf{Parameter}} & \textbf{Definition} &
+\textbf{Default} & \textbf{Eqns} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\multicolumn{5}{@{}l}{\itshape Scale}\\[2pt]
+$N$ & N & Population size --- number of people; held roughly constant by turnover.
+  & $500$\newline {\scriptsize $11322$ world model} & \eqn{E2}, \eqn{E20} \\
+$M$ & M & Number of institutions (graph nodes); derived from data in world-model mode.
+  & $40$ & \eqn{E1}, \eqn{E6} \\
+$T$ & horizon & Ticks (months) to simulate; $1440$ is three careers.
+  & $1440$ & run length \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Initial expertise --- $t=0$ population only}\\[2pt]
+$\mu_E$ & expertiseMean & Location of the starting skew-normal skill draw.
+  & $0.28$ & \eqn{E2} \\
+$\omega_E$ & expertiseSpread & Scale of that draw, before clipping to $[0,1]$.
+  & $0.30$ & \eqn{E2} \\
+$\alpha_E$ & expertiseSkew & Shape; positive thins the low tail.
+  & $3$ & \eqn{E2} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Entrants --- turnover replacements}\\[2pt]
+$\mu_{\text{ent}}$ & entrantExpertiseMean & Mean skill of a recruit replacing a
+  retiree --- deliberately low, so entrants are genuine novices.
+  & $0.05$ & \eqn{E17} \\
+$\omega_{\text{ent}}$ & entrantExpertiseSpread & Spread of recruit skill.
+  & $0.05$ & \eqn{E17} \\
+$E_{\min}$ & entrantExpertiseFloor & Hard lower bound applied \emph{after}
+  clipping the draw, so entrants do not pile up at exactly $0$.
+  & $0.05$ & \eqn{E17} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Institution graph}\\[2pt]
+$m$ & graphAttachment & Barab\'asi--Albert edges per new node --- controls how
+  sharply hub institutions form.
+  & $2$ & \eqn{E1} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Learning \& decay}\\[2pt]
+$\beta$ & transferRate & Monthly fraction of the gap to the teaching level closed
+  by peer learning.
+  & $0.15$\newline {\scriptsize raw $0.5$} & \eqn{E10} \\
+$\delta$ & decayRate & Monthly rate expertise erodes when at or above the
+  teaching level.
+  & $0.020$\newline {\scriptsize pipeline $0.027$} & \eqn{E11} \\
+$\sigma_L$ & learningRateSpread & Spread of the lognormal per-person multiplier
+  $L_i$; $0 = $ everyone identical.
+  & $0.4$\newline {\scriptsize $1.0$ world model} & \eqn{E3} \\
+$c$ & learningCap & Ceiling on expertise gained per tick from peers, before
+  $L_i$; makes the climb linear rather than exponential.
+  & $0$ (off)\newline {\scriptsize pipeline $0.0056$} & \eqn{E10} \\
+$T_s$ & seniorTenureYears & Years in the field before a member counts toward what
+  trainees learn from.
+  & $0$ (off)\newline {\scriptsize pipeline $8$} & \eqn{E7} \\
+$\mu_p$ & personalLearningRate & Monthly self-improvement once no gap remains;
+  scaled by the institution's founding mean. May be negative.
+  & $0.001$ & \eqn{E11} \\
+$\omega_a$ & aptitudeSpread & Spread of per-person ceilings on attainable
+  expertise, drawn at entry; $0 = $ no ceiling.
+  & $0$ (off)\newline {\scriptsize pipeline $0.20$} & \eqn{E4} \\
+$n_t$ & teachTopN & Number of top seniors whose mean sets the teaching level ---
+  an absolute count, not a percentile.
+  & $0$ (off)\newline {\scriptsize $8$ pipeline / WM} & \eqn{E7} \\
+$k_d$ & aboveMeanDrag & Brake dividing a learning delta by
+  $1 + k_d(E_i - \bar E)$ above the population mean; only ever slows learning.
+  & $0$ (off)\newline {\scriptsize pipeline $16$} & \eqn{E10} \\
+$n_0$ & criticalMass\dg & Expert count an institution needs to transfer at full
+  efficiency; $0 = $ off.
+  & $0$ (off) & \eqn{E8} \\
+$h$ & criticalMassSharpness\dg & Hill exponent for the critical-mass falloff;
+  ${\sim}1$ gentle, $\ge 8$ a hard cutoff.
+  & $2$ & \eqn{E8} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Mobility}\\[2pt]
+\dither & mobilityMode & Candidate-set rule: \texttt{unconstrained} /
+  \texttt{edge\_constrained} / \texttt{hybrid}.
+  & hybrid & \eqn{E13} \\
+$\kappa$ & competitionAversion & Weight on relative standing vs.\ room to grow in
+  the move utility. \emph{UI labels this $\rho$.}
+  & $0.5$ & \eqn{E14} \\
+$\eta$ & prestigeWeight & Weight on an institution's structural prestige (its
+  degree). \emph{\texttt{paper.md}: $\psi$.}
+  & $0.3$ & \eqn{E14} \\
+$p_{\text{move}}$ & baseMoveProb & Base monthly probability of reconsidering
+  institution; scaled per person by $L_i$.
+  & $0.05$\newline {\scriptsize $0.01$ world model} & \eqn{E13} \\
+$\varepsilon$ & jumpProbability & Hybrid mode: chance the candidate set is drawn
+  from the whole graph rather than local neighbours.
+  & $0.10$ & \eqn{E13} \\
+$\tau$ & MOVE\_TEMPERATURE\dg & Softmax temperature for the destination draw;
+  fixed in \texttt{engine.js}.
+  & $0.12$ & \eqn{E15} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Turnover \& recruitment shock}\\[2pt]
+$r$ & turnoverRate & Monthly retire-and-replace probability,
+  $= 1/\text{career-months}$. $N$, this and career length are one identity.
+  & $1/480 \approx 0.00208$ & \eqn{E16}, \eqn{E17} \\
+\dither & recruitmentShockStart & Tick a hiring freeze begins.
+  & $0$ & \eqn{E16} \\
+\dither & recruitmentShockYears & Length of the freeze, in years; $0 = $ off.
+  & $0$ (off) & \eqn{E16} \\
+\dither & recruitmentFraction & Share of retirements still refilled during the
+  freeze; $1 = $ no freeze.
+  & $1$ & \eqn{E16} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape AI mechanism}\\[2pt]
+$\lambda$ & aiLevelFraction & AI strength as a fraction of the $t=0$ top human;
+  sets the absolute level $A$. $0.585 = $ ``as good as an expert''.
+  & $0.585$ & \eqn{E5}, \eqn{E19} \\
+$\gamma_{\text{below}}$ & aiDampeningBelow & Multiplier on learning for people
+  \emph{below} $A$: $0 = $ zeroed out, $1 = $ neutral, $2 = $ doubled. UI shows
+  this minus $1$.
+  & $0.30$ & \eqn{E10}, \eqn{E11} \\
+$\gamma_{\text{above}}$ & aiDampeningAbove & The same multiplier for people at or
+  above $A$; bites only when such people exist.
+  & $0.80$ & \eqn{E10}, \eqn{E11} \\
+$b$ & frontierBreadth & Exponent setting the in-frontier work share $F = A^{b}$;
+  lower widens the AI's reach.
+  & $1$ & \eqn{E19} \\
+$g_n$ & aclNoviceGain\dg & In-frontier output gain for weaker performers.
+  & $0.43$ & \eqn{E19} \\
+$g_x$ & aclExpertGain\dg & In-frontier output gain for stronger performers.
+  & $0.17$ & \eqn{E19} \\
+$d_n$ & aclNoviceDeficit\dg & Out-of-frontier output loss for those who cannot
+  catch the AI's errors.
+  & $0.19$ & \eqn{E19} \\
+$s$ & aclBlendSharpness\dg & How sharply the novice and expert leverage regimes
+  blend across $E$; large values approach a hard bin.
+  & $20$ & \eqn{E19} \\
+\addlinespace
+\multicolumn{5}{@{}l}{\itshape Fixed constants --- \texttt{engine.js}}\\[2pt]
+$\theta$ & EXPERT\_THRESHOLD & Expertise at or above which someone counts as an
+  expert; anchors $w(\theta) = 1$ and \texttt{shareExpert}.
+  & $0.585$ & \eqn{E7}, \eqn{E18}, \eqn{E20} \\
+$\rho$ & CAPABILITY\_RATIO & How many threshold-experts one person at $E = 1$ is
+  worth.
+  & $1000$ & \eqn{E18} \\
+\end{longtable}
+
+\normalsize
+{\footnotesize\noindent\dag\ Not exposed as a slider in \texttt{simulator.html}
+--- engine default, or swept only in the batch experiment sets.\par}
+
+% =====================================================================
+\section{Derived \& emergent quantities}
+
+\noindent Computed each tick from the parameters and the current state --- not
+set directly.
+
+\medskip
+\noindent\footnotesize
+\begin{longtable}{L{1.9cm} K{2.6cm} L{8.4cm} S{2.6cm}}
+\toprule
+\textbf{Symbol} & \textnormal{\textbf{Source}} & \textbf{Meaning} & \textbf{Eqns} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symbol} & \textnormal{\textbf{Source}} & \textbf{Meaning} & \textbf{Eqns} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+$A$ & aiLevel & Absolute AI level, $\lambda \cdot \max_i E_i(0)$.
+  & \eqn{E5}, \eqn{E9}, \eqn{E19} \\
+$L_i$ & \textnormal{per person} & Individual multiplier on learning, decay and
+  mobility.
+  & \eqn{E3}, \eqn{E10}, \eqn{E11}, \eqn{E13}, \eqn{E17} \\
+$a_i$ & aptitude & Person $i$'s ceiling on attainable expertise.
+  & \eqn{E4}, \eqn{E10}, \eqn{E11} \\
+$\bar E_j$ & Ebar & Institution $j$'s current mean expertise.
+  & \eqn{E6}, \eqn{E9}, \eqn{E14} \\
+$\bar E_j^{\,0}$ & startEbar & Institution $j$'s \emph{founding} mean, fixed at
+  $t = 0$ --- anchor for ambient learning.
+  & \eqn{E11} \\
+$\bar E$ & \textnormal{live} & Population mean expertise at the start of the tick
+  --- reference for the above-mean drag.
+  & \eqn{E10} \\
+$T_j$ & Teach & Institution $j$'s teaching level --- what its trainees climb
+  toward.
+  & \eqn{E7}, \eqn{E9} \\
+$x_j$ & \textnormal{count} & Number of experts ($E \ge \theta$) in institution
+  $j$.
+  & \eqn{E8} \\
+$\varphi_j$ & transferEff & Institution's transfer / production efficiency --- a
+  Hill function of $x_j$.
+  & \eqn{E8}, \eqn{E10}, \eqn{E20} \\
+$P_j$ & prestige & Normalised degree of institution $j$, fixed at graph creation.
+  & \eqn{E1}, \eqn{E14} \\
+$w(E)$ & capabilityWeight & Per-person expertise $\rightarrow$ value weight, in
+  threshold-expert equivalents.
+  & \eqn{E18}, \eqn{E20} \\
+$\ell(E)$ & aclLeverage & Per-person AI capability multiplier; $1$ when AI is off.
+  & \eqn{E19}, \eqn{E20} \\
+\end{longtable}
+
+\end{document}

@@ -96,6 +96,7 @@ const staticIds = [
   "tabHeatmap", "tabTable", "tabTrajectories", "axesFlipBtn",
   "expList", "fixedPanel",
   "heatmapPanel", "heatmapTitle", "heatmapSub", "heatmapWrap", "heatmapCanvas", "tableWrap",
+  "marginalWrap", "marginalHead", "marginalCanvas", "figCopyMarginal", "figSaveMarginal",
   "legendMin", "legendMax", "legendRamp", "legendZero", "heatmapCaption",
   "trajectoryPanel", "trajTitle", "trajSub",
   "trajFixAxisSelect", "trajValueASelect", "trajValueBSelect",
@@ -464,6 +465,115 @@ const tableHtml = document.getElementById("tableWrap").innerHTML;
 if (!tableHtml.includes("<table")) throw new Error("table view did not render a table");
 console.log("OK: table view rendered,", (tableHtml.match(/<tr>/g) || []).length, "rows");
 
+// Per-column summary rows under the grid: max - min, mean, median, worst case.
+if (!tableHtml.includes("<tfoot")) throw new Error("table view has no summary <tfoot>");
+["max − min", "mean", "median", "worst case"].forEach((label) => {
+  if (!tableHtml.includes(">" + label + "<")) throw new Error("summary row missing: " + label);
+});
+// Null-compensating, not null-poisoning: with real result data every column has at
+// least one cell, so no summary cell should be the em-dash placeholder (which is only
+// emitted for a fully-absent column).
+const tfootHtml = tableHtml.slice(tableHtml.indexOf("<tfoot"));
+if (tfootHtml.includes(">—</td>")) {
+  throw new Error("a summary cell collapsed to '—' — column reduction is not null-safe");
+}
+console.log("OK: summary rows (max-min, mean, median, worst case) present and populated");
+
+// The marginal profile chart rides with the table view.
+if (document.getElementById("marginalWrap").style.display !== "block") {
+  throw new Error("table view is showing but the marginal chart is hidden");
+}
+if (!document.getElementById("marginalCanvas").width) {
+  throw new Error("marginal chart canvas never drew (no width)");
+}
+if (!document.getElementById("marginalHead").textContent || document.getElementById("marginalHead").textContent === "—") {
+  throw new Error("marginal chart caption was not filled in");
+}
+console.log("OK: marginal profile chart drew, caption:", document.getElementById("marginalHead").textContent);
+
+// Shared y-scale: the marginal chart's y-domain is report-wide for a metric+tick (the
+// widest experiment's band), so switching experiments must NOT rescale it. Only run
+// when the set has more than one experiment.
+if (NEXP > 1) {
+  const keepExp = app.expIndex, keepTick = app.tickIndex;
+  app.tickIndex = 0;                       // t=0 exists in every experiment of a set
+  onExperimentChange();
+  const dom1 = document.getElementById("marginalCanvas")._marginalDomain;
+  app.expIndex = (app.expIndex + 1) % NEXP;
+  onExperimentChange();
+  const dom2 = document.getElementById("marginalCanvas")._marginalDomain;
+  if (!Array.isArray(dom1) || !Array.isArray(dom2)) {
+    throw new Error("marginal chart did not expose its y-domain");
+  }
+  if (Math.abs(dom1[0] - dom2[0]) > 1e-9 || Math.abs(dom1[1] - dom2[1]) > 1e-9) {
+    throw new Error("marginal y-domain changed between experiments (not report-wide): "
+      + JSON.stringify(dom1) + " vs " + JSON.stringify(dom2));
+  }
+  app.expIndex = keepExp; app.tickIndex = keepTick;
+  onExperimentChange();
+  console.log("OK: marginal y-scale is shared across experiments —", JSON.stringify(dom1));
+}
+
+// World-model comparison line: on the structure set, an experiment carries
+// worldModelRowM (an M value that is the real graph, not a BA one). That row is pulled
+// out of the summary rows / chart band and drawn as its own line. No structure build
+// here, so fake the field: point it at a real y value of the current experiment.
+{
+  const exp = currentExperiment();
+  // A value guaranteed to be on the current y axis, so worldModelYi resolves it.
+  const target = axisValues(exp, "y")[Math.min(2, axisValues(exp, "y").length - 1)];
+  exp.worldModelRowM = target;
+  render();
+  const mc = document.getElementById("marginalCanvas");
+  if (mc._marginalWmDrawn !== true) throw new Error("worldModelRowM set but the marginal chart drew no world-model line");
+  const head = document.getElementById("marginalHead").textContent;
+  if (!/world-model line/.test(head)) throw new Error("marginal caption did not switch to the world-model form: " + head);
+  const tHtml = document.getElementById("tableWrap").innerHTML;
+  if (!tHtml.includes("sumnote") || !tHtml.includes("world-model row is excluded"))
+    throw new Error("summary rows carry no world-model exclusion note");
+  // The row itself is highlighted and tagged in the table.
+  if (!tHtml.includes('class="wm-row"') || !tHtml.includes('class="wm-tag"'))
+    throw new Error("world-model row is not highlighted / tagged in the table");
+  // ...and it survives into the LaTeX copy, daggered and set off with rules. Checked
+  // with plain includes: this driver is a template literal, so a regex full of
+  // backslashes would need doubling twice and is a bug magnet.
+  const tex = tableToLatex();
+  if (tex.indexOf("dagger") < 0 || tex.indexOf("textbf") < 0
+    || tex.indexOf("institution graph, not a Barab") < 0)
+    throw new Error("LaTeX table does not mark the world-model row");
+  // The heatmap draws the row outline without throwing.
+  document.getElementById("tabHeatmap").dispatch("click");
+  render();
+  document.getElementById("tabTable").dispatch("click");
+  render();
+  delete exp.worldModelRowM;
+  render();
+  if (document.getElementById("marginalCanvas")._marginalWmDrawn !== false)
+    throw new Error("world-model line stayed on after worldModelRowM was cleared");
+  console.log("OK: world-model row/line — highlighted in table + heatmap, marked in LaTeX, toggles off (faked M=" + target + ")");
+
+  // If this build actually carries a world-model row (the structure report), land on
+  // that experiment and check the real thing renders — M row highlighted, chart line
+  // drawn — rather than only the faked case above.
+  const realIdx = DATA.experiments.findIndex((e) => e.worldModelRowM != null);
+  if (realIdx >= 0) {
+    app.expIndex = realIdx;
+    onExperimentChange();
+    document.getElementById("tabTable").dispatch("click");
+    const m = DATA.experiments[realIdx].worldModelRowM;
+    const th = document.getElementById("tableWrap").innerHTML;
+    const rowOk = th.includes('<tr class="wm-row"><th>' + m + ' <span class="wm-tag">');
+    const colOk = th.includes('class="wm-col"') && th.includes('>' + m + ' <span class="wm-tag">');
+    if (!rowOk && !colOk)
+      throw new Error("real world-model row M=" + m + " not highlighted in the structure table");
+    if (document.getElementById("marginalCanvas")._marginalWmDrawn !== true)
+      throw new Error("real world-model line missing from the structure marginal chart");
+    if (tableToLatex().indexOf("$M=" + m + "$") < 0)
+      throw new Error("real world-model row M=" + m + " not marked in the structure LaTeX table");
+    console.log("OK: real world-model row (structure experiment " + DATA.experiments[realIdx].n + ", M=" + m + ") renders end to end");
+  }
+}
+
 // --- PNG export from the heatmap and trajectory panels -----------------------------
 // These buttons composite the canvas with a title, a redrawn legend and a provenance
 // footer, then hand the result to the clipboard or to a download. The pixels are not
@@ -478,8 +588,11 @@ console.log("OK: table view rendered,", (tableHtml.match(/<tr>/g) || []).length,
   // No ClipboardItem in this environment (the file:// case), so Copy must degrade to a
   // message rather than throwing. Surviving the click is the whole assertion.
   document.getElementById("figCopyHeatmap").dispatch("click");
+  // The marginal chart carries its own PNG export in the table view.
+  document.getElementById("figSaveMarginal").dispatch("click");
+  document.getElementById("figCopyMarginal").dispatch("click");
   figureProbe.clicked = true;
-  console.log("OK: heatmap PNG export buttons fired without throwing");
+  console.log("OK: heatmap and marginal-chart PNG export buttons fired without throwing");
 }
 
 // --- the LaTeX copy ---------------------------------------------------------------
@@ -542,13 +655,14 @@ console.log("OK: all " + DATA.experiments.length + " experiments rendered at fir
 // The "every experiment renders" loop above leaves app.expIndex at whatever the last
 // experiment happens to be — with many experiments that's no longer guaranteed to touch
 // a dampening key, so explicitly land on an experiment that HAS one before the
-// trajectories section, which needs a dampening axis for its display-shift
-// regression check below. Found by predicate rather than by index: the study set
-// has been through several parameterisations (11 params -> 7, aiDampeningBelow
-// folded into aiRelianceIntensity) and hardcoded indices went stale each time.
-app.expIndex = DATA.experiments.findIndex((e) => DAMPENING_KEYS.has(e.xKey) || DAMPENING_KEYS.has(e.yKey));
+// trajectories section, which needs a dampening axis for its raw-value axis check
+// below. Found by predicate rather than by index: the study set has been through
+// several parameterisations (11 params -> 7, aiDampeningBelow folded into
+// aiRelianceIntensity) and hardcoded indices went stale each time.
+const isDampeningKey = (k) => k === "aiDampeningBelow" || k === "aiDampeningAbove";
+app.expIndex = DATA.experiments.findIndex((e) => isDampeningKey(e.xKey) || isDampeningKey(e.yKey));
 if (app.expIndex < 0) {
-  console.log("NOTE: no dampening-axis experiment in this build — display-shift check skipped");
+  console.log("NOTE: no dampening-axis experiment in this build — raw-value axis check skipped");
   app.expIndex = 0;
 }
 onExperimentChange();
@@ -586,12 +700,15 @@ const trajTipA = trajTooltips["A"];
 if (!trajTipA || trajTipA.hidden) throw new Error("hovering a trajectory line did not show a tooltip");
 const varyKeyForTest = axisKey(currentExperiment(), otherAxis(app.trajFixAxis));
 const expectedDisplay = fmtAxis(varyKeyForTest, trajHover.A);
-if (!trajTipA.innerHTML.includes(expectedDisplay)) throw new Error("trajectory tooltip does not show the hovered line's varying-axis value, display-shifted (" + expectedDisplay + " for raw " + trajHover.A + "): " + trajTipA.innerHTML);
-// When the varying axis is a dampening key this is also a direct regression check
-// that the -1 display shift is actually applied, not merely present in some form.
-if (DAMPENING_KEYS.has(varyKeyForTest)) {
-  if (expectedDisplay === fmtNum(trajHover.A)) throw new Error("dampening value was not display-shifted at all: " + expectedDisplay);
-  console.log("OK: confirmed display-shifted (raw " + trajHover.A + " -> shown as " + expectedDisplay + ")");
+if (!trajTipA.innerHTML.includes(expectedDisplay)) throw new Error("trajectory tooltip does not show the hovered line's varying-axis value (" + expectedDisplay + " for raw " + trajHover.A + "): " + trajTipA.innerHTML);
+// When the varying axis is a dampening key, regression check for the 2026-09 change
+// that removed the -1 display shift: the value now shows RAW (0..2), matching the
+// config files and the CSV, with no leading "+".
+if (isDampeningKey(varyKeyForTest)) {
+  const shown = parseFloat(expectedDisplay);
+  if (!(Math.abs(shown - trajHover.A) < 1e-6)) throw new Error("dampening axis should display the raw 0..2 value now, but raw " + trajHover.A + " showed as " + expectedDisplay);
+  if (expectedDisplay.charAt(0) === "+") throw new Error("dampening axis value should no longer carry a leading '+': " + expectedDisplay);
+  console.log("OK: dampening axis shows the raw value (" + expectedDisplay + " for raw " + trajHover.A + ")");
 }
 console.log("OK: trajectory tooltip shows the non-held value:", trajTipA.innerHTML.replace(/\s+/g, " "));
 trajA.dispatch("mouseleave", {});
@@ -687,7 +804,8 @@ setImmediate(() => {
   }
   const f = downloads[downloads.length - 1];
   if (!/\.png$/.test(f)) throw new Error("exported figure is not named as a .png: " + f);
-  if (!/-t\d+\.png$/.test(f)) throw new Error("exported filename carries no tick: " + f);
+  // tick, then an optional figure discriminator (-marginal, -panelA, …).
+  if (!/-t\d+(-[A-Za-z]+)?\.png$/.test(f)) throw new Error("exported filename carries no tick: " + f);
   if (!/exp\d+/.test(f)) throw new Error("exported filename carries no experiment number: " + f);
   console.log("OK: PNG filename carries set, experiment, metric and tick —", f);
 });

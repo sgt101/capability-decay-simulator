@@ -91,7 +91,33 @@ function range(lo, hi, step) {
 function geometric(lo, hi, n) {
   return [...new Set(Array.from({ length: n }, (_, i) => Math.round(lo * Math.pow(hi / lo, i / (n - 1)))))];
 }
-const M_VALUES = geometric(3, 132, 21);          // 20 distinct: 3,4,5,6,8,...,109,132
+// GEOMETRIC core (samples the knee below M ~ 24), then a LINEAR high-M tail added
+// 2026-09. The core stopped at M = 132 / ~86 people per institution; whether the
+// structural effect keeps moving as institutions get smaller needed rows past that.
+// N/M at the far end (M = 425) is ~27 — above MIN_MEANINGFUL_OCCUPANCY, deliberately
+// near the thin edge this tail exists to probe. To add the tail to an already-run set
+// without re-running it, see src/run_structure_M_extension.js.
+const M_CORE = geometric(3, 132, 21);             // 20 distinct: 3,4,5,6,8,...,109,132
+const M_TAIL = [175, 225, 275, 325, 375, 425];    // linear, added 2026-09
+const M_VALUES = [...M_CORE, ...M_TAIL];          // 26 distinct
+
+// The REAL institution graph as one extra row (2026-09), at its own node count, on the
+// AI-parameter × M pairs only (not the × graphAttachment ones, and not M × m). It is not
+// a BA graph — see the companion configs written under experiments-structure/worldmodel/
+// and src/run_structure_worldmodel_row.js, which runs structure.N's own calibration on
+// graphSource "worldModel". Keep the count in step with data/world-model.json.
+const M_WORLDMODEL = 330;
+const WM_ROW_PAIRS = new Set(["aiLevelFraction|M", "aiDampeningBelow|M", "aiDampeningAbove|M"]);
+// The worldModel load spec — keep in step with generate_worldmodel_experiments.js.
+const WORLD_MODEL_SPEC = {
+  worldModelPath: "world-model.json",
+  mobilityCostsPath: "mobility-costs.json",
+  worldModelOptions: {
+    useBlocAffinity: true, hubSource: "located_in",
+    prestigeFrom: "intake", zeroIntakePolicy: "floor1", useExplicitEdges: true,
+  },
+};
+const WM_DIR = path.join(OUT_DIR, "worldmodel");
 
 const STRUCTURE_PARAMS = {
   M: { values: M_VALUES, default: 40 },
@@ -160,6 +186,7 @@ const PAIRS = [
 const ALL = Object.assign({}, AI_PARAMS, STRUCTURE_PARAMS);
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
+fs.mkdirSync(WM_DIR, { recursive: true });
 const manifest = [];
 
 PAIRS.forEach(([a, b], idx) => {
@@ -204,8 +231,29 @@ PAIRS.forEach(([a, b], idx) => {
   // manifest alone cannot say what a given grid should contain. build_report.js compares
   // these against the CSV and refuses a mismatch — which is what catches results left
   // over from a previous generation with a different axis.
-  manifest.push({ n, file: `data/experiments-structure/structure.${n}.json`, x: a, y: b, runs,
-    xValues: valuesFor(a), yValues: valuesFor(b) });
+  const entry = { n, file: `data/experiments-structure/structure.${n}.json`, x: a, y: b, runs,
+    xValues: valuesFor(a), yValues: valuesFor(b) };
+
+  // World-model comparison row: one extra M value (the real graph's node count) on the
+  // AI-param × M pairs. It comes from a SEPARATE config (graphSource "worldModel"), run
+  // and merged by src/run_structure_worldmodel_row.js — but the manifest has to list its
+  // M value or build_report.js rejects the merged CSV as an axis mismatch.
+  if (WM_ROW_PAIRS.has(`${a}|${b}`)) {
+    entry.yValues = [...entry.yValues, M_WORLDMODEL].sort((x, y) => x - y);
+    entry.worldModelRowM = M_WORLDMODEL;
+    entry.runs += valuesFor(a).length * REPLICATES * 2;
+    const wmFixed = Object.assign({}, fixed, { graphSource: "worldModel", institutionSizing: "weighted" });
+    delete wmFixed.M;   // derived from the world model — initSim throws if a config sets it
+    fs.writeFileSync(path.join(WM_DIR, `structure.${n}.json`), JSON.stringify({
+      mode: "grid", replicates: REPLICATES, horizon: HORIZON, recordAt: RECORD_AT, seed: SEED,
+      pairWithBaseline: true,
+      worldModel: WORLD_MODEL_SPEC,
+      fixed: wmFixed,
+      params: { [a]: { values: valuesFor(a) } },   // the AI axis only; M is the world model's own
+    }, null, 2) + "\n");
+  }
+
+  manifest.push(entry);
 });
 
 fs.writeFileSync(
@@ -231,16 +279,28 @@ const stale = fs.readdirSync(OUT_DIR)
   .filter((f) => /^structure\.\d+\.json$/.test(f))
   .filter((f) => !manifest.some((m) => path.basename(m.file) === f));
 stale.forEach((f) => fs.unlinkSync(path.join(OUT_DIR, f)));
+// Same, for the world-model companion configs: only the pairs still in WM_ROW_PAIRS
+// keep one.
+const wmKept = new Set(manifest.filter((m) => m.worldModelRowM != null).map((m) => `structure.${m.n}.json`));
+fs.readdirSync(WM_DIR)
+  .filter((f) => /^structure\.\d+\.json$/.test(f) && !wmKept.has(f))
+  .forEach((f) => fs.unlinkSync(path.join(WM_DIR, f)));
 
 const totalRuns = manifest.reduce((s, m) => s + m.runs, 0);
 console.log(`wrote ${manifest.length} structure experiment files -> ${OUT_DIR}`);
 manifest.forEach((m) => console.log(`  structure.${m.n}: ${m.x} x ${m.y}  (${m.runs.toLocaleString()} runs)`));
 console.log(`  + experiments.structure.manifest.json`);
+{
+  const wm = manifest.filter((m) => m.worldModelRowM != null);
+  if (wm.length) console.log(`  + ${wm.length} world-model row config(s) in ${WM_DIR} `
+    + `(M=${M_WORLDMODEL} row on structure.${wm.map((m) => m.n).join("/")}) — run src/run_structure_worldmodel_row.js`);
+}
 if (stale.length) console.log(`  removed ${stale.length} stale config(s): ${stale.join(", ")}`);
 console.log(`\nN = ${N.toLocaleString()}, fixed across the set so M alone moves people-per-institution`);
 console.log(`M ${STRUCTURE_PARAMS.M.values[0]}..${STRUCTURE_PARAMS.M.values.slice(-1)[0]}`
   + ` = ${(N / STRUCTURE_PARAMS.M.values[0]).toFixed(0)}..${(N / STRUCTURE_PARAMS.M.values.slice(-1)[0]).toFixed(0)} people each`);
-console.log(`M axis: ${M_VALUES.length} geometric values, ${M_VALUES.filter((v) => v < 24).length} of them below M=24 where the curves bend`);
+console.log(`M axis: ${M_VALUES.length} values (${M_CORE.length} geometric + ${M_TAIL.length} linear tail `
+  + `${M_TAIL[0]}..${M_TAIL[M_TAIL.length - 1]}), ${M_VALUES.filter((v) => v < 24).length} below M=24 where the curves bend`);
 console.log(`m ${STRUCTURE_PARAMS.graphAttachment.values[0]}..${MAX_M_ATTACH}; where m is swept, M is restricted to`
   + ` ${M_VALUES_WITH_ATTACH[0]}..${M_VALUES_WITH_ATTACH.slice(-1)[0]} (${M_VALUES_WITH_ATTACH.length} values) so m < M always`);
 console.log(`horizon ${HORIZON} = ${HORIZON / TICKS_PER_YEAR}y = ${(HORIZON / (CAREER_YEARS * TICKS_PER_YEAR)).toFixed(1)} careers, ${REPLICATES} replicates`);

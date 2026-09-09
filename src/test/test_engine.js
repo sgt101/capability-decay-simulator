@@ -1,6 +1,7 @@
 const { initSim, tick, generateBAGraph, mulberry32, DEFAULT_PARAMS,
         MONTHLY_TICK_PARAMS: MTP, PIPELINE_PARAMS: PP, TICKS_PER_YEAR: TPY,
-        capabilityWeight, aclLeverage } = require("../engine.js");
+        capabilityWeight, aclLeverage, institutionStats,
+        MIN_MEANINGFUL_OCCUPANCY } = require("../engine.js");
 
 function assert(cond, msg) {
   if (!cond) { console.error("FAIL:", msg); process.exitCode = 1; }
@@ -448,6 +449,138 @@ console.log("\n--- entrant pipeline ---");
     `a stronger AI that suppresses learning LOWERS measured capability ` +
     `(${cap[0].systemCapability.toExponential(2)} at lambda=0.3 -> ${cap[1].systemCapability.toExponential(2)} at 0.95), ` +
     `rather than the floor's pinned maximum`);
+}
+
+// --- recruitment vacancies -----------------------------------------------------
+{
+  console.log("\n--- recruitment vacancies ---");
+
+  // The mechanism is off unless the shock has a positive duration. In particular,
+  // recruitmentFraction must be inert on its own and must not perturb the random stream.
+  const trace = (extra) => {
+    const s = initSim(Object.assign({
+      N: 300, M: 20, seed: 91, turnoverRate: 0.03, baseMoveProb: 0.02,
+    }, extra));
+    for (let k = 0; k < 100; k++) tick(s);
+    return {
+      E: Array.from(s.E), inst: Array.from(s.inst), active: Array.from(s.active),
+      history: s.history.map((h) => [h.meanE, h.activeFraction, h.turnover]),
+    };
+  };
+  assert(JSON.stringify(trace({})) === JSON.stringify(trace({
+    recruitmentShockYears: 0, recruitmentFraction: 0,
+  })), "recruitmentFraction is inert when recruitmentShockYears is zero");
+
+  // A one-tick total freeze with certain retirement vacates every slot. Once the
+  // freeze ends, normal replacement applies only to new retirements; there is no
+  // catch-up hiring, so those vacancies remain permanent.
+  const empty = initSim({
+    N: 40, M: 4, seed: 7, turnoverRate: 1, baseMoveProb: 0,
+    transferRate: 0, decayRate: 0, personalLearningRate: 0,
+    recruitmentShockStart: 0, recruitmentShockYears: 1 / TPY,
+    recruitmentFraction: 0,
+  });
+  const emptied = tick(empty);
+  assert(empty.activeCount === 0 && Array.from(empty.active).every((v) => v === 0),
+    "a total freeze leaves every retired slot vacant");
+  assert(emptied.turnover === empty.N && emptied.activeFraction === 0,
+    "turnover and activeFraction report complete vacancy");
+  const emptyStats = institutionStats(empty);
+  assert(Array.from(emptyStats.count).every((n) => n === 0),
+    "institutionStats excludes vacant slots");
+  assert(emptied.systemCapability === 0 && emptied.systemCapabilityHuman === 0,
+    "an empty field has zero capability");
+  assert(emptied.minOccupancy === 0 && emptied.emptyInstitutions === empty.M &&
+      emptied.underOccupiedInstitutions === empty.M,
+    "occupancy diagnostics treat every institution in an empty field as empty");
+  assert(emptied.topE === 0 && emptied.divergence === 0,
+    "end-of-tick expertise diagnostics are zero after the field becomes empty");
+  assert(emptied.p10E === 0 && emptied.p50E === 0 && emptied.p90E === 0,
+    "an empty field does not report non-zero expertise percentiles");
+  const afterShock = tick(empty);
+  assert(empty.activeCount === 0 && afterShock.turnover === 0 && afterShock.activeFraction === 0,
+    "vacancies remain after the freeze when there is no catch-up hiring");
+
+  // With a partial freeze, every per-person and per-institution statistic must use
+  // the surviving population as both its numerator population and denominator.
+  const partial = initSim({
+    N: 1000, M: 20, seed: 3, turnoverRate: 0.05, baseMoveProb: 0.2,
+    transferRate: 0, decayRate: 0, personalLearningRate: 0,
+    recruitmentShockStart: 0, recruitmentShockYears: 1,
+    recruitmentFraction: 0.5,
+  });
+  let partialEntry;
+  for (let k = 0; k < TPY; k++) partialEntry = tick(partial);
+  assert(partial.activeCount > 0 && partial.activeCount < partial.N,
+    "a partial population remains after a finite freeze");
+  assert(partial.hiredTotal > 0 && partial.hiredTotal < partial.turnoverTotal,
+    "recruitmentFraction retains some, but not all, replacement hires");
+  assert(partial.activeCount === partial.N - (partial.turnoverTotal - partial.hiredTotal),
+    "headcount reconciles to retirements minus replacement hires");
+  assert(partialEntry.activeFraction === partial.activeCount / partial.N,
+    "activeFraction matches the active bitmap");
+
+  const occupancy = new Int32Array(partial.M);
+  for (let i = 0; i < partial.N; i++) if (partial.active[i]) occupancy[partial.inst[i]]++;
+  let home = 0, mixed = 0, months = 0;
+  for (let i = 0; i < partial.N; i++) if (partial.active[i]) {
+    if (partial.inst[i] === partial.origin[i]) home++;
+    mixed += occupancy[partial.origin[i]];
+    months += partial.sinceMove[i];
+  }
+  const activeN = partial.activeCount;
+  const expectedRetention = home / activeN;
+  const expectedMixedBaseline = mixed / (activeN * activeN);
+  const expectedMonthsInPlace = months / activeN;
+  const expectedMinOccupancy = Math.min(...occupancy);
+  const expectedEmptyInstitutions = Array.from(occupancy).filter((n) => n === 0).length;
+  const expectedUnderOccupied = Array.from(occupancy)
+    .filter((n) => n < MIN_MEANINGFUL_OCCUPANCY).length;
+  const close = (a, b) => Math.abs(a - b) < 1e-9;
+
+  assert(partialEntry.minOccupancy === expectedMinOccupancy &&
+      partialEntry.emptyInstitutions === expectedEmptyInstitutions &&
+      partialEntry.underOccupiedInstitutions === expectedUnderOccupied,
+    "occupancy diagnostics count active people only");
+  assert(close(partialEntry.originRetention, expectedRetention),
+    "originRetention is measured over active people only");
+  assert(close(partialEntry.mixedBaseline, expectedMixedBaseline),
+    "mixedBaseline uses active origins, occupancy, and denominator");
+  assert(close(partialEntry.meanMonthsInPlace, expectedMonthsInPlace),
+    "meanMonthsInPlace is measured over active people only");
+
+  const finalStats = institutionStats(partial);
+  let occupied = 0, sumEbar = 0;
+  for (let j = 0; j < partial.M; j++) if (finalStats.count[j] > 0) {
+    occupied++; sumEbar += finalStats.Ebar[j];
+  }
+  const meanEbar = occupied ? sumEbar / occupied : 0;
+  let expectedDivergence = 0;
+  for (let j = 0; j < partial.M; j++) if (finalStats.count[j] > 0) {
+    expectedDivergence += (finalStats.Ebar[j] - meanEbar) ** 2;
+  }
+  expectedDivergence = occupied ? expectedDivergence / occupied : 0;
+  assert(close(partialEntry.divergence, expectedDivergence),
+    "divergence describes the end-of-tick active population");
+  let expectedTopE = 0;
+  for (let i = 0; i < partial.N; i++) if (partial.active[i] && partial.E[i] > expectedTopE) {
+    expectedTopE = partial.E[i];
+  }
+  assert(partialEntry.topE === expectedTopE,
+    "topE describes the end-of-tick active population");
+
+  const countAtRecovery = partial.activeCount;
+  const activeAtRecovery = Array.from(partial.active);
+  const vacantState = [];
+  for (let i = 0; i < partial.N; i++) if (!partial.active[i]) {
+    vacantState.push([i, partial.E[i], partial.inst[i]]);
+  }
+  for (let k = 0; k < TPY; k++) tick(partial);
+  assert(partial.activeCount === countAtRecovery &&
+      Array.from(partial.active).every((v, i) => v === activeAtRecovery[i]),
+    "normal hiring after the shock replaces new retirees without filling old vacancies");
+  assert(vacantState.every(([i, e, inst]) => partial.E[i] === e && partial.inst[i] === inst),
+    "vacant slots take no part in expertise or mobility dynamics");
 }
 
 console.log(process.exitCode ? "\nSOME CHECKS FAILED" : "\nALL CHECKS PASSED");

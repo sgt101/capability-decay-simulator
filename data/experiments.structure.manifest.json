@@ -122,7 +122,13 @@
         75,
         90,
         109,
-        132
+        132,
+        175,
+        225,
+        275,
+        325,
+        375,
+        425
       ],
       "default": 40
     },
@@ -281,7 +287,13 @@
         75,
         90,
         109,
-        132
+        132,
+        175,
+        225,
+        275,
+        325,
+        375,
+        425
       ],
       "default": 40
     },
@@ -432,7 +444,7 @@
       "file": "data/experiments-structure/structure.1.json",
       "x": "aiLevelFraction",
       "y": "M",
-      "runs": 25600,
+      "runs": 34560,
       "xValues": [
         0.05,
         0.1,
@@ -475,8 +487,16 @@
         75,
         90,
         109,
-        132
-      ]
+        132,
+        175,
+        225,
+        275,
+        325,
+        330,
+        375,
+        425
+      ],
+      "worldModelRowM": 330
     },
     {
       "n": 2,
@@ -525,7 +545,7 @@
       "file": "data/experiments-structure/structure.3.json",
       "x": "aiDampeningBelow",
       "y": "M",
-      "runs": 26880,
+      "runs": 36288,
       "xValues": [
         0,
         0.1,
@@ -569,8 +589,16 @@
         75,
         90,
         109,
-        132
-      ]
+        132,
+        175,
+        225,
+        275,
+        325,
+        330,
+        375,
+        425
+      ],
+      "worldModelRowM": 330
     },
     {
       "n": 4,
@@ -620,7 +648,7 @@
       "file": "data/experiments-structure/structure.5.json",
       "x": "aiDampeningAbove",
       "y": "M",
-      "runs": 26880,
+      "runs": 36288,
       "xValues": [
         0,
         0.1,
@@ -664,8 +692,16 @@
         75,
         90,
         109,
-        132
-      ]
+        132,
+        175,
+        225,
+        275,
+        325,
+        330,
+        375,
+        425
+      ],
+      "worldModelRowM": 330
     },
     {
       "n": 6,
@@ -715,7 +751,7 @@
       "file": "data/experiments-structure/structure.7.json",
       "x": "frontierBreadth",
       "y": "M",
-      "runs": 15360,
+      "runs": 19968,
       "xValues": [
         0.25,
         0.5,
@@ -750,7 +786,13 @@
         75,
         90,
         109,
-        132
+        132,
+        175,
+        225,
+        275,
+        325,
+        375,
+        425
       ]
     },
     {
@@ -792,7 +834,7 @@
       "file": "data/experiments-structure/structure.9.json",
       "x": "M",
       "y": "graphAttachment",
-      "runs": 9152,
+      "runs": 13376,
       "xValues": [
         14,
         16,
@@ -806,7 +848,13 @@
         75,
         90,
         109,
-        132
+        132,
+        175,
+        225,
+        275,
+        325,
+        375,
+        425
       ],
       "yValues": [
         1,

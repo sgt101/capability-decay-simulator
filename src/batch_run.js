@@ -5,6 +5,7 @@
 // Usage:
 //   node src/batch_run.js --config data/sweep.json [--out results.csv] [--summary-out results_summary.csv]
 //                      [--workers N] [--no-raw] [--dry-run]
+//   node src/batch_run.js --config data/sweep.json --from-results results.csv --no-raw
 //
 // Config file (JSON) shape:
 //   {
@@ -56,6 +57,7 @@ const path = require("path");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { initSim, tick, mulberry32, DEFAULT_PARAMS } = require(path.join(__dirname, "engine.js"));
 const paths = require("./paths.js");
+const { BatchOutput, readResultRows } = require("./batch_output.js");
 
 const METRIC_KEYS = ["meanE", "p10E", "p50E", "p90E", "divergence", "topE", "aiLevel", "shareBelowAI", "shareExpert",
   // Capability, in threshold-expert equivalents, with and without the AI multiplier.
@@ -144,8 +146,6 @@ if (!isMainThread) {
     parentPort.postMessage({ rows: runJob(msg) });
   });
   parentPort.postMessage({ ready: true });              // ask for the first job
-} else {
-  main().catch((err) => { console.error("[batch] " + err.message); process.exit(1); });
 }
 
 /* ============================== sweep construction ============================== */
@@ -289,227 +289,70 @@ function buildJobs(config) {
   return { jobs, combos, replicates, pairWithBaseline };
 }
 
-/* ============================== CSV output ============================== */
-function csvEscape(v) {
-  if (v == null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-// Atomic write: build a temp file alongside the target, then rename. Rename is
-// atomic within a filesystem, so a results file is either absent or complete —
-// never a truncated half-write from an interrupted run. run_experiments.sh
-// relies on this to decide what it can safely skip on resume.
-// STREAMED, not built as one array of lines and joined. That used to be:
-//   const lines = rows.map(rowToLine); writeFileSync(lines.join("\n"))
-// which for the largest sweeps in this repository (400 cells x 32 replicates x 2 arms x
-// 120 recorded ticks = ~3M rows for one experiment) holds three full-size copies of the
-// same data at once -- the row objects, the array of formatted line strings, and the
-// single joined mega-string -- on top of whatever else main() is holding. That is what
-// turned "raise --max-runs" into "JavaScript heap out of memory" the moment the replicate
-// count went up: removing the run-count guard did not create this cost, it only made it
-// reachable. Streaming keeps at most one row's worth of formatted text resident at a time;
-// the OS write buffer does the rest.
-//
-// `rows` is an ITERABLE, not necessarily an array — computeShortfall below is a generator
-// for the same reason: the merged rows it used to return as one array are exactly as
-// numerous as this file's rows, so building that array first would reintroduce the
-// problem this function exists to avoid.
-function writeCSVStream(filePath, rows) {
-  return new Promise((resolve, reject) => {
-    const tmp = filePath + ".part";
-    const ws = fs.createWriteStream(tmp);
-    ws.on("error", reject);
-    let cols = null;
-    let count = 0;
-    // Iterated with an explicit iterator, not for..of, so a synchronous throw partway
-    // through (a malformed row, say) still reaches the catch below with the stream
-    // already open — for..of over a generator behaves the same, but making the manual
-    // control flow explicit is what let this be written with backpressure in mind: a
-    // future change that needs to await ws's 'drain' event has a loop shape ready for it,
-    // rather than a for..of that would need restructuring first.
-    try {
-      for (const row of rows) {
-        if (!cols) { cols = Object.keys(row); ws.write(cols.join(",") + "\n"); }
-        ws.write(cols.map((c) => csvEscape(row[c])).join(",") + "\n");
-        count++;
-      }
-    } catch (e) { ws.destroy(); reject(e); return; }
-    ws.end(() => {
-      if (count === 0) { fs.writeFileSync(tmp, ""); }
-      fs.renameSync(tmp, filePath);
-      resolve(count);
-    });
-  });
-}
-
-function summarize(rows) {
-  const groups = new Map();
-  for (const row of rows) {
-    const key = row.comboIndex + "|" + row.arm + "|" + row.t;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  }
-  const out = [];
-  for (const group of groups.values()) {
-    const base = Object.assign({}, group[0]);
-    delete base.seed; delete base.replicate;
-    METRIC_KEYS.forEach((k) => delete base[k]);
-    METRIC_KEYS.forEach((k) => {
-      const vals = group.map((g) => g[k]).filter((v) => v != null);
-      const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-      const variance = vals.length > 1 ? vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1) : 0;
-      base[k + "_mean"] = mean;
-      base[k + "_std"] = vals.length ? Math.sqrt(variance) : null;
-    });
-    base.n = group.length;
-    out.push(base);
-  }
-  out.sort((a, b) => a.comboIndex - b.comboIndex || a.t - b.t);
-  return out;
-}
-
-// meanC was dropped with the observed-capability channel in 2026-08. systemCapability is
-// not its return: that one was a per-person observed score, this is the field's worth in
-// threshold-expert equivalents, so baseline - treatment reads directly as "experts' worth
-// of capability the AI cost us" — a subtraction that means something in these units.
-// systemCapabilityHuman is paired too, for its TREATMENT column specifically: that is
-// what the field is worth with the AI multiplier taken back off, i.e. what AI has done
-// to the humans themselves. Its baseline column is redundant by construction (the no-AI
-// arm has no multiplier, so baseline human == baseline total) and costs one column.
-// The metrics the PAIRED csv carries as _baseline/_treatment/_change. A strict subset of
-// METRIC_KEYS, and separate from it on purpose: results.csv records everything a run
-// produced, while this file exists to answer one question — what AI changed — and a
-// column that is identical in both arms only adds width.
-//
-// activeFraction is here despite being identical in both arms under the paired design
-// (a hiring freeze applies to both), because the RECRUITMENT set needs it as a LEVEL:
-// its report reads the baseline arm's headcount to separate a field that shrank from a
-// field that lost its ladder. Adding it to METRIC_KEYS alone was not enough — that only
-// reaches results.csv — which is exactly the trap this comment is here to close.
+// Metrics carried into the paired comparison; negative change means treatment
+// produced less than its baseline. Output is streamed by batch_output.js.
 const SHORTFALL_KEYS = ["meanE", "shareExpert", "systemCapability", "systemCapabilityHuman",
   "activeFraction"];
 
-// A GENERATOR, not a function returning an array. The merged rows it yields are as
-// numerous as `rows` itself (one per baseline/treatment pair, so roughly half the total
-// row count), and materialising that many new objects into an array before writing was
-// the second-largest source of the same out-of-memory failure writeCSVStream's comment
-// describes — cols[k] copies of the treatment row, one per pair, all resident at once
-// purely so they could be sorted and then written. Consumed directly by writeCSVStream,
-// which writes and discards each one as it is produced.
-//
-// The one thing this drops relative to the old version: rows are no longer globally
-// sorted by (comboIndex, replicate, t) before writing, because sorting requires having
-// them all in memory at once, which is exactly what this exists to avoid. Nothing reads
-// results_shortfall.csv expecting a particular row order — build_report.js buckets every
-// row into a grid by its own key regardless of file order — so this is a change to a
-// human skimming the raw file, not to anything that parses it. Order instead follows
-// Map iteration order, which for a Map built by a single forward pass over `rows` is
-// insertion order — i.e. roughly job-completion order, not sorted, but not arbitrary
-// either.
-function* computeShortfall(rows) {
-  const byPair = new Map(); // "comboIndex|replicate|t" -> { baseline, treatment }
-  for (const row of rows) {
-    if (!row.arm) continue;
-    const key = row.comboIndex + "|" + row.replicate + "|" + row.t;
-    if (!byPair.has(key)) byPair.set(key, {});
-    byPair.get(key)[row.arm] = row;
-  }
-  for (const pair of byPair.values()) {
-    if (!pair.baseline || !pair.treatment) continue; // one arm's job errored out — skip, don't half-report
-    const base = Object.assign({}, pair.treatment);
-    delete base.seed; delete base.arm; delete base.aiEnabled;
-    METRIC_KEYS.forEach((k) => delete base[k]);
-    SHORTFALL_KEYS.forEach((k) => {
-      base[k + "_baseline"] = pair.baseline[k];
-      base[k + "_treatment"] = pair.treatment[k];
-      // SIGNED AS THE CHANGE: negative is what AI cost the field, positive is what it
-      // added. This is the reverse of the old `_shortfall` column, which was baseline
-      // minus treatment.
-      //
-      // Renamed rather than flipped in place, deliberately. A column still called
-      // "shortfall" holding -0.5 reads as a shortfall OF -0.5, i.e. a gain — the exact
-      // misreading the sign change exists to prevent, and one that no tooling could
-      // detect. Old CSVs keep their old column and old meaning; build_report.js reads
-      // either and negates the legacy one.
-      base[k + "_change"] = pair.treatment[k] - pair.baseline[k];
-    });
-    yield base;
-  }
-}
-
 /* ============================== parallel execution ============================== */
-// DYNAMIC dispatch. This used to split the job list up front — chunk i getting every
-// n'th job — which is only fair when every worker runs at the same speed.
-//
-// On a machine with heterogeneous cores it is not. Apple Silicon's performance and
-// efficiency cores differ several-fold, so the workers that land on efficiency cores
-// receive an equal share of jobs and take multiples of the time to finish them: the
-// fast workers drain their chunk, exit, and sit idle while a few slow ones grind
-// through the tail. Measured as machine utilisation that reads as a persistent 70%
-// rather than a visible stall, because the shortfall is spread across the whole run.
-//
-// Pulling instead of pushing removes the assumption entirely: a core that is a third
-// as fast takes a third as many jobs, and every worker finishes within one job of the
-// others whatever hardware it landed on. It also costs nothing on homogeneous cores —
-// the same total messages, one job at a time instead of one list up front.
-function runWithWorkers(jobs, n) {
-  const workerCount = Math.min(n, jobs.length);
-  return new Promise((resolve, reject) => {
-    const rows = [];
-    let next = 0, finished = 0, live = 0;
-    const logEvery = Math.max(1, Math.floor(jobs.length / 20));
-
-    for (let i = 0; i < workerCount; i++) {
+// A worker receives its next job only after the previous result has been consumed.
+// Slow disk writes therefore pause dispatch instead of accumulating the entire sweep
+// (or an unbounded stream write queue) on the main thread's heap.
+async function* runWithWorkers(jobs, n) {
+  const workers = [], queue = [];
+  let wake, next = 0, completed = 0;
+  const enqueue = (event) => {
+    queue.push(event);
+    if (wake) { const resolve = wake; wake = null; resolve(); }
+  };
+  try {
+    for (let i = 0; i < Math.min(n, jobs.length); i++) {
       const worker = new Worker(__filename);
-      live++;
-      worker.on("message", (msg) => {
-        if (msg.rows) {
-          // Concatenated rather than pushed one row at a time: a job yields one row per
-          // recordAt entry, and spreading thousands of them through apply() blows the
-          // argument-count limit on a long recordAt.
-          for (let k = 0; k < msg.rows.length; k++) rows.push(msg.rows[k]);
-          finished++;
-          if (finished % logEvery === 0 || finished === jobs.length) {
-            console.error(`[batch] ${finished}/${jobs.length} runs`);
-          }
-        }
-        if (next < jobs.length) worker.postMessage(jobs[next++]);
-        else worker.postMessage(null);              // nothing left: tell it to close
-      });
-      worker.on("error", reject);
+      workers.push(worker);
+      worker.on("message", (message) => enqueue({ worker, message }));
+      worker.on("error", (error) => enqueue({ error }));
       worker.on("exit", (code) => {
-        if (code !== 0) return reject(new Error(`worker exited with code ${code}`));
-        if (--live === 0) resolve(rows);
+        if (code !== 0) enqueue({ error: new Error(`worker exited with code ${code}`) });
       });
     }
-  });
+    while (completed < jobs.length) {
+      if (!queue.length) await new Promise((resolve) => { wake = resolve; });
+      const { worker, message, error } = queue.shift();
+      if (error) throw error;
+      if (message.rows) {
+        yield message.rows;
+        completed++;
+      }
+      if (next < jobs.length) worker.postMessage(jobs[next++]);
+      else worker.postMessage(null);
+    }
+  } finally {
+    await Promise.allSettled(workers.map((worker) => worker.terminate()));
+  }
 }
 
-function runSequential(jobs) {
-  const rows = [];
-  const logEvery = Math.max(1, Math.floor(jobs.length / 20));
-  jobs.forEach((job, i) => {
-    rows.push(...runJob(job));
-    if ((i + 1) % logEvery === 0 || i === jobs.length - 1) {
-      console.error(`[batch] ${i + 1}/${jobs.length} runs complete`);
-    }
-  });
-  return rows;
+function* runSequential(jobs) {
+  for (const job of jobs) yield runJob(job);
 }
 
 /* ============================== CLI ============================== */
 function parseArgs(argv) {
   const args = { out: "results.csv", summaryOut: "results_summary.csv", shortfallOut: "results_shortfall.csv", workers: null, dryRun: false };
+  const takesValue = new Set(["--config", "--out", "--from-results", "--summary-out", "--shortfall-out", "--workers"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (takesValue.has(a) && (argv[i + 1] === undefined || argv[i + 1].startsWith("--"))) {
+      throw new Error(`${a} needs a value`);
+    }
     if (a === "--config") args.config = argv[++i];
     else if (a === "--out") args.out = argv[++i];
     else if (a === "--no-raw") args.out = null;
+    else if (a === "--from-results") args.fromResults = argv[++i];
     else if (a === "--summary-out") args.summaryOut = argv[++i];
     else if (a === "--no-summary") args.summaryOut = null;
     else if (a === "--shortfall-out") args.shortfallOut = argv[++i];
     else if (a === "--no-shortfall") args.shortfallOut = null;
-    else if (a === "--workers") args.workers = parseInt(argv[++i], 10);
+    else if (a === "--workers") args.workers = Number(argv[++i]);
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
     else throw new Error("unknown argument: " + a);
@@ -525,12 +368,10 @@ Batch-run the capability-decay simulator across a parameter sweep.
 
 Options:
   --out <path>          per-run CSV output (default results.csv)
-  --no-raw              skip the per-run CSV -- nothing in this repository reads it back
-                        (build_report.js and friends read only the shortfall CSV), so
-                        it exists for manual inspection. Its cost scales with total
-                        recorded rows -- cells x replicates x arms x ticks -- which is
-                        the largest of the three output files by a wide margin on a big
-                        sweep, so this is worth passing when that inspection is not needed
+  --no-raw              skip the per-run CSV (summaries and comparisons still stream)
+  --from-results <path>  recover summaries/comparisons from a completed raw CSV without
+                        simulating again; validates every expected run and tick against
+                        --config, and leaves the input CSV unchanged
   --summary-out <path>  per-parameter-combo mean/std CSV (default results_summary.csv)
   --no-summary          skip the summary CSV
   --shortfall-out <path>  baseline-vs-AI expertise shortfall CSV, only written when the
@@ -558,30 +399,49 @@ async function main() {
 
   if (args.dryRun) { console.error("[batch] dry run — not executing."); return; }
 
-  const workers = args.workers != null ? Math.max(1, args.workers) : Math.max(1, Math.min(os.cpus().length, 8));
-  console.error(`[batch] running with ${workers} worker${workers > 1 ? "s" : ""}`);
+  const workers = args.workers != null ? args.workers : Math.max(1, Math.min(os.cpus().length, 8));
+  if (!Number.isInteger(workers) || workers < 1) throw new Error("--workers needs a positive integer");
+  if (args.fromResults) {
+    const input = path.resolve(args.fromResults);
+    for (const output of [args.summaryOut, pairWithBaseline && args.shortfallOut].filter(Boolean)) {
+      if (path.resolve(output) === input || path.resolve(output + ".part") === input) {
+        throw new Error("recovery output must not overwrite its input CSV");
+      }
+    }
+    console.error(`[batch] recovering from ${args.fromResults} — no simulations will run`);
+  } else console.error(`[batch] running with ${workers} worker${workers > 1 ? "s" : ""}`);
 
+  const output = new BatchOutput({ jobs, replicates, pairWithBaseline,
+    raw: args.fromResults ? null : args.out, summary: args.summaryOut, shortfall: args.shortfallOut,
+    metricKeys: METRIC_KEYS, shortfallKeys: SHORTFALL_KEYS });
   const t0 = Date.now();
-  const rows = workers === 1 ? runSequential(jobs) : await runWithWorkers(jobs, workers);
-  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-  console.error(`[batch] ${jobs.length} runs -> ${rows.length} rows in ${elapsed}s`);
-
-  if (args.out) {
-    const n = await writeCSVStream(args.out, rows);
-    console.error(`[batch] wrote ${args.out} (${n} rows)`);
+  try {
+    if (args.fromResults) {
+      for await (const row of readResultRows(args.fromResults, DEFAULT_PARAMS, METRIC_KEYS)) {
+        await output.add(row);
+        if (output.count % 250000 === 0) console.error(`[batch] read ${output.count}/${output.expectedRows} rows`);
+      }
+    } else {
+      let done = 0;
+      const logEvery = Math.max(1, Math.floor(jobs.length / 20));
+      const batches = workers === 1 ? runSequential(jobs) : runWithWorkers(jobs, workers);
+      for await (const rows of batches) {
+        for (const row of rows) await output.add(row);
+        done++;
+        if (done % logEvery === 0 || done === jobs.length) console.error(`[batch] ${done}/${jobs.length} runs`);
+      }
+    }
+    await output.finish();
+  } catch (error) {
+    await output.abort();
+    throw error;
   }
+  console.error(`[batch] ${output.count} rows processed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  for (const file of output.outputs) console.error(`[batch] wrote ${file.file} (${file.count} rows)`);
+}
 
-  if (args.summaryOut) {
-    // summarize() still returns a plain array: its output is one row per (combo, arm,
-    // tick) with replicates already collapsed, so for the sweeps that motivated
-    // streaming (32 replicates) it is 32x smaller than `rows` and was never the problem.
-    const summaryRows = summarize(rows);
-    const n = await writeCSVStream(args.summaryOut, summaryRows);
-    console.error(`[batch] wrote ${args.summaryOut} (${n} rows, mean/std across replicates)`);
-  }
+module.exports = { buildJobs, METRIC_KEYS, SHORTFALL_KEYS };
 
-  if (pairWithBaseline && args.shortfallOut) {
-    const n = await writeCSVStream(args.shortfallOut, computeShortfall(rows));
-    console.error(`[batch] wrote ${args.shortfallOut} (${n} rows — baseline vs AI, negative change = AI eroded it)`);
-  }
+if (isMainThread && require.main === module) {
+  main().catch((err) => { console.error("[batch] " + err.message); process.exit(1); });
 }

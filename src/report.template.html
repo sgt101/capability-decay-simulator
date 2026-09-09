@@ -20,6 +20,10 @@
     --diverge-neg-mid: #a8502c;
     --diverge-neg-end: #5c2712;
     --ref-line: #6b3fa0;
+    /* world-model row / line — Okabe-Ito orange, kept distinct from the teal/blue
+       heatmap ramp and the rust accent for protan/deutan/tritan readers. */
+    --wm-line: #e69f00;
+    --wm-row-bg: rgba(230, 159, 0, 0.14);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -41,6 +45,8 @@
       --diverge-neg-mid: #dd8259;
       --diverge-neg-end: #ffb38c;
       --ref-line: #c79bff;
+      --wm-line: #f2ac3d;
+      --wm-row-bg: rgba(242, 172, 61, 0.17);
     }
   }
   :root[data-theme="dark"] {
@@ -62,6 +68,8 @@
     --diverge-neg-mid: #dd8259;
     --diverge-neg-end: #ffb38c;
     --ref-line: #c79bff;
+    --wm-line: #f2ac3d;
+    --wm-row-bg: rgba(242, 172, 61, 0.17);
   }
   :root[data-theme="light"] {
     --bg: #eef0ee;
@@ -82,6 +90,10 @@
     --diverge-neg-mid: #a8502c;
     --diverge-neg-end: #5c2712;
     --ref-line: #6b3fa0;
+    /* world-model row / line — Okabe-Ito orange, kept distinct from the teal/blue
+       heatmap ramp and the rust accent for protan/deutan/tritan readers. */
+    --wm-line: #e69f00;
+    --wm-row-bg: rgba(230, 159, 0, 0.14);
   }
 
   * {
@@ -531,6 +543,66 @@
     overflow: auto;
     max-height: 480px;
   }
+  /* Per-column summary rows under the grid. Same monospace/right-align as the body;
+     lifted off it with a heavier top rule and the header's fill so it reads as a
+     footer block rather than more data. */
+  table.data-table tfoot th,
+  table.data-table tfoot td {
+    background: var(--panel-2);
+    border-top: 2px solid var(--ink-faint);
+  }
+  table.data-table tfoot th { font-weight: 600; }
+  /* A column whose summary was taken over fewer than the full set of cells (some
+     were absent). Not annotated with a count on screen — the muting is the cue,
+     the exact figure is in the title. */
+  table.data-table tfoot td.partial { color: var(--ink-faint); font-style: italic; }
+  table.data-table tfoot td.sumnote {
+    text-align: left;
+    font-weight: 400;
+    font-style: italic;
+    color: var(--ink-muted);
+    font-family: inherit;
+  }
+  /* The world-model row / column (structure report only): a tinted band plus an
+     orange edge, matching the chart line and the heatmap outline. */
+  table.data-table tbody tr.wm-row td,
+  table.data-table tbody tr.wm-row th { background: var(--wm-row-bg); }
+  table.data-table tbody tr.wm-row th:first-child { box-shadow: inset 3px 0 0 var(--wm-line); }
+  table.data-table col.wm-col { background: var(--wm-row-bg); }
+  table.data-table th.wm-th { box-shadow: inset 0 3px 0 var(--wm-line); }
+  .wm-tag {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0 0.3rem;
+    font-family: ui-sans-serif, sans-serif;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--wm-line);
+    border: 1px solid var(--wm-line);
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+
+  /* Same box as one trajectory panel — half the section width on a wide screen,
+     full width below the trajectory panels' own breakpoint — so the two chart
+     types read at the same shape. */
+  .marginal-wrap { margin-top: 0.9rem; width: calc((100% - 1rem) / 2); }
+  @media (max-width: 780px) {
+    .marginal-wrap { width: 100%; }
+  }
+  .marginal-head {
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+    margin-bottom: 0.35rem;
+  }
+  .marginal-canvas-wrap { position: relative; }
+  .marginal-canvas-wrap canvas {
+    width: 100%;
+    height: 320px;
+    display: block;
+  }
 
   .empty-state {
     padding: 3rem 1rem;
@@ -706,6 +778,29 @@
           <canvas id="heatmapCanvas"></canvas>
           <div class="table-scroll" id="tableWrap" style="display: none"></div>
         </div>
+        <!-- Table view only: how the selected metric moves along the column axis,
+             with mean, median and the min–max band taken over the row axis. render()
+             toggles it in step with #tableWrap. -->
+        <div class="marginal-wrap" id="marginalWrap" style="display: none">
+          <div class="marginal-head" id="marginalHead">—</div>
+          <div class="marginal-canvas-wrap"><canvas id="marginalCanvas"></canvas></div>
+          <div class="fig-toolbar right">
+            <button type="button" id="figCopyMarginal" class="copy-btn" data-fig="marginal" data-act="copy"
+                    title="Copy this chart to the clipboard as a PNG">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <rect x="5.5" y="5.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M10.5 3.5h-8a1.5 1.5 0 0 0-1.5 1.5v8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              </svg><span id="figCopyMarginalLabel">Copy PNG</span>
+            </button>
+            <button type="button" id="figSaveMarginal" class="copy-btn" data-fig="marginal" data-act="save"
+                    title="Save this chart as a PNG file">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path d="M8 2v8m0 0 3-3m-3 3-3-3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M2.5 11.5v2h11v-2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              </svg><span id="figSaveMarginalLabel">Download PNG</span>
+            </button>
+          </div>
+        </div>
         <div class="legend-row">
           <span id="legendMin" class="tabular">–</span>
           <div class="legend-ramp" id="legendRamp">
@@ -824,16 +919,15 @@
     // Entrant set (generate_entrant_experiments.js). mu_ent is already mapped above.
     entrantExpertiseSpread: "s_ent", entrantExpertiseFloor: "min_ent",
   };
-  // These two are stored (in every config/CSV) as a raw multiplier on the learning
-  // delta: 0..2, where 1 = unassisted rate. That's the right shape for the engine's
-  // formula (delta *= value) but the wrong shape for a human to read, since 0 reads
-  // backwards from what "dampening" suggests. DISPLAY-ONLY, shifted by -1 so it reads
-  // on a natural -1..+1 scale (-1 = max dampening, 0 = neutral, +1 = max amplification)
-  // wherever a human sees a value; every underlying array/select/comparison still uses
-  // the raw 0..2 number so it stays consistent with the stored data.
+  // Stored (in every config/CSV) as a raw multiplier on the learning delta: 0..2, where
+  // 1 = unassisted rate, 0 = learning zeroed out, 2 = learning doubled. That is the
+  // engine's own shape (delta *= value) and it is shown to the reader unchanged — axes,
+  // tooltips and the fixed-parameter panel all print the raw 0..2 value. (An earlier
+  // build shifted these by -1 onto a -1..+1 scale; removed 2026-09 — a figure axis that
+  // disagrees with the config and CSV numbers was the more confusing of the two.)
   const DIRECTION_HINT = {
-    aiDampeningBelow: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
-    aiDampeningAbove: "−1 = max dampening (learning zeroed out) · 0 = no effect · +1 = max amplification",
+    aiDampeningBelow: "0 = max dampening (learning zeroed out) · 1 = no effect · 2 = max amplification",
+    aiDampeningAbove: "0 = max dampening (learning zeroed out) · 1 = no effect · 2 = max amplification",
     // Runs the OPPOSITE way to severity, which is the whole reason it is spelled out: LOW is
     // the deep freeze. Stored as the retained share because that is what the engine
     // multiplies by, and left that way rather than displayed as its complement so the axis
@@ -841,8 +935,8 @@
     recruitmentFraction: "share of retirements still refilled · 0 = total freeze (a 100% cut) · 0.9 = a 10% cut · 1 = normal hiring",
   };
   const DIRECTION_HINT_SHORT = {
-    aiDampeningBelow: "(−1=max dampening, 0=neutral, +1=max amplified)",
-    aiDampeningAbove: "(−1=max dampening, 0=neutral, +1=max amplified)",
+    aiDampeningBelow: "(0=max dampening, 1=neutral, 2=max amplified)",
+    aiDampeningAbove: "(0=max dampening, 1=neutral, 2=max amplified)",
     recruitmentFraction: "(0=total freeze, 0.9=10% cut, 1=normal hiring)",
   };
 
@@ -855,7 +949,6 @@
   // aiGain, aiResponseMode, aiAtrophyMultiplier, mobilityFriction,
   // entrantExpertiseSkew, and the meanC / gap metrics. Archived reports still carry
   // those columns; they simply render through the generic path now.
-  const DAMPENING_KEYS = new Set(["aiDampeningBelow", "aiDampeningAbove"]);
   function pretty(key) { return PRETTY[key] || key.replace(/([A-Z])/g, " $1").toLowerCase(); }
   function sym(key) { return SYMBOL[key] || ""; }
   function prettyWithHint(key) { return pretty(key) + (DIRECTION_HINT_SHORT[key] ? " " + DIRECTION_HINT_SHORT[key] : ""); }
@@ -908,7 +1001,7 @@
     const add = (k, v) => {
       if (typeof v !== "number" || !isFinite(v)) return;
       if (!vals.has(k)) vals.set(k, new Set());
-      vals.get(k).add(DAMPENING_KEYS.has(k) ? v - 1 : v);
+      vals.get(k).add(v);
     };
     DATA.experiments.forEach((e) => {
       e.xValues.forEach((v) => add(e.xKey, v));
@@ -937,15 +1030,13 @@
   })();
 
   // fmtAxis: use wherever a raw parameter value (not a metric) is displayed to a
-  // human. Shifts aiDampeningBelow/Above by -1 for display and adds an explicit
-  // "+" so the sign is never ambiguous.
+  // human. Prints the stored value as-is — including aiDampeningBelow/Above, which
+  // run 0..2 (1 = unassisted) in the config, the CSV and here alike.
   function fmtAxis(key, v) {
     if (v == null) return "—";
     if (typeof v !== "number") return String(v);
-    const shifted = DAMPENING_KEYS.has(key) ? v - 1 : v;
     const d = AXIS_DECIMALS[key];
-    const s = d == null ? fmtNum(shifted) : shifted.toFixed(d);
-    return DAMPENING_KEYS.has(key) && shifted > 1e-9 ? "+" + s : s;
+    return d == null ? fmtNum(v) : v.toFixed(d);
   }
   // Some held-fixed values are categorical (mobilityMode, aiResponseMode), not numeric
   // — fmtAxis/fmtNum assume a number, so route non-numbers straight through as text.
@@ -1002,7 +1093,12 @@
       '<div class="fixed-line">Capability calculations assume Dell&rsquo;Acqua as published: ' +
       '+43% novice / +17% expert quality gain inside the AI\u2019s frontier, \u221219 point novice ' +
       'deficit outside it. See results_ACL.html for the weaker and null alternatives.</div>';
-    const html = axisLines + fixedLine + aclLine;
+    const wmLine = exp.worldModelRowM != null
+      ? '<div class="fixed-line">The <b style="color:var(--wm-line)">M=' + exp.worldModelRowM
+        + '</b> row / line is the real institution graph, not a Barab&aacute;si&ndash;Albert one '
+        + '— shown in orange on the chart and outlined in the table and heatmap.</div>'
+      : "";
+    const html = axisLines + fixedLine + wmLine + aclLine;
     const heatmapCaption = document.getElementById("heatmapCaption");
     const trajCaption = document.getElementById("trajCaption");
     if (heatmapCaption) heatmapCaption.innerHTML = html;
@@ -1293,6 +1389,18 @@
         file: stem + "-" + app.metricKey + "-t" + t + ".png",
       };
     }
+    if (kind === "marginal") {
+      // No colour ramp to redraw — the chart is self-describing — so `legend` is left
+      // off and composeFigure skips that band.
+      return {
+        canvas: document.getElementById("marginalCanvas"),
+        title: metric.label + " — column profile",
+        subtitle: document.getElementById("marginalHead").textContent,
+        foot: foot,
+        legend: null,
+        file: stem + "-" + app.metricKey + "-t" + t + "-marginal.png",
+      };
+    }
     const which = kind === "trajA" ? "A" : "B";
     const isDark = currentTheme() === "dark";
     return {
@@ -1418,6 +1526,7 @@
   // lookup this page uses anywhere, and keeping it that way is what lets the DOM stub in
   // src/test/ stay a few hundred lines instead of a DOM implementation.
   [["figCopyHeatmap", "heatmap", "copy"], ["figSaveHeatmap", "heatmap", "save"],
+   ["figCopyMarginal", "marginal", "copy"], ["figSaveMarginal", "marginal", "save"],
    ["figCopyTrajA", "trajA", "copy"], ["figSaveTrajA", "trajA", "save"],
    ["figCopyTrajB", "trajB", "copy"], ["figSaveTrajB", "trajB", "save"]].forEach(([id, fig, act]) => {
     const btn = document.getElementById(id);
@@ -1634,20 +1743,36 @@
       }
     }
 
+    // The world-model line of cells (structure report only): an orange outline round
+    // the whole row or column, so it reads as "not a BA graph" at a glance.
+    const wl = worldModelLine(exp);
+    if (wl) {
+      ctx.strokeStyle = cssVar("--wm-line"); ctx.lineWidth = 2.5;
+      if (wl.axis === "y") {
+        ctx.strokeRect(pad.l + 1, pad.t + (ny - 1 - wl.i) * ch + 1, plotW - 2, ch - 2);
+      } else {
+        ctx.strokeRect(pad.l + wl.i * cw + 1, pad.t + 1, cw - 2, plotH - 2);
+      }
+    }
+
     // axis tick labels — thin out to roughly a dozen when the grid is fine-grained,
     // so labels never overlap; the last tick is always kept so the range end is visible.
-    ctx.fillStyle = cssVar("--ink-muted");
+    // The world-model tick is always drawn, in orange, whatever the stride.
     ctx.font = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
     const xStride = Math.max(1, Math.ceil(nx / 12));
     const yStride = Math.max(1, Math.ceil(ny / 12));
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     dispXValues.forEach((v, xi) => {
-      if (xi % xStride !== 0 && xi !== nx - 1) return;
+      const wm = wl && wl.axis === "x" && xi === wl.i;
+      if (xi % xStride !== 0 && xi !== nx - 1 && !wm) return;
+      ctx.fillStyle = wm ? cssVar("--wm-line") : cssVar("--ink-muted");
       ctx.fillText(fmtAxis(dispXKey, v), pad.l + xi * cw + cw / 2, pad.t + plotH + 8);
     });
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     dispYValues.forEach((v, yi) => {
-      if (yi % yStride !== 0 && yi !== ny - 1) return;
+      const wm = wl && wl.axis === "y" && yi === wl.i;
+      if (yi % yStride !== 0 && yi !== ny - 1 && !wm) return;
+      ctx.fillStyle = wm ? cssVar("--wm-line") : cssVar("--ink-muted");
       ctx.fillText(fmtAxis(dispYKey, v), pad.l - 10, pad.t + (ny - 1 - yi) * ch + ch / 2);
     });
 
@@ -1751,25 +1876,355 @@
   });
 
   /* ---------- table view ---------- */
+
+  // One column of the on-screen table, reduced down the row (y) axis at the current
+  // tick. NULL-SAFE and null-COMPENSATING: absent cells are dropped and every figure
+  // is taken over the cells that ARE there, so a column short of a full set still
+  // reports a real mean/median/range rather than collapsing to nothing. `worst` is the
+  // column minimum — every metric on these pages reads "higher is better", so the low
+  // end is the damage. Returns null only when the whole column is absent.
+  function columnSummary(exp, xi, ti, key, nY, skipYi) {
+    const skip = skipYi == null ? -1 : skipYi;
+    const vals = [];
+    let min = Infinity, minYi = -1;
+    for (let yi = 0; yi < nY; yi++) {
+      if (yi === skip) continue;
+      const v = metricAt(exp, xi, yi, ti, key);
+      if (v == null || !isFinite(v)) continue;
+      vals.push(v);
+      if (v < min) { min = v; minYi = yi; }
+    }
+    if (!vals.length) return null;
+    const sorted = vals.slice().sort((a, b) => a - b);
+    const n = sorted.length, max = sorted[n - 1];
+    const mean = vals.reduce((s, v) => s + v, 0) / n;
+    const median = n % 2 ? sorted[(n - 1) >> 1] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+    const total = nY - (skip >= 0 && skip < nY ? 1 : 0);
+    return { range: max - min, mean, median, worst: min, min, max, argMinYi: minYi, present: n, total };
+  }
+
+  // Where the real institution graph sits in the current grid, as a whole row or a
+  // whole column. worldModelRowM is set only on the structure set's AI-param x M pairs
+  // (see build_report.js), so this treatment is specific to that report; it follows M
+  // to the x axis when the axes are flipped.
+  function worldModelLine(exp) {
+    if (exp.worldModelRowM == null) return null;
+    const yi = axisValues(exp, "y").indexOf(exp.worldModelRowM);
+    if (yi >= 0) return { axis: "y", i: yi, m: exp.worldModelRowM };
+    const xi = axisValues(exp, "x").indexOf(exp.worldModelRowM);
+    if (xi >= 0) return { axis: "x", i: xi, m: exp.worldModelRowM };
+    return null;
+  }
+  // The y-row index only — for the marginal chart's summary, which reduces down y.
+  function worldModelYi(exp) {
+    const wl = worldModelLine(exp);
+    return wl && wl.axis === "y" ? wl.i : -1;
+  }
+
   function renderTable() {
     const exp = currentExperiment();
-    const t = exp.ticks[app.tickIndex];
     const wrap = document.getElementById("tableWrap");
+    const ti = app.tickIndex;
     const dispXValues = axisValues(exp, "x"), dispYValues = axisValues(exp, "y");
     const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
-    let html = '<table class="data-table"><thead><tr><th>' + pretty(dispYKey) + " \\ " + pretty(dispXKey) + "</th>";
-    dispXValues.forEach((x) => { html += "<th>" + fmtAxis(dispXKey, x) + "</th>"; });
+    const nY = dispYValues.length;
+    const wl = worldModelLine(exp);                        // world-model row or column
+    const wmRowYi = wl && wl.axis === "y" ? wl.i : -1;
+    const wmColXi = wl && wl.axis === "x" ? wl.i : -1;
+    const wmTag = ' <span class="wm-tag">world model</span>';
+
+    let html = '<table class="data-table">';
+    if (wmColXi >= 0) {
+      html += "<colgroup><col>" + dispXValues.map((_, xi) =>
+        xi === wmColXi ? '<col class="wm-col">' : "<col>").join("") + "</colgroup>";
+    }
+    html += '<thead><tr><th>' + pretty(dispYKey) + " \\ " + pretty(dispXKey) + "</th>";
+    dispXValues.forEach((x, xi) => {
+      html += "<th" + (xi === wmColXi ? ' class="wm-th"' : "") + ">"
+        + fmtAxis(dispXKey, x) + (xi === wmColXi ? wmTag : "") + "</th>";
+    });
     html += "</tr></thead><tbody>";
     for (let yi = dispYValues.length - 1; yi >= 0; yi--) {
-      html += "<tr><th>" + fmtAxis(dispYKey, dispYValues[yi]) + "</th>";
+      html += "<tr" + (yi === wmRowYi ? ' class="wm-row"' : "") + "><th>"
+        + fmtAxis(dispYKey, dispYValues[yi]) + (yi === wmRowYi ? wmTag : "") + "</th>";
       for (let xi = 0; xi < dispXValues.length; xi++) {
-        const v = metricAt(exp, xi, yi, app.tickIndex, app.metricKey);
+        const v = metricAt(exp, xi, yi, ti, app.metricKey);
         html += "<td>" + (v == null ? "—" : fmtNum(v)) + "</td>";
       }
       html += "</tr>";
     }
-    html += "</tbody></table>";
+    html += "</tbody>";
+
+    // Per-column summary, over the row (y) axis. A column reduced over fewer than the
+    // full set of cells is muted, with the count in its title rather than printed. The
+    // world-model row, where there is one, is left out — it is not part of the synthetic
+    // sweep being summarised — and shown on the marginal chart as its own line.
+    const wmYi = wmRowYi;
+    const sums = dispXValues.map((x, xi) => columnSummary(exp, xi, ti, app.metricKey, nY, wmYi));
+    const rows = [
+      ["max − min", (s) => fmtNum(s.range), null],
+      ["mean", (s) => fmtNum(s.mean), null],
+      ["median", (s) => fmtNum(s.median), null],
+      ["worst case", (s) => fmtNum(s.worst),
+        (s) => "at " + (sym(dispYKey) || pretty(dispYKey)) + " = " + fmtAxis(dispYKey, dispYValues[s.argMinYi])],
+    ];
+    html += "<tfoot>";
+    if (wmYi >= 0) {
+      html += '<tr><td class="sumnote" colspan="' + (dispXValues.length + 1) + '">'
+        + "rows below are over the synthetic M sweep; the M=" + fmtAxis(dispYKey, dispYValues[wmYi])
+        + " world-model row is excluded here and drawn as its own line on the chart below"
+        + "</td></tr>";
+    }
+    rows.forEach((row) => {
+      html += "<tr><th>" + row[0] + "</th>";
+      sums.forEach((s) => {
+        if (!s) { html += "<td>—</td>"; return; }
+        const partial = s.present < s.total;
+        const bits = [];
+        if (row[2]) bits.push(row[2](s));
+        if (partial) bits.push(s.present + " of " + s.total + " cells");
+        const title = bits.join(" · ").replace(/"/g, "&quot;");
+        html += "<td" + (partial ? ' class="partial"' : "") + (title ? ' title="' + title + '"' : "")
+          + ">" + row[1](s) + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tfoot></table>";
     wrap.innerHTML = html;
+  }
+
+  /* ---------- table view: marginal profile chart ---------- */
+  // The selected metric's per-column mean and median, with the min–max band, plotted
+  // across the column (x) axis at the current tick — the summary rows above, as a
+  // shape. Table view only. Styled to match the trajectory panels (same padding,
+  // fonts, gridlines, loud zero rule). Columns are placed evenly by INDEX, not by
+  // value: the axis is categorical here exactly as in the table, and value spacing
+  // would crush a log-spaced sweep against one edge.
+  // Short y-axis label for the marginal chart. The metric's full name is already in
+  // #marginalHead above the chart, so this is the one-phrase gloss of what the number
+  // IS: a paired difference for the _change metrics, a ratio for leverage, the
+  // metric's own label otherwise.
+  function marginalYLabel(key) {
+    if (/_change$|ChangeFrac$/.test(key)) return "Δ vs no-AI world";
+    if (key === "aiLeverage") return "× vs unaugmented human";
+    const m = DATA.metrics.find((x) => x.key === key);
+    return m ? m.label : key;
+  }
+
+  function drawMarginal() {
+    const canvas = document.getElementById("marginalCanvas");
+    if (!canvas) return;
+    const exp = currentExperiment();
+    const ti = app.tickIndex;
+    const dispXValues = axisValues(exp, "x");
+    const dispYValues = axisValues(exp, "y");
+    const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
+    const nY = dispYValues.length;
+    const wmYi = worldModelYi(exp);           // real-graph row, drawn as its own line
+    const metric = DATA.metrics.find((m) => m.key === app.metricKey);
+
+    document.getElementById("marginalHead").textContent =
+      (metric ? metric.label : app.metricKey)
+      + " · " + (wmYi >= 0 ? "synthetic M mean/median/band + world-model line" : "summarised over " + pretty(dispYKey))
+      + " · t=" + exp.ticks[ti];
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    // Fallbacks only bite before layout; the CSS box matches one trajectory panel.
+    const w = rect.width || 460, h = rect.height || 320;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // b leaves room for the x tick labels AND the x-axis title beneath them.
+    const pad = { l: 58, r: 12, t: 12, b: 44 };
+    const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+    const sansFont = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    const monoFont = "10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const sums = dispXValues.map((x, xi) => columnSummary(exp, xi, ti, app.metricKey, nY, wmYi));
+    const idx = [];
+    sums.forEach((s, i) => { if (s) idx.push(i); });
+
+    // Axis titles are drawn whether or not there is data, so an empty tick still reads.
+    const drawAxisTitles = () => {
+      ctx.fillStyle = cssVar("--ink-muted");
+      ctx.font = sansFont;
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      const xTitle = (sym(dispXKey) ? sym(dispXKey) + "  " : "") + pretty(dispXKey);
+      ctx.fillText(xTitle, pad.l + plotW / 2, pad.t + plotH + 26);
+      ctx.save();
+      ctx.translate(13, pad.t + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(marginalYLabel(app.metricKey), 0, 0);
+      ctx.restore();
+    };
+
+    if (!idx.length) {
+      ctx.fillStyle = cssVar("--ink-faint");
+      ctx.font = "11px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("no data at this tick", pad.l + plotW / 2, pad.t + plotH / 2);
+      drawAxisTitles();
+      canvas._noHit = true;
+      return;
+    }
+
+    // Y-DOMAIN IS SHARED across every experiment in this report for the current metric
+    // and tick: the widest band of any experiment sets the scale for all of them, so a
+    // reader flipping between experiments in the table view compares like with like.
+    // Taken from the per-tick grid min/max build_report.js already ships in exp.stats
+    // (the marginal band spans exactly grid-min to grid-max), matched by tick VALUE
+    // since experiments in a set need not share a tick list.
+    const tVal = exp.ticks[ti];
+    let yMin = Infinity, yMax = -Infinity;
+    DATA.experiments.forEach((e) => {
+      const est = e.stats && e.stats[app.metricKey];
+      if (!est) return;
+      const j = e.ticks.indexOf(tVal);
+      if (j < 0) return;
+      if (est.min[j] != null && est.min[j] < yMin) yMin = est.min[j];
+      if (est.max[j] != null && est.max[j] > yMax) yMax = est.max[j];
+    });
+    if (!(yMax > yMin)) {
+      // No usable stats, or a single flat value — fall back to this experiment's band.
+      yMin = Infinity; yMax = -Infinity;
+      idx.forEach((i) => { const s = sums[i]; if (s.min < yMin) yMin = s.min; if (s.max > yMax) yMax = s.max; });
+      if (!(yMax > yMin)) { yMax = yMin + 1; yMin -= 1; }
+    }
+    const yPad = (yMax - yMin) * 0.08;
+    yMin -= yPad; yMax += yPad;
+
+    const n = dispXValues.length;
+    const toX = (i) => pad.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const toY = (v) => (pad.t + plotH) - ((v - yMin) / (yMax - yMin)) * plotH;
+
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+    ctx.fillStyle = cssVar("--ink-faint");
+    ctx.font = monoFont;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    [yMin, (yMin + yMax) / 2, yMax].forEach((v) => {
+      const y = toY(v);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(fmtNum(v), pad.l - 6, y);
+    });
+
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const xLabelIdx = n <= 6 ? dispXValues.map((_, i) => i) : [0, (n - 1) >> 1, n - 1];
+    xLabelIdx.forEach((i) => ctx.fillText(fmtAxis(dispXKey, dispXValues[i]), toX(i), pad.t + plotH + 6));
+
+    drawAxisTitles();
+
+    if (yMin < 0 && yMax > 0) {
+      ctx.strokeStyle = cssVar("--ref-line"); ctx.lineWidth = 1.75;
+      ctx.beginPath(); ctx.moveTo(pad.l, toY(0)); ctx.lineTo(w - pad.r, toY(0)); ctx.stroke();
+      ctx.fillStyle = cssVar("--ref-line");
+      ctx.font = "bold 10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+      // Kept on the LEFT — the legend sits in the bottom-right corner.
+      ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillText("0", pad.l + 4, toY(0) - 3);
+    }
+
+    // min–max band: a filled envelope (forward along the maxima, back along the
+    // minima) with both boundaries firmly stroked, plus a dotted centre line at the
+    // mid-range — so the spread reads clearly as a band even behind the mean/median.
+    ctx.beginPath();
+    idx.forEach((i, k) => { const x = toX(i), y = toY(sums[i].max); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    for (let k = idx.length - 1; k >= 0; k--) { const i = idx[k]; ctx.lineTo(toX(i), toY(sums[i].min)); }
+    ctx.closePath();
+    ctx.fillStyle = cssVar("--accent2"); ctx.globalAlpha = 0.28; ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // mid-range centre line: (min + max) / 2, dotted so it is not mistaken for the mean
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    idx.forEach((i, k) => { const x = toX(i), y = toY((sums[i].min + sums[i].max) / 2); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = cssVar("--ink"); ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    idx.forEach((i, k) => { const x = toX(i), y = toY(sums[i].median); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    idx.forEach((i, k) => { const x = toX(i), y = toY(sums[i].mean); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--accent2");
+    idx.forEach((i) => { ctx.beginPath(); ctx.arc(toX(i), toY(sums[i].mean), 2.5, 0, Math.PI * 2); ctx.fill(); });
+
+    // The real institution graph as its own line — this row's actual value across x,
+    // NOT part of the synthetic summary above. Colour-blind-safe orange (--wm-line,
+    // the same as the trajectory line and the row highlight) with square markers, so
+    // it never reads as one of the teal aggregate lines.
+    if (wmYi >= 0) {
+      const wmPts = [];
+      dispXValues.forEach((x, xi) => {
+        const v = metricAt(exp, xi, wmYi, ti, app.metricKey);
+        if (v != null && isFinite(v)) wmPts.push([xi, v]);
+      });
+      if (wmPts.length) {
+        ctx.strokeStyle = cssVar("--wm-line"); ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        wmPts.forEach(([xi, v], k) => { const x = toX(xi), y = toY(v); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.stroke();
+        ctx.fillStyle = cssVar("--wm-line");
+        wmPts.forEach(([xi, v]) => ctx.fillRect(toX(xi) - 2.5, toY(v) - 2.5, 5, 5));
+      }
+    }
+
+    // Legend — bottom-right (south-east) of the plot, on an opaque plate so it clears
+    // the band and lines behind it. Drawn last, so it is always on top.
+    ctx.font = sansFont;
+    const legItems = [
+      { kind: "line", color: cssVar("--accent2"), dash: [], lw: 2.5, label: "mean" },
+      { kind: "line", color: cssVar("--ink"), dash: [5, 4], lw: 1.5, label: "median" },
+      { kind: "band", color: cssVar("--accent2"), label: "min–max" },
+      { kind: "line", color: cssVar("--accent2"), dash: [2, 3], lw: 1, label: "mid-range" },
+    ];
+    if (wmYi >= 0) legItems.push({ kind: "line", color: cssVar("--wm-line"), dash: [], lw: 2.5, label: "world model" });
+    const swW = 22, swGap = 7, rowH = 15, boxPad = 7;
+    let txtW = 0;
+    legItems.forEach((it) => { txtW = Math.max(txtW, ctx.measureText(it.label).width); });
+    const legW = boxPad * 2 + swW + swGap + txtW;
+    const legH = boxPad * 2 + legItems.length * rowH;
+    const legX = pad.l + plotW - legW - 8;
+    const legY = pad.t + plotH - legH - 8;
+    ctx.globalAlpha = 0.92; ctx.fillStyle = cssVar("--panel");
+    ctx.fillRect(legX, legY, legW, legH);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+    ctx.strokeRect(legX + 0.5, legY + 0.5, legW - 1, legH - 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    legItems.forEach((it, i) => {
+      const cy = legY + boxPad + i * rowH + rowH / 2;
+      const sx = legX + boxPad;
+      if (it.kind === "band") {
+        ctx.globalAlpha = 0.28; ctx.fillStyle = it.color;
+        ctx.fillRect(sx, cy - 4, swW, 8);
+        ctx.globalAlpha = 0.9; ctx.strokeStyle = it.color; ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx + 0.75, cy - 3.25, swW - 1.5, 6.5);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = it.color; ctx.lineWidth = it.lw;
+        ctx.setLineDash(it.dash);
+        ctx.beginPath(); ctx.moveTo(sx, cy); ctx.lineTo(sx + swW, cy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = cssVar("--ink");
+      ctx.fillText(it.label, sx + swW + swGap, cy);
+    });
+
+    // Exposed for the DOM test: the y-domain is report-wide (see above), so it must be
+    // identical for every experiment at a given metric and tick.
+    canvas._marginalDomain = [yMin, yMax];
+    canvas._marginalWmDrawn = wmYi >= 0;
+    canvas._noHit = true;
   }
 
   /* ---------- table → LaTeX ---------- */
@@ -1839,6 +2294,8 @@
     const dispXValues = axisValues(exp, "x"), dispYValues = axisValues(exp, "y");
     const dispXKey = axisKey(exp, "x"), dispYKey = axisKey(exp, "y");
 
+    const wl = worldModelLine(exp);   // world-model row/column, marked below
+
     const L = [];
     // ASCII throughout, this provenance comment included: a .tex file carrying a stray
     // em dash is an inputenc error under pdflatex, and the report's own prose is full of
@@ -1869,22 +2326,37 @@
         caption += ".";
       }
     }
+    if (wl) {
+      caption += " The $\\dagger$ " + (wl.axis === "y" ? "row" : "column")
+        + " ($M=" + wl.m + "$) is the real institution graph, not a Barab\\'asi--Albert one.";
+    }
     L.push("  \\caption{" + caption + "}");
     L.push("  \\label{tab:" + DATA.stem + "-" + exp.n + "-" + app.metricKey.replace(/_/g, "-") + "-t" + t + "}");
     L.push("  \\resizebox{\\textwidth}{!}{%");
     L.push("  \\begin{tabular}{l" + "r".repeat(dispXValues.length) + "}");
     L.push("    \\toprule");
+    const dag = (s) => s + "$^{\\dagger}$";
     L.push("    " + texAxisName(dispYKey) + " $\\backslash$ " + texAxisName(dispXKey)
-      + " & " + dispXValues.map((x) => texEscape(fmtAxis(dispXKey, x))).join(" & ") + " \\\\");
+      + " & " + dispXValues.map((x, xi) => {
+        const h = texEscape(fmtAxis(dispXKey, x));
+        return wl && wl.axis === "x" && xi === wl.i ? "\\textbf{" + dag(h) + "}" : h;
+      }).join(" & ") + " \\\\");
     L.push("    \\midrule");
     // Rows top-down in the same order the on-screen table shows them (highest y first),
-    // so a reader comparing the two is looking at the same shape.
+    // so a reader comparing the two is looking at the same shape. The world-model row,
+    // where there is one, is bold, daggered and set off with rules.
     for (let yi = dispYValues.length - 1; yi >= 0; yi--) {
+      const isWm = wl && wl.axis === "y" && yi === wl.i;
       const cells = [];
       for (let xi = 0; xi < dispXValues.length; xi++) {
-        cells.push(texNum(metricAt(exp, xi, yi, app.tickIndex, app.metricKey)));
+        const c = texNum(metricAt(exp, xi, yi, app.tickIndex, app.metricKey));
+        cells.push(isWm ? "\\textbf{" + c + "}" : c);
       }
-      L.push("    " + texEscape(fmtAxis(dispYKey, dispYValues[yi])) + " & " + cells.join(" & ") + " \\\\");
+      let label = texEscape(fmtAxis(dispYKey, dispYValues[yi]));
+      if (isWm) label = "\\textbf{" + dag(label) + "}";
+      if (isWm) L.push("    \\midrule");
+      L.push("    " + label + " & " + cells.join(" & ") + " \\\\");
+      if (isWm) L.push("    \\midrule");
     }
     L.push("    \\bottomrule");
     L.push("  \\end{tabular}%");
@@ -2199,9 +2671,15 @@
     ctx.restore();
 
     const n = varyingValues.length;
+    // The world-model line (structure report, when M is the varying axis) is held back
+    // and drawn last, in orange, at full opacity — a fixed reference the other lines
+    // are read against, not one of the swept series.
+    const wmVal = exp.worldModelRowM;
+    let wmPts = null;
     varyingValues.forEach((vv, i) => {
       const pts = series.get(vv) || [];
       if (!pts.length) return;
+      if (wmVal != null && Math.abs(vv - wmVal) < 1e-9) { wmPts = pts; return; }
       const isHover = hoverKey != null && Math.abs(vv - hoverKey) < 1e-9;
       ctx.strokeStyle = seqRamp(n > 1 ? i / (n - 1) : 0.5, isDark);
       ctx.lineWidth = isHover ? 3 : 1.4;
@@ -2234,7 +2712,18 @@
       ctx.setLineDash([]);
     }
 
+    if (wmPts) {
+      const isHover = hoverKey != null && Math.abs(wmVal - hoverKey) < 1e-9;
+      ctx.strokeStyle = cssVar("--wm-line");
+      ctx.lineWidth = isHover ? 3.5 : 2.5;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      wmPts.forEach((p, pi) => { const x = toX(p.t), y = toY(p.v); if (pi === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      ctx.stroke();
+    }
+
     canvas._hit = { pad, plotW, plotH, t0, t1, toX, varyingValues, series };
+    canvas._wmVal = wmPts ? wmVal : null;
   }
 
   function hitTestTraj(canvas, evt) {
@@ -2367,8 +2856,10 @@
       // an HTML table — there is nothing to rasterise there, and #tableToolbar offers the
       // export that does make sense in that view.
       document.getElementById("heatmapImgToolbar").style.display = isTable ? "none" : "flex";
+      // The marginal profile chart rides with the table — same view, own PNG export.
+      document.getElementById("marginalWrap").style.display = isTable ? "block" : "none";
       renderStatsStrip();
-      if (isTable) renderTable(); else drawHeatmap();
+      if (isTable) { renderTable(); drawMarginal(); } else drawHeatmap();
       renderLegend();
     } else {
       renderTrajectories();

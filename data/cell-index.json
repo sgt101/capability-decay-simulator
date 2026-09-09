@@ -1697,7 +1697,7 @@
     ]
   },
   "STR": {
-    "totalCells": 2437,
+    "totalCells": 3009,
     "experiments": [
       {
         "n": 1,
@@ -1745,7 +1745,14 @@
           75,
           90,
           109,
-          132
+          132,
+          175,
+          225,
+          275,
+          325,
+          330,
+          375,
+          425
         ],
         "fixed": {
           "graphSource": "ba",
@@ -1840,7 +1847,7 @@
           "frontierBreadth": 1,
           "M": 40
         },
-        "startOffset": 400
+        "startOffset": 540
       },
       {
         "n": 3,
@@ -1889,7 +1896,14 @@
           75,
           90,
           109,
-          132
+          132,
+          175,
+          225,
+          275,
+          325,
+          330,
+          375,
+          425
         ],
         "fixed": {
           "graphSource": "ba",
@@ -1917,7 +1931,7 @@
           "frontierBreadth": 1,
           "graphAttachment": 2
         },
-        "startOffset": 620
+        "startOffset": 760
       },
       {
         "n": 4,
@@ -1985,7 +1999,7 @@
           "frontierBreadth": 1,
           "M": 40
         },
-        "startOffset": 1040
+        "startOffset": 1327
       },
       {
         "n": 5,
@@ -2034,7 +2048,14 @@
           75,
           90,
           109,
-          132
+          132,
+          175,
+          225,
+          275,
+          325,
+          330,
+          375,
+          425
         ],
         "fixed": {
           "graphSource": "ba",
@@ -2062,7 +2083,7 @@
           "frontierBreadth": 1,
           "graphAttachment": 2
         },
-        "startOffset": 1271
+        "startOffset": 1558
       },
       {
         "n": 6,
@@ -2130,7 +2151,7 @@
           "frontierBreadth": 1,
           "M": 40
         },
-        "startOffset": 1691
+        "startOffset": 2125
       },
       {
         "n": 7,
@@ -2170,7 +2191,13 @@
           75,
           90,
           109,
-          132
+          132,
+          175,
+          225,
+          275,
+          325,
+          375,
+          425
         ],
         "fixed": {
           "graphSource": "ba",
@@ -2198,7 +2225,7 @@
           "aiDampeningAbove": 1,
           "graphAttachment": 2
         },
-        "startOffset": 1922
+        "startOffset": 2356
       },
       {
         "n": 8,
@@ -2257,7 +2284,7 @@
           "aiDampeningAbove": 1,
           "M": 40
         },
-        "startOffset": 2162
+        "startOffset": 2668
       },
       {
         "n": 9,
@@ -2276,7 +2303,13 @@
           75,
           90,
           109,
-          132
+          132,
+          175,
+          225,
+          275,
+          325,
+          375,
+          425
         ],
         "yValues": [
           1,
@@ -2317,7 +2350,7 @@
           "aiDampeningAbove": 1,
           "frontierBreadth": 1
         },
-        "startOffset": 2294
+        "startOffset": 2800
       }
     ]
   },

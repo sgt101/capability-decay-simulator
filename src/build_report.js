@@ -226,17 +226,46 @@ const METRICS = METRIC_SETS[METRIC_SET];
 const NUMERIC_METRIC_KEYS = METRICS.map((m) => m.key);
 const METRIC_BY_KEY = new Map(METRICS.map((m) => [m.key, m]));
 
-function parseCSV(text) {
-  const lines = text.split("\n").filter((l) => l.length);
-  const cols = lines[0].split(",");
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(",");
+// Streams a results CSV one row object at a time instead of building the
+// whole-file string parseCSV used to. results_shortfall.csv for the larger
+// structure experiments runs past 650 MB, and fs.readFileSync(path, "utf8") on
+// those throws ERR_STRING_TOO_LONG — V8 caps a single string near 536M chars.
+// loadExperiment aggregates into fixed-size typed arrays and never needs two
+// rows at once, so the array of millions of 60-field row objects the old path
+// built was all transient cost. `onRow(row, i)` returning false ends the walk.
+//
+// Same permissive split(",") as before: these files are machine-written plain
+// numeric CSV — no quoted fields, no embedded newlines.
+function forEachCSVRow(file, onRow) {
+  const fd = fs.openSync(file, "r");
+  const buf = Buffer.allocUnsafe(1 << 20);
+  let leftover = Buffer.alloc(0);
+  let cols = null;
+  let i = 0;
+  let stopped = false;
+  const emit = (line) => {
+    if (!line.length) return;
+    if (cols === null) { cols = line.split(","); return; }
+    const parts = line.split(",");
     const row = {};
     for (let c = 0; c < cols.length; c++) row[cols[c]] = parts[c];
-    rows.push(row);
+    if (onRow(row, i++) === false) stopped = true;
+  };
+  try {
+    let n;
+    while (!stopped && (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      const data = leftover.length ? Buffer.concat([leftover, buf.subarray(0, n)]) : buf.subarray(0, n);
+      let from = 0, nl;
+      while (!stopped && (nl = data.indexOf(0x0a, from)) !== -1) {
+        emit(data.toString("utf8", from, nl));
+        from = nl + 1;
+      }
+      leftover = from < data.length ? Buffer.from(data.subarray(from)) : Buffer.alloc(0);
+    }
+    if (!stopped && leftover.length) emit(leftover.toString("utf8"));
+  } finally {
+    fs.closeSync(fd);
   }
-  return rows;
 }
 
 function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
@@ -328,26 +357,45 @@ function loadExperiment(entry) {
     console.error(`[build_report] skip ${STEM}.${entry.n}: ${file} not found (run the matching runner for ${entry.n} first)`);
     return null;
   }
-  const rows = parseCSV(fs.readFileSync(file, "utf8"));
   const xKey = entry.x, yKey = entry.y;
+
+  // PASS 1 over the CSV (streamed — see forEachCSVRow): the row count, the first
+  // row, the distinct axis and tick values, and the per-cell replicate tally.
+  // Enough to run every manifest/results consistency guard below and to lay out
+  // the grid, without ever holding the rows. PASS 2, further down, does the
+  // accumulation once the grid dimensions are known.
+  let rowCount = 0;
+  let firstRow = null;
+  const xRaw = new Set(), yRaw = new Set();            // distinct() compared raw strings
+  const xNums = new Set(), yNums = new Set(), tNums = new Set();
+  const perCell = manifest.replicates != null ? new Map() : null;
+  forEachCSVRow(file, (row) => {
+    if (firstRow === null) firstRow = row;
+    rowCount++;
+    xRaw.add(row[xKey]); yRaw.add(row[yKey]);
+    xNums.add(num(row[xKey])); yNums.add(num(row[yKey])); tNums.add(num(row.t));
+    if (perCell) {
+      const k = row[xKey] + "|" + row[yKey] + "|" + row.t;
+      perCell.set(k, (perCell.get(k) || 0) + 1);
+    }
+  });
 
   // The manifest claims these two columns are swept. If the results disagree,
   // the manifest describes a different experiment set than the one that was
   // run — averaging over the axes that ARE swept would produce a plausible
   // looking but meaningless single cell. Refuse.
-  if (!rows.length || !(xKey in rows[0]) || !(yKey in rows[0])) {
+  if (!rowCount || !(xKey in firstRow) || !(yKey in firstRow)) {
     degenerate.push({ n: entry.n, xKey, yKey, why: "axis column absent from CSV" });
     return null;
   }
-  const distinct = (k) => new Set(rows.map((r) => r[k])).size;
-  const nx = distinct(xKey), ny = distinct(yKey);
+  const nx = xRaw.size, ny = yRaw.size;
   if (nx < 2 || ny < 2) {
     degenerate.push({ n: entry.n, xKey, yKey, nx, ny, why: "axis is constant in the results" });
     return null;
   }
 
-  const xValues = [...new Set(rows.map((r) => num(r[xKey])))].sort((a, b) => a - b);
-  const yValues = [...new Set(rows.map((r) => num(r[yKey])))].sort((a, b) => a - b);
+  const xValues = [...xNums].sort((a, b) => a - b);
+  const yValues = [...yNums].sort((a, b) => a - b);
 
   // Where the manifest records the axis VALUES it expected — not merely the axis names —
   // check the CSV actually contains them. The degenerate-axis guard above only catches
@@ -373,14 +421,14 @@ function loadExperiment(entry) {
   // Compared over the INTERSECTION of what the manifest fixed and what the CSV records,
   // skipping the swept axes (fixed carries a per-experiment default for those) and
   // anything non-scalar (a loaded world model is not a CSV column).
-  if (manifest.baseFixed && rows.length) {
+  if (manifest.baseFixed && rowCount) {
     const drifted = [];
     Object.keys(manifest.baseFixed).forEach((k) => {
       if (k === xKey || k === yKey) return;
       const want = manifest.baseFixed[k];
       if (want === null || typeof want === "object") return;
-      if (!(k in rows[0])) return;                      // not recorded, nothing to compare
-      const got = rows[0][k];
+      if (!(k in firstRow)) return;                     // not recorded, nothing to compare
+      const got = firstRow[k];
       const same = typeof want === "number"
         ? Math.abs(num(got) - want) < 1e-9
         : String(want) === String(got);
@@ -397,13 +445,9 @@ function loadExperiment(entry) {
   // leaves the axes untouched, so the check above sees nothing wrong — and the page then
   // states a replicate count in its header that the data does not have, which is exactly
   // the sort of quiet mismatch this whole section exists to refuse. Counted from the
-  // rows rather than trusted: it is the number of runs that actually landed in a cell.
+  // rows rather than trusted: it is the number of runs that actually landed in a cell
+  // (perCell was tallied in pass 1).
   if (manifest.replicates != null) {
-    const perCell = new Map();
-    for (const row of rows) {
-      const k = row[xKey] + "|" + row[yKey] + "|" + row.t;
-      perCell.set(k, (perCell.get(k) || 0) + 1);
-    }
     const counts = [...new Set(perCell.values())];
     if (counts.length === 1 && counts[0] !== manifest.replicates) {
       degenerate.push({ n: entry.n, xKey, yKey,
@@ -411,7 +455,7 @@ function loadExperiment(entry) {
       return null;
     }
   }
-  const ticks = [...new Set(rows.map((r) => num(r.t)))].sort((a, b) => a - b);
+  const ticks = [...tNums].sort((a, b) => a - b);
   const NY = yValues.length, NT = ticks.length;
   const size = xValues.length * NY * NT;
 
@@ -433,12 +477,19 @@ function loadExperiment(entry) {
   // that would tell them apart is destroyed by the averaging two blocks down. One extra
   // Float64Array per metric buys the per-cell variance, and from it the panel-level
   // noise floor computed in gridStats(). Kept as a running sum rather than a second
-  // pass over `rows` — these CSVs run to millions of rows.
+  // pass over the rows — these CSVs run to millions of rows.
   const sqs = {};
   NUMERIC_METRIC_KEYS.forEach((k) => { sqs[k] = new Float64Array(size); });
 
-  // Accumulate in place — this collapses the replicate dimension via averaging.
-  for (const row of rows) {
+  // N and M are backfilled into `fixed` below from a value every row agrees on.
+  // Whether each stays constant is tracked here, in the accumulation pass, rather
+  // than in a third walk over the file. Seeded from the first row; compared
+  // numerically, as the old row-array scan did.
+  const constNM = {};
+  ["N", "M"].forEach((k) => { const v = num(firstRow[k]); constNM[k] = { v, ok: v != null }; });
+
+  // PASS 2: accumulate in place — this collapses the replicate dimension via averaging.
+  forEachCSVRow(file, (row) => {
     SIGN_CHECK_KEYS.forEach((k) => checkChangeSign(k, row));
     const p = (xi.get(num(row[xKey])) * NY + yi.get(num(row[yKey]))) * NT + ti.get(num(row.t));
     counts[p]++;
@@ -450,7 +501,9 @@ function loadExperiment(entry) {
       sqs[k][p] += v * v;
       seen[k][p]++;
     }
-  }
+    if (constNM.N.ok && num(row.N) !== constNM.N.v) constNM.N.ok = false;
+    if (constNM.M.ok && num(row.M) !== constNM.M.v) constNM.M.ok = false;
+  });
 
   // 5 decimals: 1e-5 resolution on metrics that all live in [-1, 1], which is
   // orders of magnitude finer than the replicate noise at 3 replicates, and
@@ -498,14 +551,13 @@ function loadExperiment(entry) {
   // because batch_run writes full param provenance, so the value is right there.
   //
   // Only fills what is missing, and only from a value every row agrees on: a parameter
-  // that varies across rows is not a fixed parameter and must not be shown as one.
-  if (rows.length) {
+  // that varies across rows is not a fixed parameter and must not be shown as one
+  // (constNM tracked that across pass 2).
+  if (rowCount) {
     ["N", "M"].forEach((k) => {
       if (fixed[k] != null) return;
-      const v = num(rows[0][k]);
-      if (v == null) return;
-      for (const r of rows) if (num(r[k]) !== v) return;
-      fixed[k] = v;
+      if (!constNM[k].ok) return;
+      fixed[k] = constNM[k].v;
     });
   }
 
@@ -514,6 +566,11 @@ function loadExperiment(entry) {
     // Names the SCENARIO where a set's experiments all share one axis pair. Optional:
     // the sweep sets do not set it and the list falls back to the axis names.
     label: entry.label,
+    // The M value carrying the real institution graph rather than a BA one, on the
+    // structure set's AI-param x M pairs (see generate_structure_experiments.js). The
+    // report pulls this row out of the marginal chart's summary and draws it as its own
+    // line; undefined everywhere else, so that treatment is specific to this set.
+    worldModelRowM: entry.worldModelRowM,
     m, stats, reps: uniform, repsPerCell: uniform === null ? Array.from(counts) : undefined,
   };
 }
