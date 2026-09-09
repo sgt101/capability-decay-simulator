@@ -52,7 +52,11 @@ class FakeElement {
   get value() { return this._value; } set value(v) { this._value = String(v); }
   get max() { return this._max; } set max(v) { this._max = String(v); }
   get textContent() { return this._text; } set textContent(v) { this._text = String(v); }
-  get innerHTML() { return this._html; } set innerHTML(v) { this._html = v; }
+  get innerHTML() { return this._html; }
+  // Assigning innerHTML replaces the element's contents — including its child elements.
+  // buildExpList() does `ul.innerHTML = ""` then re-appends, so without this the stub's
+  // children array grows without bound across re-renders and any count assertion drifts.
+  set innerHTML(v) { this._html = v; this.children = []; }
   addEventListener(t, f) { this._listeners.add(t, f); }
   dispatch(t, e) { this._listeners.fire(t, e || { target: this }); }
   appendChild(c) { this.children.push(c); return c; }
@@ -92,9 +96,9 @@ const pageHTML = fs.readFileSync(process.argv[2], "utf8");
 // The same list, demoted to an ASSERTION: these are the ids the driver reaches for by
 // name, so a page that stops declaring one should fail here rather than 900 lines later.
 const staticIds = [
-  "metaLine", "metricSelect", "metricHelpBtn", "metricHelp", "tickLabel", "tickRange", "tickField",
-  "tabHeatmap", "tabTable", "tabTrajectories", "axesFlipBtn",
-  "expList", "fixedPanel",
+  "metaLine", "metricSelect", "metricField", "metricHelpBtn", "metricHelp", "tickLabel", "tickRange", "tickField",
+  "tabHeatmap", "tabTable", "tabTrajectories", "viewTabs", "axesFlipBtn",
+  "expList", "fixedPanel", "heldFixedSection",
   "heatmapPanel", "heatmapTitle", "heatmapSub", "heatmapWrap", "heatmapCanvas", "tableWrap",
   "marginalWrap", "marginalHead", "marginalCanvas", "figCopyMarginal", "figSaveMarginal",
   "legendMin", "legendMax", "legendRamp", "legendZero", "heatmapCaption",
@@ -102,6 +106,8 @@ const staticIds = [
   "trajFixAxisSelect", "trajValueASelect", "trajValueBSelect",
   "trajHeadA", "trajHeadB", "trajWrapA", "trajWrapB", "trajCanvasA", "trajCanvasB",
   "trajLegendMin", "trajLegendMax", "trajLegendRamp", "trajLegendLabel", "trajCaption",
+  "wmForestPanel", "wmForestTitle", "wmForestSub", "wmForestWrap", "wmForestCanvas",
+  "figCopyWmForest", "figSaveWmForest",
 ];
 const missingIds = staticIds.filter((id) => !registry.has(id));
 if (missingIds.length) throw new Error("the page no longer declares these ids: " + missingIds.join(", "));
@@ -164,7 +170,11 @@ console.log("domains:", JSON.stringify(DATA.domains[app.metricKey]));
 const SWITCH_TO = Math.min(5, NEXP - 1);
 console.log("--- switching to experiment index " + SWITCH_TO + " (via click) ---");
 const expList = document.getElementById("expList");
-if (expList.children.length !== NEXP) throw new Error("expected " + NEXP + " rendered experiment list items, got " + expList.children.length);
+// The structure report appends one extra, non-numbered item for the set-level M*
+// analysis; every other report lists exactly its experiments.
+const HAS_WM_FOREST = (DATA.experiments || []).some((e) => (e.wmForest || []).length);
+const wantExpItems = NEXP + (HAS_WM_FOREST ? 1 : 0);
+if (expList.children.length !== wantExpItems) throw new Error("expected " + wantExpItems + " sidebar items, got " + expList.children.length);
 expList.children[SWITCH_TO].dispatch("click");
 if (app.expIndex !== SWITCH_TO) throw new Error("experiment click did not switch app.expIndex");
 console.log("OK: switched to", currentExperiment().xKey, "x", currentExperiment().yKey);
@@ -730,6 +740,58 @@ metricSelect2.value = DATA.metrics[2].key;
 metricSelect2.dispatch("change", { target: metricSelect2 });
 console.log("OK: metric switched to", app.metricKey, "in trajectories view without throwing");
 
+// --- M* analysis (structure report only) ---------------------------------------
+// build_report.js only emits exp.wmForest for structure experiments that carry a
+// world-model row. When present, the sidebar gains ONE extra item below the numbered
+// experiments (not a view tab) that switches into a cross-experiment forest; every
+// other report lists only its experiments and this whole feature is absent.
+console.log("--- M* analysis (sidebar item) ---");
+{
+  if (!HAS_WM_FOREST) {
+    if (expList.children.length !== NEXP) throw new Error("no wmForest payload but the sidebar has an extra item");
+    console.log("OK: no wmForest payload — no M* analysis item in the sidebar");
+  } else {
+    const auxIdx = expList.children.length - 1; // appended last
+    const aux = expList.children[auxIdx];
+    if (auxIdx !== NEXP) throw new Error("M* analysis item is not last in the sidebar (at " + auxIdx + ", expected " + NEXP + ")");
+    // Land on a real experiment first so we can prove the switch.
+    app.wmForestSelected = false;
+    app.expIndex = 0;
+    onExperimentChange();
+    aux.dispatch("click");
+    if (!app.wmForestSelected) throw new Error("clicking the M* analysis item did not set app.wmForestSelected");
+    if (document.getElementById("wmForestPanel").style.display !== "block") throw new Error("M* analysis panel not shown");
+    if (document.getElementById("heatmapPanel").style.display !== "none") throw new Error("heatmap panel still shown in M* analysis");
+    if (document.getElementById("trajectoryPanel").style.display !== "none") throw new Error("trajectory panel still shown in M* analysis");
+    // The per-experiment chrome is hidden.
+    for (const id of ["viewTabs", "tickField", "axesFlipBtn", "metricField", "heldFixedSection"]) {
+      if (document.getElementById(id).style.display !== "none") throw new Error(id + " should be hidden in the M* analysis");
+    }
+    const wc = document.getElementById("wmForestCanvas");
+    if (!wc.width) throw new Error("M* forest canvas was never sized — drawWmForest not called?");
+    if (wc._noHit !== true) throw new Error("drawWmForest did not mark its canvas non-interactive");
+    const spec = figureSpec("wmforest");
+    if (spec.file !== DATA.stem + "-Mstar-analysis.png") throw new Error("M* analysis export filename is wrong: " + spec.file);
+    if (!spec.canvas || spec.canvas !== wc) throw new Error("wmforest figureSpec points at the wrong canvas");
+    // Both PNG buttons must survive a click (file:// => Copy degrades to a message).
+    document.getElementById("figSaveWmForest").dispatch("click");
+    document.getElementById("figCopyWmForest").dispatch("click");
+    // A view tab click leaves the M* analysis and restores the chrome.
+    document.getElementById("tabHeatmap").dispatch("click");
+    if (app.wmForestSelected) throw new Error("a view-tab click did not leave the M* analysis");
+    if (document.getElementById("wmForestPanel").style.display !== "none") throw new Error("M* analysis panel stayed visible after leaving it");
+    if (document.getElementById("viewTabs").style.display === "none") throw new Error("view tabs stayed hidden after leaving the M* analysis");
+    if (document.getElementById("tickField").style.display !== "flex") throw new Error("tick field not restored after leaving the M* analysis");
+    // Re-enter, then leave by clicking a numbered experiment instead.
+    expList.children[auxIdx].dispatch("click");
+    if (!app.wmForestSelected) throw new Error("could not re-enter the M* analysis");
+    expList.children[1].dispatch("click");
+    if (app.wmForestSelected) throw new Error("clicking a numbered experiment did not leave the M* analysis");
+    if (document.getElementById("heldFixedSection").style.display === "none") throw new Error("held-fixed section not restored after leaving the M* analysis");
+    console.log("OK: M* analysis — sidebar item toggles the panel, chrome hides/restores, forest drawn, PNG export fires (" + spec.file + ")");
+  }
+}
+
 console.log("--- back to heatmap view ---");
 document.getElementById("tabHeatmap").dispatch("click");
 if (app.viewMode !== "heatmap") throw new Error("tab click did not switch back to heatmap");
@@ -802,8 +864,20 @@ setImmediate(() => {
     process.exitCode = 1;
     return;
   }
-  const f = downloads[downloads.length - 1];
-  if (!/\.png$/.test(f)) throw new Error("exported figure is not named as a .png: " + f);
+  // The heatmap/marginal/panel exports carry set+experiment+metric+tick provenance. The
+  // M* analysis figure is a cross-experiment summary, deliberately named
+  // "<set>-Mstar-analysis.png" with no tick — exclude it from the provenance check and
+  // assert its own shape separately.
+  if (downloads.some((f) => /-Mstar-analysis\.png$/.test(f))) {
+    console.log("OK: M* analysis PNG exported —", downloads.find((f) => /-Mstar-analysis\.png$/.test(f)));
+  }
+  const provenanced = downloads.filter((f) => /\.png$/.test(f) && !/-Mstar-analysis\.png$/.test(f));
+  if (!provenanced.length) {
+    console.error("FAIL: no provenance-named PNG export was produced");
+    process.exitCode = 1;
+    return;
+  }
+  const f = provenanced[provenanced.length - 1];
   // tick, then an optional figure discriminator (-marginal, -panelA, …).
   if (!/-t\d+(-[A-Za-z]+)?\.png$/.test(f)) throw new Error("exported filename carries no tick: " + f);
   if (!/exp\d+/.test(f)) throw new Error("exported filename carries no experiment number: " + f);
@@ -865,5 +939,20 @@ if (latexProbe.tex) {
     process.exitCode = 1;
   } else {
     console.log("OK: report.template.html carries no rho-specific rendering");
+  }
+}
+
+// The M* analysis panel ships the method write-up (the "D" section) as static markup —
+// the stub does not populate innerHTML from the source, so it is checked against the
+// built page text directly. Only reports that actually carry the panel are checked.
+if (pageHTML.includes('id="wmForestCanvas"')) {
+  const method = ["Definition.", "Model &amp; priors.", "Posterior.", "Signal gate.", "Caveats.",
+    "isotonic regression", "flat prior", "credible interval"];
+  const gone = method.filter((s) => !pageHTML.includes(s));
+  if (gone.length) {
+    console.error("\nM* analysis panel is missing method prose:", gone.join(" | "));
+    process.exitCode = 1;
+  } else {
+    console.log("OK: M* analysis panel carries the full method write-up");
   }
 }

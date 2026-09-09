@@ -351,6 +351,111 @@ function round(v) {
   return Math.abs(v) >= 100 ? Math.round(v * 1e3) / 1e3 : Math.round(v * 1e5) / 1e5;
 }
 
+// --- world-model M* forest (structure set only) --------------------------------------
+// For a structure experiment whose y axis is M and which carries a world-model row,
+// estimate the BA-equivalent institution count M* per metric: the M at which the
+// (isotonic, flat-prior) BA response curve equals the world model's value, pooled over
+// the x-values that carry a real M-gradient. Monte Carlo over the 32-replicate sampling
+// error. Seeded, so the build stays byte-deterministic. Drawn by report.template.html's
+// drawWmForest(); the method note there is the companion prose.
+const WM_FOREST_DRAWS = 8000;
+function _mulb32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function _gauss(rng) {
+  let u = 0, v = 0;
+  while (!u) u = rng();
+  while (!v) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+// Pool-adjacent-violators: nearest monotone (dir +1 increasing / -1 decreasing) fit.
+function _pava(y, dir) {
+  const z = dir > 0 ? y.slice() : y.map((v) => -v);
+  const val = [], w = [];
+  for (let i = 0; i < z.length; i++) {
+    let v = z[i], ww = 1;
+    while (val.length && val[val.length - 1] > v) { const pv = val.pop(), pw = w.pop(); v = (v * ww + pv * pw) / (ww + pw); ww += pw; }
+    val.push(v); w.push(ww);
+  }
+  const o = [];
+  for (let i = 0; i < val.length; i++) for (let j = 0; j < w[i]; j++) o.push(val[i]);
+  return dir > 0 ? o : o.map((v) => -v);
+}
+function _invInterp(xs, fx, target) {
+  for (let i = 0; i < xs.length - 1; i++) {
+    const a = fx[i], b = fx[i + 1];
+    if ((target - a) * (target - b) <= 0 && a !== b) return xs[i] + (xs[i + 1] - xs[i]) * (target - a) / (b - a);
+  }
+  return null;
+}
+function _quant(sorted, p) {
+  const i = (sorted.length - 1) * p, lo = i | 0, hi = Math.ceil(i);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+}
+function computeWmForest(sums, sqs, seen, xValues, yValues, NT, wmM) {
+  const NY = yValues.length, ti = NT - 1;
+  const wmYi = yValues.indexOf(wmM);
+  const tailYi = [];
+  yValues.forEach((v, yi) => { if (v >= 132 && v !== wmM) tailYi.push(yi); });
+  if (wmYi < 0 || tailYi.length < 5) return [];
+  const cellIdx = (xi, yi) => (xi * NY + yi) * NT + ti;
+  const cellMean = (k, p) => (seen[k][p] ? sums[k][p] / seen[k][p] : null);
+  const cellSE = (k, p) => {
+    const n = seen[k][p];
+    if (!(n > 1)) return null;
+    const varr = Math.max(0, (sqs[k][p] - (sums[k][p] * sums[k][p]) / n) / (n - 1));
+    return Math.sqrt(varr / n);
+  };
+  const rng = _mulb32(0x5EEDBEEF);
+  const out = [];
+  for (const k of NUMERIC_METRIC_KEYS) {
+    let lo = Infinity, hi = -Infinity;
+    for (let xi = 0; xi < xValues.length; xi++) for (let yi = 0; yi < NY; yi++) {
+      const v = cellMean(k, cellIdx(xi, yi));
+      if (v == null || !Number.isFinite(v)) continue;
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    const expRange = hi - lo;
+    if (!(expRange > 1e-6)) { out.push({ metricKey: k, E: null, nUsed: 0, nTot: xValues.length }); continue; }
+    const pooled = [];
+    let nUsed = 0;
+    for (let xi = 0; xi < xValues.length; xi++) {
+      const ba = tailYi.map((yi) => ({ M: yValues[yi], mean: cellMean(k, cellIdx(xi, yi)), se: cellSE(k, cellIdx(xi, yi)) }))
+        .filter((p) => p.mean != null && Number.isFinite(p.mean) && p.se != null);
+      if (ba.length < 5) continue;
+      const wmMean = cellMean(k, cellIdx(xi, wmYi)), wmSE = cellSE(k, cellIdx(xi, wmYi));
+      if (wmMean == null || wmSE == null) continue;
+      const xs = ba.map((p) => p.M);
+      const dir = Math.sign(ba[ba.length - 1].mean - ba[0].mean) || 1;
+      const spread = Math.abs(ba[ba.length - 1].mean - ba[0].mean);
+      const noise = Math.sqrt(ba.reduce((s, p) => s + p.se * p.se, 0) / ba.length);
+      if (!(spread > 3 * noise * Math.SQRT2 && spread > 0.03 * expRange)) continue;
+      nUsed++;
+      for (let r = 0; r < WM_FOREST_DRAWS; r++) {
+        const draw = ba.map((p) => p.mean + p.se * _gauss(rng));
+        const fit = _pava(draw, dir);
+        const wd = wmMean + wmSE * _gauss(rng);
+        const ms = _invInterp(xs, fit, wd);
+        pooled.push(ms == null ? (wd * dir < fit[0] * dir ? xs[0] : xs[xs.length - 1]) : ms);
+      }
+    }
+    if (!pooled.length) { out.push({ metricKey: k, E: null, nUsed: 0, nTot: xValues.length }); continue; }
+    pooled.sort((a, b) => a - b);
+    const mn = pooled.reduce((s, v) => s + v, 0) / pooled.length;
+    out.push({
+      metricKey: k, E: round(mn), lo: round(_quant(pooled, 0.025)),
+      md: round(_quant(pooled, 0.5)), hi: round(_quant(pooled, 0.975)),
+      nUsed, nTot: xValues.length,
+    });
+  }
+  return out;
+}
+
 function loadExperiment(entry) {
   const file = path.resolve(paths.RESULTS, RESULTS_DIR, `${STEM}.${entry.n}`, "results_shortfall.csv");
   if (!fs.existsSync(file)) {
@@ -571,6 +676,12 @@ function loadExperiment(entry) {
     // report pulls this row out of the marginal chart's summary and draws it as its own
     // line; undefined everywhere else, so that treatment is specific to this set.
     worldModelRowM: entry.worldModelRowM,
+    // Per-metric posterior for M* — the BA institution count the world-model row behaves
+    // like. Present only when this experiment carries a world-model row; the "M* analysis"
+    // tab collects these across the set. See computeWmForest above.
+    wmForest: entry.worldModelRowM != null
+      ? computeWmForest(sums, sqs, seen, xValues, yValues, NT, entry.worldModelRowM)
+      : undefined,
     m, stats, reps: uniform, repsPerCell: uniform === null ? Array.from(counts) : undefined,
   };
 }
