@@ -359,6 +359,11 @@ function round(v) {
 // error. Seeded, so the build stays byte-deterministic. Drawn by report.template.html's
 // drawWmForest(); the method note there is the companion prose.
 const WM_FOREST_DRAWS = 8000;
+// Scoped to the capability metrics: the figure exists to say how the real graph's
+// topology reshapes CAPABILITY relative to a BA graph of the same size. The expertise
+// metrics (meanE_change, shareExpert_change) have their own M* but are not what this
+// figure is about, so they are left off rather than added as noise.
+const WM_FOREST_METRIC_KEYS = ["capabilityChangeFrac", "systemCapability_change", "aiLeverage"];
 function _mulb32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -413,7 +418,7 @@ function computeWmForest(sums, sqs, seen, xValues, yValues, NT, wmM) {
   };
   const rng = _mulb32(0x5EEDBEEF);
   const out = [];
-  for (const k of NUMERIC_METRIC_KEYS) {
+  for (const k of WM_FOREST_METRIC_KEYS) {
     let lo = Infinity, hi = -Infinity;
     for (let xi = 0; xi < xValues.length; xi++) for (let yi = 0; yi < NY; yi++) {
       const v = cellMean(k, cellIdx(xi, yi));

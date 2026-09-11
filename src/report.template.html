@@ -685,8 +685,11 @@
     display: block;
     cursor: crosshair;
   }
-  #wmForestWrap { position: relative; overflow-x: auto; }
-  #wmForestWrap canvas { width: 100%; min-width: 640px; height: 430px; display: block; cursor: default; }
+  /* Portrait, page-proportioned: capped near a print column width so the figure sits at
+     roughly three-quarters of an A4 page when placed, with the text drawn large enough
+     to stay legible at that size. */
+  #wmForestWrap { position: relative; overflow-x: auto; max-width: 620px; }
+  #wmForestWrap canvas { width: 100%; min-width: 440px; height: 620px; display: block; cursor: default; }
   .wmforest-method {
     margin-top: 1rem;
     padding-top: 0.9rem;
@@ -965,7 +968,7 @@
           <p><b>Definition.</b> Let <code>f(M ; x)</code> be the expected metric on a Barab&aacute;si&ndash;Albert graph of <code>M</code> institutions at AI&#8209;parameter <code>x</code> (<code>N</code> fixed at 11,322), and <code>&mu;<sub>WM</sub>(x)</code> the same expectation on the real institution graph. The BA&#8209;equivalent size <code>M*</code> solves <code>f(M* ; x) = &mu;<sub>WM</sub>(x)</code>.</p>
           <p><b>Model &amp; priors.</b> Each cell mean over 32 replicates has a <code>Normal(&#7823;, s&sup2;)</code> posterior with <code>s = sd/&radic;32</code> (flat prior, 32 df &mdash; the <code>t</code>&#8202;/&#8202;&chi;&sup2; correction is negligible). A flat prior on the shape of <code>f</code> beyond <b>monotonicity in M</b> &mdash; justified mechanically (more institutions &rarr; smaller peer pools) and borne out by the point estimates &mdash; enforced by isotonic regression. A flat prior on <code>M*</code> over the sampled range [132, 425].</p>
           <p><b>Posterior.</b> 8,000 Monte&#8209;Carlo draws: sample the BA tail means and <code>&mu;<sub>WM</sub></code> from their Normal posteriors, isotonic&#8209;fit <code>f</code>, solve <code>f(M*) = &mu;&#771;<sub>WM</sub></code> by linear interpolation. Those draws <em>are</em> <code>p(M* | data)</code>. The dot is <code>E[M*]</code>, the whisker its 95&#8202;% central credible interval, the open tick the median.</p>
-          <p><b>Signal gate.</b> An <code>x</code>&#8209;value enters the pool only if the BA curve's spread across <code>M</code> clears both replicate noise (signal&#8202;/&#8202;noise &gt; 3) and 3&#8202;% of the metric's dynamic range in this experiment. The <code>n/N&nbsp;cols</code> figure beside each row is how many <code>x</code>&#8209;values passed; a metric where none do shows &ldquo;no M&#8209;gradient&rdquo;.</p>
+          <p><b>Signal gate.</b> An <code>x</code>&#8209;value enters the pool only if the BA curve's spread across <code>M</code> clears both replicate noise (signal&#8202;/&#8202;noise &gt; 3) and 3&#8202;% of the metric's dynamic range in this experiment. A row for which no <code>x</code>&#8209;value qualifies is drawn as &ldquo;no M&#8209;gradient&rdquo;.</p>
           <p><b>Caveats.</b> One graph realisation, one calibration (topology swap only &mdash; <code>graphSource</code> and <code>institutionSizing</code> changed, nothing else), the final recorded tick. This compares <em>this</em> world&#8209;model graph against <em>BA</em> specifically; it is not a statement about real graphs in general. Wide intervals reflect that only a handful of <code>x</code>&#8209;columns carry a steep enough M&#8209;gradient to pin <code>M*</code> tightly.</p>
         </div>
       </section>
@@ -1497,9 +1500,11 @@
     // it would ever have shown up.
     const t = exp.ticks[Math.min(Math.max(app.tickIndex, 0), exp.ticks.length - 1)];
     const stem = (DATA.stem || "report") + "-exp" + exp.n;
+    // No build timestamp: a figure gets pasted into a document and re-exported as the
+    // underlying data changes, and a stale "generated" date on it is worse than none.
     const foot = DATA.stem + " · experiment " + exp.n + " · "
       + pretty(axisKey(exp, "x")) + " × " + pretty(axisKey(exp, "y"))
-      + " · t=" + t + " · " + DATA.replicates + " replicates · generated " + DATA.generatedAt;
+      + " · t=" + t + " · " + DATA.replicates + " replicates";
     if (kind === "heatmap") {
       const domain = DATA.domains[app.metricKey];
       return {
@@ -1532,8 +1537,7 @@
         canvas: document.getElementById("wmForestCanvas"),
         title: "M* — effective institution count of the world-model row",
         subtitle: "BA-equivalent institution count per metric · pooled over the AI axis · nominal M = " + WM_NOMINAL_M,
-        foot: DATA.stem + " · M* analysis · " + DATA.replicates
-          + " replicates · 8000 posterior draws · generated " + DATA.generatedAt,
+        foot: DATA.stem + " · M* analysis · " + DATA.replicates + " replicates · 8000 posterior draws",
         legend: null,
         file: DATA.stem + "-Mstar-analysis.png",
       };
@@ -2369,7 +2373,11 @@
   // build_report.js ships a per-metric posterior for M* — the Barabási–Albert institution
   // count the world-model row behaves like — on every structure experiment that carries a
   // world-model row. This draws them as one forest, styled to match the trajectory panels.
-  const WM_METRIC_ORDER = ["capabilityChangeFrac", "systemCapability_change", "aiLeverage", "meanE_change", "shareExpert_change"];
+  // Scoped to the capability metrics: the figure is about how the real graph's topology
+  // reshapes capability against a same-size BA graph. build_report.js already limits the
+  // payload to these; the hide set is a belt-and-braces guard for an older build.
+  const WM_METRIC_ORDER = ["capabilityChangeFrac", "systemCapability_change", "aiLeverage"];
+  const WM_METRIC_HIDE = new Set(["meanE_change", "shareExpert_change"]);
   function wmMetricLabel(k) { const m = DATA.metrics.find((x) => x.key === k); return m ? m.label : k; }
 
   const WM_NOMINAL_M = 330; // real institution graph size — the BA null this compares against
@@ -2378,8 +2386,9 @@
     const canvas = document.getElementById("wmForestCanvas");
     if (!canvas || !WM_FOREST.length) return;
 
-    // One group per metric, fixed order, experiments ascending within. Any metric key the
-    // payload carries that is not in the canonical order still gets a group, appended.
+    // One group per capability metric, fixed order, experiments ascending within. A metric
+    // key in the payload that is neither ordered nor explicitly hidden still gets a group,
+    // appended — so a future metric is not silently dropped.
     const groups = [];
     WM_METRIC_ORDER.forEach((mk) => {
       const rows = WM_FOREST.filter((r) => r.metricKey === mk).sort((a, b) => a.exp - b.exp);
@@ -2387,17 +2396,19 @@
     });
     const seenMk = new Set(WM_METRIC_ORDER);
     WM_FOREST.forEach((r) => {
-      if (seenMk.has(r.metricKey)) return;
+      if (seenMk.has(r.metricKey) || WM_METRIC_HIDE.has(r.metricKey)) return;
       seenMk.add(r.metricKey);
       groups.push({ mk: r.metricKey, rows: WM_FOREST.filter((x) => x.metricKey === r.metricKey).sort((a, b) => a.exp - b.exp) });
     });
 
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    // The wrap scrolls (overflow-x: auto) and the canvas has a min-width, so on a narrow
-    // viewport this floors at the min rather than crushing the plot to nothing.
-    const w = Math.max(rect.width || 720, 640);
-    const padL = 120, padR = 158, padT = 42, padB = 46, rowH = 28, headH = 22, gGap = 10;
+    // The wrap is capped near a print-column width (max-width: 620px) and scrolls below
+    // its min; this floors the drawing width so the plot never crushes.
+    const w = Math.max(rect.width || 600, 440);
+    // Generous rows and padding: the figure is meant to sit at ~3/4 of an A4 page, so the
+    // marks and text want room rather than density. padR only has to clear the last tick.
+    const padL = 128, padR = 34, padT = 52, padB = 60, rowH = 50, headH = 32, gGap = 14;
     const nRows = groups.reduce((s, g) => s + g.rows.length, 0);
     const H = padT + groups.length * (headH + gGap) + nRows * rowH + padB;
     canvas.style.height = H + "px";
@@ -2407,53 +2418,59 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, H);
 
-    const monoF = "10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
-    const sansF = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    // Deliberately larger than the trajectory panels' 10px — this figure is read at a
+    // reduced size on the page, so the type has to carry.
+    const labelF = "13px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const subF = "11px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const tickF = "12px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+    const headF = "600 13px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    const axisTitleF = "13px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    const noteF = "11px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
     const md0 = 110, md1 = 440; // BA sizes run 132–425; a little air on each side
     const plotW = w - padL - padR;
-    const gridTop = padT - 10, gridBot = H - padB;
+    const gridTop = padT - 12, gridBot = H - padB;
     const X = (m) => padL + plotW * (Math.max(md0, Math.min(md1, m)) - md0) / (md1 - md0);
 
     // Buffered-zone wash: everything left of the nominal size, where the real graph is
     // behaving like a smaller BA field. A background tint, not a data mark — kept faint.
     ctx.fillStyle = cssVar("--wm-line");
-    ctx.globalAlpha = 0.08;
+    ctx.globalAlpha = 0.09;
     ctx.fillRect(X(md0), gridTop, X(WM_NOMINAL_M) - X(md0), gridBot - gridTop);
     ctx.globalAlpha = 1;
 
-    // M gridlines + bottom scale, same weight/colour as the trajectory panels.
-    ctx.font = monoF;
+    // M gridlines + bottom scale.
+    ctx.font = tickF;
     ctx.strokeStyle = cssVar("--rule");
     ctx.lineWidth = 1;
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
     [150, 200, 250, 300, 350, 400].forEach((m) => {
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.55;
       ctx.beginPath(); ctx.moveTo(X(m), gridTop); ctx.lineTo(X(m), gridBot); ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = cssVar("--ink-faint");
-      ctx.fillText(String(m), X(m), gridBot + 6);
+      ctx.fillText(String(m), X(m), gridBot + 8);
     });
-    ctx.font = sansF;
+    ctx.font = axisTitleF;
     ctx.fillStyle = cssVar("--ink-muted");
-    ctx.fillText("M*  ·  Barabási–Albert institution count", padL + plotW / 2, gridBot + 21);
+    ctx.fillText("M*  ·  Barabási–Albert institution count", padL + plotW / 2, gridBot + 27);
 
     // Nominal size — the BA graph of the real graph's own institution count. Dashed and
     // in the reference colour: it is the null, not a datum.
     ctx.save();
     ctx.strokeStyle = cssVar("--ref-line");
-    ctx.lineWidth = 1.75;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath(); ctx.moveTo(X(WM_NOMINAL_M), gridTop - 6); ctx.lineTo(X(WM_NOMINAL_M), gridBot); ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(X(WM_NOMINAL_M), gridTop - 8); ctx.lineTo(X(WM_NOMINAL_M), gridBot); ctx.stroke();
     ctx.restore();
-    ctx.font = "9px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.font = noteF;
     ctx.textBaseline = "bottom";
     ctx.fillStyle = cssVar("--ref-line");
     ctx.textAlign = "left";
-    ctx.fillText("nominal " + WM_NOMINAL_M + " — real graph size", X(WM_NOMINAL_M) + 6, padT - 8);
+    ctx.fillText("nominal M = " + WM_NOMINAL_M, X(WM_NOMINAL_M) + 7, padT - 12);
     ctx.fillStyle = cssVar("--ink-faint");
     ctx.textAlign = "right";
-    ctx.fillText("← behaves like a smaller BA graph", X(WM_NOMINAL_M) - 6, padT - 8);
+    ctx.fillText("← behaves like a smaller BA graph", X(WM_NOMINAL_M) - 7, padT - 12);
 
     // Rows, grouped by metric.
     let y = padT;
@@ -2462,8 +2479,8 @@
       // hairline under it separating this metric's rows from the group above.
       ctx.fillStyle = cssVar("--panel");
       ctx.fillRect(0, y, w, headH);
-      ctx.fillStyle = cssVar("--ink-faint");
-      ctx.font = "600 10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+      ctx.fillStyle = cssVar("--ink");
+      ctx.font = headF;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(wmMetricLabel(g.mk).toUpperCase(), 4, y + headH / 2 + 1);
@@ -2476,47 +2493,41 @@
 
       g.rows.forEach((r) => {
         const cy = y + rowH / 2;
+        // Row identity: the swept AI parameter reads first (that is what varies within a
+        // metric group), the experiment number is the caption beneath it.
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        ctx.font = monoF;
+        ctx.font = labelF;
         ctx.fillStyle = cssVar("--ink");
-        ctx.fillText("structure." + r.exp, 6, cy - 6);
+        ctx.fillText(sym(r.xKey) || pretty(r.xKey), 6, cy - 10);
+        ctx.font = subF;
         ctx.fillStyle = cssVar("--ink-faint");
-        ctx.fillText(sym(r.xKey) || pretty(r.xKey), 6, cy + 6);
+        ctx.fillText("structure." + r.exp, 6, cy + 10);
 
         if (r.E == null) {
+          ctx.font = subF;
           ctx.fillStyle = cssVar("--ink-faint");
-          ctx.fillText("no M-gradient — M* not identified", X(md0) + 6, cy);
+          ctx.fillText("no M-gradient — M* not identified", X(md0) + 8, cy);
           y += rowH;
           return;
         }
 
         // 95% CrI whisker with end caps, median tick, E dot with a surface ring — the
-        // same marker anatomy as a trajectory endpoint.
+        // same marker anatomy as a trajectory endpoint, scaled up for the page.
         ctx.strokeStyle = cssVar("--ink-muted");
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(X(r.lo), cy); ctx.lineTo(X(r.hi), cy); ctx.stroke();
-        ctx.lineWidth = 1;
-        [r.lo, r.hi].forEach((v) => { ctx.beginPath(); ctx.moveTo(X(v), cy - 3.5); ctx.lineTo(X(v), cy + 3.5); ctx.stroke(); });
-        ctx.strokeStyle = cssVar("--ink");
         ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(X(r.md), cy - 5.5); ctx.lineTo(X(r.md), cy + 5.5); ctx.stroke();
-        ctx.beginPath(); ctx.arc(X(r.E), cy, 4.5, 0, Math.PI * 2);
+        [r.lo, r.hi].forEach((v) => { ctx.beginPath(); ctx.moveTo(X(v), cy - 5); ctx.lineTo(X(v), cy + 5); ctx.stroke(); });
+        ctx.strokeStyle = cssVar("--ink");
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(X(r.md), cy - 8); ctx.lineTo(X(r.md), cy + 8); ctx.stroke();
+        ctx.beginPath(); ctx.arc(X(r.E), cy, 6, 0, Math.PI * 2);
         ctx.fillStyle = cssVar("--wm-line");
         ctx.fill();
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.strokeStyle = cssVar("--panel");
         ctx.stroke();
-
-        // Right-gutter numeric column: E and its share of the nominal size on top, the
-        // 95% interval and the column count beneath.
-        const gx = w - padR + 10;
-        ctx.textAlign = "left";
-        ctx.font = monoF;
-        ctx.fillStyle = cssVar("--ink");
-        ctx.fillText(Math.round(r.E) + "  ·  " + Math.round((100 * r.E) / WM_NOMINAL_M) + "%", gx, cy - 6);
-        ctx.fillStyle = cssVar("--ink-faint");
-        ctx.fillText("[" + Math.round(r.lo) + "–" + Math.round(r.hi) + "]  " + r.nUsed + "/" + r.nTot + " cols", gx, cy + 6);
 
         y += rowH;
       });
@@ -2596,9 +2607,10 @@
     const L = [];
     // ASCII throughout, this provenance comment included: a .tex file carrying a stray
     // em dash is an inputenc error under pdflatex, and the report's own prose is full of
-    // typographic characters that must not follow the numbers out.
-    L.push("% " + texEscape(DATA.stem) + "." + exp.n + ": generated by build_report.js, "
-      + DATA.generatedAt);
+    // typographic characters that must not follow the numbers out. No build timestamp —
+    // the table gets pasted into a document and re-exported as the underlying data
+    // changes, and a stale "generated" date on it is worse than none.
+    L.push("% " + texEscape(DATA.stem) + "." + exp.n + ": generated by build_report.js");
     L.push("% requires: \\usepackage{booktabs,graphicx}");
     L.push("\\begin{table}[htbp]");
     L.push("  \\centering");
