@@ -47,11 +47,29 @@ hrefs.forEach((h) => {
 // so a landing page without it means build_pages.js published something incoherent.
 if (!hrefs.includes("simulator.html")) fail('no link to simulator.html');
 
-// Whatever WAS published must be listed. Catches a report copied into site/ but dropped
-// from the landing list, which is invisible to the href check above.
-fs.readdirSync(SITE)
-  .filter((f) => f.endsWith(".html") && f !== "index.html")
-  .forEach((f) => { if (!hrefs.includes(f)) fail(`site/${f} was published but is not linked from index.html`); });
+// Whatever WAS published must be reachable from somewhere in the published site. Usually
+// that means index.html; a report's own "notes on this set" page is the one exception —
+// build_pages.js publishes it alongside its report (see manifest.notesPage) but it is
+// linked FROM the report, not from the landing page, and that link is written by the
+// report's own script from its embedded DATA blob (`"notesHref":"..."`) rather than as a
+// literal href="" in the markup, so it has to be read out the same way here.
+const notesHrefs = new Set();
+const otherPages = fs.readdirSync(SITE).filter((f) => f.endsWith(".html") && f !== "index.html");
+otherPages.forEach((f) => {
+  const m = /"notesHref":"([^"]*)"/.exec(fs.readFileSync(path.join(SITE, f), "utf8"));
+  if (m && m[1]) notesHrefs.add(m[1]);
+});
+notesHrefs.forEach((h) => {
+  if (!fs.existsSync(path.join(SITE, h))) fail(`a report's notesHref="${h}" does not exist in site/`);
+});
+// Catches a report (or a notes page for one that no longer exists) copied into site/ but
+// dropped from the landing list / no longer referenced, which is invisible to the href
+// check above.
+otherPages.forEach((f) => {
+  if (!hrefs.includes(f) && !notesHrefs.has(f)) {
+    fail(`site/${f} was published but is not linked from index.html or referenced as a report's notes page`);
+  }
+});
 
 if (failed) {
   console.error(`\n[test_landing_links] ${failed} problem(s) in site/index.html`);

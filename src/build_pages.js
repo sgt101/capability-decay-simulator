@@ -34,6 +34,7 @@ const OUT = path.join(paths.ROOT, "site");
 // directory so the rewrite below is one path rather than several.
 const ASSETS = [
   [paths.src("engine.js"), "engine.js"],
+  [paths.src("network_view.js"), "network_view.js"],
   [paths.src("world_model.js"), "world_model.js"],
   [paths.data("world-model-data.js"), "data/world-model-data.js"],
   // The cell-code lookup behind simulator.html's applyScenarioCode() — typing "AI-482"
@@ -74,6 +75,14 @@ const REPORTS = [
     blurb: "The same comparison run under three assumed sizes for the reported effect of "
       + "AI assistance on below-average performers, crossed with five values for its "
       + "effect on those above the threshold.",
+  },
+  {
+    src: path.join(paths.DOC, "recruitment_report.html"), dest: "recruitment_report.html",
+    title: "Recruitment shock",
+    manifest: "experiments.recruitment.manifest.json",
+    blurb: "A temporary hiring freeze applied to a field already at its equilibrium "
+      + "distribution, crossed with freeze depth and duration and with each AI parameter "
+      + "in turn.",
   },
 ];
 
@@ -135,6 +144,12 @@ ASSETS.forEach(([src, dest]) => {
 // 404s, and a broken link inside a canvas is not something a build log would show.
 const PUBLISHED_SIM_HREF = "simulator.html";
 const publishedReports = REPORTS.filter((r) => fs.existsSync(r.src));
+// A report may link out to its own "notes on this set" page (manifest.notesPage — see
+// build_report.js) via a plain same-directory href. That page is not in REPORTS (it is
+// not one of the listed entries), so without this it would silently 404 on the published
+// site the moment a report that has one gets added here. Derived from the manifest
+// rather than hand-listed per report, same as the report itself gets it.
+const publishedNotes = [];
 publishedReports.forEach((r) => {
   const body = fs.readFileSync(r.src, "utf8");
   // The value build_report.js wrote into the embedded DATA blob (--simulator-href).
@@ -148,11 +163,64 @@ publishedReports.forEach((r) => {
     ? body
     : body.replace(from[0], `"simulatorHref":"${PUBLISHED_SIM_HREF}"`);
   fs.writeFileSync(path.join(OUT, r.dest), out);
+
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(paths.DATA, r.manifest), "utf8"));
+  if (manifest.notesPage) {
+    const notesSrc = path.join(paths.DOC, manifest.notesPage.file);
+    if (fs.existsSync(notesSrc)) {
+      fs.copyFileSync(notesSrc, path.join(OUT, manifest.notesPage.file));
+      publishedNotes.push(manifest.notesPage.file);
+    } else {
+      console.error(`[build_pages] note: ${path.relative(paths.ROOT, notesSrc)} not present —`
+        + ` ${r.dest}'s "notes on this set" link will 404 on the published site`);
+    }
+  }
 });
 REPORTS.filter((r) => !fs.existsSync(r.src)).forEach((r) => {
   console.error(`[build_pages] note: ${path.relative(paths.ROOT, r.src)} not present — publishing without it`
     + ` (rebuild with ./src/build_reports.sh, which needs results/)`);
 });
+
+// --- capability-ratio (rho) sensitivity ---------------------------------------------
+//
+// A different shape from REPORTS above: not one self-contained file but a directory of
+// per-experiment sub-reports (results/rho/<name>/rho_report.html) plus a combined index
+// (results/rho/index.html) that links into them with a relative href — see
+// src/rho_sensitivity.js. Preserving that same directory layout under site/rho/ is what
+// keeps those links working once published.
+//
+// OPTIONAL, same story as the reports: built by ./src/run_rho_sensitivity.sh, which
+// needs data/ (present in a fresh clone) but not results/*.csv, so it can be missing
+// even when every report above is present.
+//
+// Only .html/.tex/.json leave results/rho/ — rho_runs.csv is the raw per-run data behind
+// the reports, the same thing results/*.csv is for the reports themselves, and neither
+// gets published.
+const RHO_ROOT = path.join(paths.RESULTS, "rho");
+const RHO_KEEP = /\.(html|tex|json)$/;
+const rhoFiles = [];
+if (fs.existsSync(path.join(RHO_ROOT, "index.html"))) {
+  const copyKept = (srcDir, destDir) => {
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.readdirSync(srcDir).forEach((f) => {
+      const full = path.join(srcDir, f);
+      if (fs.statSync(full).isFile() && RHO_KEEP.test(f)) {
+        fs.copyFileSync(full, path.join(destDir, f));
+        rhoFiles.push(path.relative(OUT, path.join(destDir, f)));
+      }
+    });
+  };
+  copyKept(RHO_ROOT, path.join(OUT, "rho"));
+  fs.readdirSync(RHO_ROOT)
+    .filter((f) => fs.statSync(path.join(RHO_ROOT, f)).isDirectory()
+      && fs.existsSync(path.join(RHO_ROOT, f, "rho_report.html")))
+    .sort()
+    .forEach((name) => copyKept(path.join(RHO_ROOT, name), path.join(OUT, "rho", name)));
+} else {
+  console.error(`[build_pages] note: results/rho/index.html not present — publishing without the`
+    + ` capability-ratio sensitivity pages (run ./src/run_rho_sensitivity.sh)`);
+}
+const rhoExperiments = rhoFiles.filter((f) => f.endsWith("/rho_report.html")).length;
 
 // --- landing page -------------------------------------------------------------------
 //
@@ -199,6 +267,29 @@ publishedReports.forEach((r) => {
       .concat((fs.statSync(r.src).size / 1048576).toFixed(0) + " MB page"),
   });
 });
+if (rhoExperiments) {
+  // Facts pulled from the first summary found rather than hardcoded — same reasoning as
+  // manifestFacts() above: a rho list or config count typed here would drift the moment
+  // a rerun changed it.
+  const firstSummary = fs.readdirSync(RHO_ROOT)
+    .map((f) => path.join(RHO_ROOT, f, "rho_summary.json"))
+    .find((f) => fs.existsSync(f));
+  const s = firstSummary ? JSON.parse(fs.readFileSync(firstSummary, "utf8")) : null;
+  entries.push({
+    href: "rho/index.html",
+    title: "Capability-ratio sensitivity",
+    blurb: "Every capability number above rests on ρ, a stated assumption — not a measured "
+      + "one — about how much more a ceiling performer is worth than someone who merely "
+      + "qualifies as expert. This re-examines a representative pairing from every set above "
+      + "across a range of ρ, to see whether the reported conclusions hold or only the "
+      + "shipped value's numbers do.",
+    facts: [
+      rhoExperiments + " experiments re-examined",
+      s ? (s.rhos.length + " values of ρ (" + s.rhos[0] + "–" + s.rhos[s.rhos.length - 1] + ")") : null,
+      s ? ("shipped ρ = " + s.shippedRho) : null,
+    ].filter(Boolean),
+  });
+}
 
 {
   const templatePath = paths.src("landing.template.html");
@@ -222,7 +313,8 @@ publishedReports.forEach((r) => {
     + " each carries its own generation date."
     + (publishedReports.length < REPORTS.length
       ? " " + (REPORTS.length - publishedReports.length) + " report(s) were not present at build time."
-      : "");
+      : "")
+    + (rhoExperiments ? "" : " The capability-ratio sensitivity pages were not present at build time.");
   landing = landing.replace("<!--__PAGES__-->", items).replace("<!--__FOOTER__-->", footer);
   fs.writeFileSync(path.join(OUT, "index.html"), landing);
 }
@@ -232,7 +324,7 @@ publishedReports.forEach((r) => {
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
 
 const published = [["index.html"], ["simulator.html"], ...ASSETS.map(([, d]) => [d]),
-  ...publishedReports.map((r) => [r.dest])];
+  ...publishedReports.map((r) => [r.dest]), ...publishedNotes.map((f) => [f]), ...rhoFiles.map((f) => [f])];
 const total = published.reduce((s, [f]) => s + fs.statSync(path.join(OUT, f)).size, 0);
 console.log(`wrote site/ — ${published.length} files, ${(total / 1048576).toFixed(1)} MB`);
 console.log(`  index.html  (landing page, ${entries.length} entries)`);
@@ -240,4 +332,6 @@ console.log(`  simulator.html  (simulator.html, ${rewritten.length} ../data/ pat
 ASSETS.forEach(([, d]) => console.log(`  ${d}`));
 publishedReports.forEach((r) =>
   console.log(`  ${r.dest}  (${r.title}, ${(fs.statSync(r.src).size / 1048576).toFixed(0)} MB)`));
+publishedNotes.forEach((f) => console.log(`  ${f}  (notes page)`));
+if (rhoExperiments) console.log(`  rho/  (capability-ratio sensitivity, ${rhoExperiments} experiment(s), ${rhoFiles.length} files)`);
 console.log(`\npreview locally:  npx serve site    (or: cd site && python3 -m http.server)`);

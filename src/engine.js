@@ -671,7 +671,10 @@ function softmaxPick(rng, ids, utils, n, temperature) {
   return ids[n - 1];
 }
 
-function tick(state) {
+// Optional observer for actual institution changes. Called after learning and before
+// retirement/hiring, with scalar values only; observers must not mutate the model.
+// No allocation or extra random draws when absent (including all batch runs).
+function tick(state, onMove) {
   const p = state.params;
   const { N, M, E, L, tenure, aptitude, inst, rng, graph, active } = state;
   const { Ebar, Teach, transferEff } = institutionStats(state);
@@ -758,6 +761,7 @@ function tick(state) {
       // destination already teaches from (Teach as it stood before the arrival);
       // otherwise it's a lateral relocation.
       if (E[i] > Teach[to]) upgradingArrivals++;
+      if (onMove) onMove(from, to, E[i], E[i] > Teach[to]);
     }
   }
 
@@ -844,7 +848,7 @@ function tick(state) {
   // Nearest-rank percentiles, read off the cumulative histogram in one pass.
   const wantAt = [Math.ceil(0.10 * An), Math.ceil(0.50 * An), Math.ceil(0.90 * An)];
   const pctls = [0, 0, 0];
-  {
+  if (An > 0) {
     let cum = 0, k = 0;
     for (let b = 0; b < PCTL_BINS && k < 3; b++) {
       cum += eHist[b];

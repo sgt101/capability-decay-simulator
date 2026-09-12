@@ -16,6 +16,10 @@ on:
     paths:
       - src/simulator.html
       - src/engine.js
+      - src/network_view.js
+      - src/test/test_engine.js
+      - src/test/test_movement_recording.js
+      - src/test/dom_stub_test.js
       - src/world_model.js
       - data/world-model-data.js
       - src/build_pages.js
@@ -59,6 +63,11 @@ jobs:
       # page loads whatever bundle it is given. This test compares the two.
       - name: Bundled world-model data matches its sources
         run: node src/test/test_world_model.js
+
+      - name: Engine and movement recording tests
+        run: |
+          node src/test/test_engine.js
+          node src/test/test_movement_recording.js
 
       - name: Build site/
         run: node src/build_pages.js

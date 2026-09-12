@@ -1,3 +1,5 @@
+<!doctype html>
+<meta charset="utf-8">
 <title>Capability Decay Simulator</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
@@ -249,14 +251,30 @@
      movement between those nodes amounts to, and are unreadable without the picture
      beside them. The row carries the vertical growth the network panel used to own,
      because a grid item cannot flex against its parent column. */
-  .network-row { flex: 1 1 440px; min-height: 440px; grid-template-columns: 1.55fr 1fr; }
+  .network-row { flex: 0 0 auto; min-height: 0; }
   @media (max-width: 980px) { .network-row { grid-template-columns: 1fr; } }
-  .network-panel { min-height: 340px; position: relative; }
-  .network-panel canvas { flex: 1; width: 100%; height: 100%; cursor: pointer; }
-  .network-legend { position: absolute; right: 0.85rem; bottom: 0.7rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.7rem; color: var(--ink-muted); box-shadow: var(--shadow); }
-  .network-legend .ramp { width: 90px; height: 8px; border-radius: 3px; margin: 0.3rem 0; background: linear-gradient(90deg, #cde2fb, #0d366b); }
+  .network-panel { min-height: 600px; position: relative; }
+  .network-panel .panel-head { flex-wrap: wrap; gap: 0.4rem; }
+  .network-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.7rem; padding: 0.35rem 0.85rem; font-size: 0.72rem; }
+  .network-toolbar label { display: flex; align-items: center; gap: 0.35rem; color: var(--ink-muted); }
+  .network-toolbar select { max-width: 200px; min-width: 0; padding: 0.3rem; background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; }
+  .network-toolbar [hidden] { display: none !important; }
+  .network-options { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .network-stage { height: 470px; min-height: 340px; position: relative; flex: 1 0 470px; overflow: hidden; }
+  .network-panel canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .network-panel canvas:active { cursor: grabbing; }
+  .network-footer { padding: 0.45rem 0.85rem 0.65rem; font-size: 0.69rem; line-height: 1.5; color: var(--ink-muted); }
+  .network-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; margin-bottom: 0.35rem; }
+  .network-sector { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .network-sector i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+  .network-loss { color: #be7546; } .network-gain { color: #389f95; }
+  #networkStatus { color: var(--ink); margin: 0.25rem 0; }
+  #networkScale, #networkHelp { font-size: 0.65rem; }
+  @media (max-width: 600px) { .network-stage { flex-basis: 420px; height: 420px; } .network-toolbar select { max-width: 170px; } }
   .row { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.9rem; }
   @media (max-width: 780px) { .row { grid-template-columns: 1fr; } }
+  .row.network-row { grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1550px) { .row.network-row { grid-template-columns: minmax(0, 3fr) minmax(190px, 1fr); } }
   /* The readouts must never drive the row's height. Their content changes the moment
      real numbers replace the placeholder dashes, and a panel that grows on that swap
      shifts everything below it — which is exactly what it did: ~530px of content in a
@@ -371,13 +389,36 @@
         <section class="panel network-panel">
           <div class="panel-head">
             <h2>Institution network</h2>
-            <span class="sub">size = population · color = avg. latent expertise (Ē)</span>
+            <span class="sub" id="networkSubtitle">Sector colours · hub affiliations</span>
           </div>
-          <canvas id="networkCanvas"></canvas>
-          <div class="network-legend">
-            <div>low Ē <span style="float:right">high Ē</span></div>
-            <div class="ramp"></div>
-            <div style="margin-top:0.35rem;">click a node to inspect it</div>
+          <div class="network-toolbar">
+            <label>View <select id="networkView"><option value="structure">Structure</option><option value="movement">Movement</option><option value="change">Change</option></select></label>
+            <label>Size <select id="networkSize"><option value="count">Population</option><option value="experts">Expert count</option><option value="capability">Capability</option></select></label>
+            <label>Group <select id="networkGroup"><option value="compact">Major hub affiliations</option><option value="hubs">All hub affiliations</option><option value="sectors">Sectors</option><option value="institutions">Institutions</option></select></label>
+            <div class="network-options" id="networkMovementControls" hidden>
+              <label>Moves <select id="networkMoveMetric"><option value="moves">All people</option><option value="experts">Experts</option><option value="upgrades">Above destination teaching level</option></select></label>
+              <label>Window <select id="networkWindow"><option value="1">1 month</option><option value="12" selected>12 months</option><option value="60">5 years</option></select></label>
+              <label>Routes <select id="networkRouteLimit"><option value="15">15 strongest</option><option value="0">All</option></select></label>
+            </div>
+            <div class="network-options" id="networkChangeControls" hidden>
+              <label>Measure <select id="networkChangeMetric"><option value="experts">Expert count</option><option value="capabilityHuman">Human capability</option></select></label>
+              <label>Since <select id="networkComparison"><option value="start">Start of run</option><option value="year">One year ago</option></select></label>
+            </div>
+          </div>
+          <div class="network-toolbar">
+            <label>Focus <select id="networkFocus" aria-label="Focus hub or institution"><option value="">All institutions</option></select></label>
+            <button class="btn" id="networkExpand" title="Expand the selected group, or all groups">Expand</button>
+            <button class="btn" id="networkCollapse" title="Collapse the selected group, or all groups">Collapse</button>
+            <button class="btn" id="networkZoomOut" aria-label="Zoom out">−</button>
+            <button class="btn" id="networkZoomIn" aria-label="Zoom in">+</button>
+            <button class="btn" id="networkFit">Fit</button>
+          </div>
+          <div class="network-stage"><canvas id="networkCanvas" role="img" aria-label="Institution network. Use the view and focus controls to explore institutions and movement."></canvas></div>
+          <div class="network-footer">
+            <div class="network-legend" id="networkLegend"></div>
+            <div id="networkScale"></div>
+            <div id="networkStatus" role="status"></div>
+            <div id="networkHelp"></div>
           </div>
         </section>
 
@@ -446,6 +487,7 @@
      render without it, so the interactive tool and batch_run.js can never be running
      different dynamics. -->
 <script src="engine.js"></script>
+<script src="network_view.js"></script>
 <!-- Loads the shared loader rather than carrying a second copy that would drift
      from world_model.js. Unlike engine.js this one is optional: if it isn't
      alongside this page, window.WorldModel stays undefined and the world-model
@@ -518,6 +560,8 @@ function createSim(userParams) {
   const sim = Engine.initSim(Object.assign({}, MONTHLY_TICK_PARAMS, PIPELINE_PARAMS,
     WORLD_MODEL_PARAMS, userParams || {}));
   sim.instHistory = makeInstHistory(sim.M);
+  sim.movement = new NetworkView.MovementRecorder(EXPERT_THRESHOLD);
+  sim.networkStart = Object.assign({ t: 0, E: sim.E.slice(), inst: sim.inst.slice(), active: sim.active.slice() }, institutionStats(sim));
   sim.snapshots = [];
   sim.aiToggleEvents = [];
   return sim;
@@ -564,7 +608,6 @@ function steadyStateDecayRate(N, M) {
   return Math.round(d * 1000) / 1000;      // slider resolution
 }
 
-const REPULSION_SAMPLE = 60;
 const SNAPSHOT_CAP = 4000, SNAPSHOT_EVICT = 800;
 
 // Per-institution history for the inspector. Four series, because Ē alone hides the
@@ -1245,6 +1288,9 @@ function applySnapshot(snap) {
   app.simBase = createBaselineSim(p);
   app.following = true;
   app.viewT = 0;
+  scrubRange.min = 0;
+  scrubRange.max = 0;
+  scrubRange.value = 0;
   app.selectedInst = null;
   app.layout = null;
   buildSidebar();
@@ -1502,6 +1548,9 @@ function rebuild(preserveLive) {
   app.simBase = createBaselineSim(params);
   app.following = true;
   app.viewT = 0;
+  scrubRange.min = 0;
+  scrubRange.max = 0;
+  scrubRange.value = 0;
   app.selectedInst = null;
   app.layout = null;
   buildSidebar();
@@ -1569,15 +1618,20 @@ btnLive.addEventListener("click", () => {
 // page share engine.js unmodified — the engine records population-level history
 // and nothing else, exactly as it does under batch_run.js.
 function doTick() {
-  tick(app.sim);
+  tick(app.sim, app.sim.movement.observe);
+  app.sim.movement.finish(app.sim.t);
   // The twin advances in lockstep. Ticked SECOND so a thrown error in the arm the page
   // actually displays surfaces before any work is spent on the comparison.
   if (app.simBase) tick(app.simBase);
   const { Ebar, count, Teach, experts, capability, capabilityHuman } = institutionStats(app.sim);
   const sim = app.sim;
   pushInstHistory(sim.instHistory, sim.M, Ebar, Teach, count, experts, capability, capabilityHuman);
-  sim.snapshots.push({ t: sim.t, E: sim.E.slice(), inst: sim.inst.slice(), Ebar, count });
-  if (sim.snapshots.length > SNAPSHOT_CAP) sim.snapshots.splice(0, SNAPSHOT_EVICT);
+  sim.snapshots.push({ t: sim.t, E: sim.E.slice(), inst: sim.inst.slice(), active: sim.active.slice(), Ebar, count, Teach, experts, capability, capabilityHuman });
+  if (sim.snapshots.length > SNAPSHOT_CAP) {
+    sim.snapshots.splice(0, SNAPSHOT_EVICT);
+    scrubRange.min = sim.snapshots[0].t;
+    if (app.viewT < sim.snapshots[0].t) app.viewT = sim.snapshots[0].t;
+  }
   if (app.following) app.viewT = app.sim.t;
   scrubRange.max = app.sim.t;
   if (app.following) scrubRange.value = app.sim.t;
@@ -1621,67 +1675,10 @@ function frame(ts) {
 
 /* ============================== NETWORK LAYOUT + RENDER ============================== */
 function ensureLayout() {
-  if (app.layout) return app.layout;
-  const M = app.sim.M;
-  const layout = [];
-  // Radius grows with sqrt(M) so the starting ring has the same node density at any
-  // scale. A fixed 120 put 245 world-model institutions ~3 units apart, and repulsion
-  // goes as 1/d^2 — the first step alone was enough to fling them past 1e6.
-  const radius = 120 * Math.sqrt(M / 40);
-  for (let j = 0; j < M; j++) {
-    const a = (j / M) * Math.PI * 2;
-    layout.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius, vx: 0, vy: 0 });
-  }
-  app.layout = layout;
-  return layout;
+  app.layout = networkPanel.layout();
+  return app.layout;
 }
-
-function relaxLayout() {
-  if (!app.sim) return;
-  const layout = ensureLayout();
-  const M = app.sim.M;
-  const graph = app.sim.graph;
-  const k = 60 * Math.sqrt(40 / Math.max(M, 1));
-  for (let i = 0; i < M; i++) {
-    let fx = 0, fy = 0;
-    const sampleN = Math.min(M - 1, REPULSION_SAMPLE);
-    for (let s = 0; s < sampleN; s++) {
-      const j = Math.floor(Math.random() * M);
-      if (j === i) continue;
-      let dx = layout[i].x - layout[j].x, dy = layout[i].y - layout[j].y;
-      let d2 = dx * dx + dy * dy + 0.01;
-      const d = Math.sqrt(d2);
-      const force = (k * k) / d2;
-      fx += (dx / d) * force; fy += (dy / d) * force;
-    }
-    fx *= (M - 1) / sampleN;
-    fy *= (M - 1) / sampleN;
-    graph.neighbors[i].forEach((j) => {
-      const dx = layout[j].x - layout[i].x, dy = layout[j].y - layout[i].y;
-      const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
-      const force = (d * d) / k / 8;
-      fx += (dx / d) * force; fy += (dy / d) * force;
-    });
-    fx += -layout[i].x * 0.01; fy += -layout[i].y * 0.01;
-    let vx = (layout[i].vx + fx * 0.02) * 0.82;
-    let vy = (layout[i].vy + fy * 0.02) * 0.82;
-    // Temperature: never move further than one natural edge length in a step. This is
-    // what keeps the d^2 attraction from running away on a dense graph — the world
-    // model averages 12.2 neighbours per node against the BA graph's ~4, so the
-    // summed attractive force is several times larger for the same geometry.
-    const speed = Math.sqrt(vx * vx + vy * vy);
-    if (speed > k) { vx = (vx / speed) * k; vy = (vy / speed) * k; }
-    // Belt and braces: a non-finite value would poison the layout permanently, since
-    // every later step reads these positions back.
-    layout[i].vx = isFinite(vx) ? vx : 0;
-    layout[i].vy = isFinite(vy) ? vy : 0;
-  }
-  for (let i = 0; i < M; i++) {
-    layout[i].x += layout[i].vx; layout[i].y += layout[i].vy;
-    if (!isFinite(layout[i].x)) { layout[i].x = 0; layout[i].vx = 0; }
-    if (!isFinite(layout[i].y)) { layout[i].y = 0; layout[i].vy = 0; }
-  }
-}
+function relaxLayout() { ensureLayout(); } // Positions stay fixed during playback.
 
 function seqColor(t, isDark) {
   const ramp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
@@ -1707,27 +1704,15 @@ function cssVar(name) { return getComputedStyle(document.documentElement).getPro
 
 function currentSnapshot() {
   if (!app.sim) return null;
-  if (app.following || !app.sim.snapshots.length) {
-    return { t: app.sim.t, E: app.sim.E, C: app.sim.C, inst: app.sim.inst, Ebar: null, count: null, live: true };
-  }
-  const snaps = app.sim.snapshots;
-  const earliest = snaps[0].t;
-  const target = Math.max(app.viewT, earliest);
-  let lo = 0, hi = snaps.length - 1;
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (snaps[mid].t < target) lo = mid + 1; else hi = mid; }
-  return snaps[lo];
+  if (app.following && app.sim.t === 0) return app.sim.networkStart;
+  const target = app.following ? app.sim.t : app.viewT;
+  return NetworkView.snapshotAt(app.sim, target) || app.sim.snapshots[0] || app.sim.networkStart;
 }
 
 function instStatsFromSnapshot(snap) {
-  if (snap.Ebar) return { Ebar: snap.Ebar, count: snap.count };
-  const M = app.sim.M, sumE = new Float64Array(M), count = new Int32Array(M);
-  for (let i = 0; i < snap.inst.length; i++) { sumE[snap.inst[i]] += snap.E[i]; count[snap.inst[i]]++; }
-  const Ebar = new Float32Array(M);
-  for (let j = 0; j < M; j++) Ebar[j] = count[j] > 0 ? sumE[j] / count[j] : 0;
-  return { Ebar, count };
+  return { Ebar: snap.Ebar, count: snap.count };
 }
 
-let hoveredInst = null;
 function setupCanvasDPR(canvas) {
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -1739,82 +1724,14 @@ function setupCanvasDPR(canvas) {
   return { ctx, w, h };
 }
 
-function drawNetwork() {
-  if (!app.sim) return;
-  const canvas = document.getElementById("networkCanvas");
-  const { ctx, w, h } = setupCanvasDPR(canvas);
-  ctx.clearRect(0, 0, w, h);
-  const layout = ensureLayout();
-  const snap = currentSnapshot();
-  const { Ebar, count } = instStatsFromSnapshot(snap);
-  const theme = currentTheme();
-  const rule = cssVar("--rule"), ink2 = cssVar("--accent2");
-
-  let maxCount = 1;
-  for (let j = 0; j < app.sim.M; j++) if (count[j] > maxCount) maxCount = count[j];
-
-  // Fit the view to what the layout actually occupies, rather than assuming it lives
-  // inside a fixed +/-160. A 245-institution world model settles around +/-300 even
-  // once it is stable, so a fixed scale drew most of the graph off-canvas — which
-  // looks exactly like the institutions having flown away.
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (let j = 0; j < app.sim.M; j++) {
-    const p = layout[j];
-    if (!isFinite(p.x) || !isFinite(p.y)) continue;
-    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-  }
-  if (!isFinite(minX)) { minX = -160; maxX = 160; minY = -160; maxY = 160; }
-  const pad = 26;                                    // room for the biggest node radius
-  const spanX = Math.max(maxX - minX, 1), spanY = Math.max(maxY - minY, 1);
-  const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanY);
-  const cx = w / 2 - ((minX + maxX) / 2) * scale, cy = h / 2 - ((minY + maxY) / 2) * scale;
-  const px = (x) => cx + x * scale, py = (y) => cy + y * scale;
-  // Node radius shrinks as the graph gets crowded, so 245 institutions read as a
-  // network rather than as one solid disc.
-  const nodeScale = Math.min(1, Math.sqrt(60 / Math.max(app.sim.M, 1)));
-
-  ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
-  for (let i = 0; i < app.sim.M; i++) {
-    app.sim.graph.neighbors[i].forEach((j) => {
-      if (j < i) return;
-      ctx.beginPath(); ctx.moveTo(px(layout[i].x), py(layout[i].y)); ctx.lineTo(px(layout[j].x), py(layout[j].y)); ctx.stroke();
-    });
-  }
-  ctx.globalAlpha = 1;
-
-  for (let j = 0; j < app.sim.M; j++) {
-    const r = (4 + 16 * Math.sqrt(count[j] / maxCount)) * nodeScale;
-    ctx.beginPath();
-    ctx.arc(px(layout[j].x), py(layout[j].y), r, 0, Math.PI * 2);
-    ctx.fillStyle = seqColor(Ebar[j], theme === "dark");
-    ctx.fill();
-    if (j === app.selectedInst) { ctx.lineWidth = 2; ctx.strokeStyle = ink2; ctx.stroke(); }
-    else if (j === hoveredInst) { ctx.lineWidth = 1.5; ctx.strokeStyle = ink2; ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1; }
-  }
-
-  canvas._hit = { layout, px, py, count, Ebar, maxCount };
-}
-
-function hitTestNetwork(canvas, evt) {
-  const rect = canvas.getBoundingClientRect();
-  const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
-  const hit = canvas._hit;
-  if (!hit) return null;
-  for (let j = 0; j < app.sim.M; j++) {
-    const nx = hit.px(hit.layout[j].x), ny = hit.py(hit.layout[j].y);
-    const r = 4 + 16 * Math.sqrt(hit.count[j] / hit.maxCount) + 3;
-    if ((x - nx) ** 2 + (y - ny) ** 2 <= r * r) return j;
-  }
-  return null;
-}
-
-const netCanvas = document.getElementById("networkCanvas");
-netCanvas.addEventListener("mousemove", (e) => { hoveredInst = hitTestNetwork(netCanvas, e); netCanvas.title = hoveredInst != null ? institutionTooltip(hoveredInst) : ""; });
-netCanvas.addEventListener("click", (e) => {
-  const j = hitTestNetwork(netCanvas, e);
-  if (j != null) { app.selectedInst = j; renderInspector(); }
+const networkPanel = NetworkView.attach({
+  canvas: document.getElementById("networkCanvas"),
+  getSim: () => app.sim,
+  getSnapshot: currentSnapshot,
+  selectInstitution: j => { app.selectedInst = j; if (j == null) renderInspectorPlaceholder(); else renderInspector(); },
+  theme: currentTheme,
 });
+function drawNetwork() { networkPanel.draw(); }
 
 /* ============================== DISTRIBUTION HISTOGRAM ============================== */
 function drawHistogram() {
@@ -2210,13 +2127,11 @@ function renderInspector() {
   // Capability is read from the recorded series rather than recomputed: the KV rows
   // above it come from the viewed SNAPSHOT, and recomputing here from live E would
   // quietly disagree with them whenever the scrubber is off the live tick.
-  const ih = app.sim.instHistory;
-  const capIdx = ih.len > 0 ? ih.len - 1 : -1;
-  const capNow = capIdx >= 0 ? ih.capability[j][capIdx] : 0;
+  const capNow = snap.capability[j];
   // Size and quality answer different questions: the largest institution by total
   // capability is rarely the strongest per person, so neither number alone ranks them.
   const capPerHead = count[j] > 0 ? fmtCompact(capNow / count[j]) : "—";
-  const capHumanNow = capIdx >= 0 ? ih.capabilityHuman[j][capIdx] : 0;
+  const capHumanNow = snap.capabilityHuman[j];
   const leverage = capHumanNow > 0 ? "×" + (capNow / capHumanNow).toFixed(2) : "—";
   // Sourced from world-model.json: label and hub_city (resolved through LOCATED_IN to
   // the hub nodes' own labels, falling back to the organisation's own hub_city).
@@ -2349,6 +2264,7 @@ function drawInstSeries(canvasId, hist, series, options) {
 
 /* ============================== REFRESH ============================== */
 function refreshAll() {
+  drawNetwork();
   document.getElementById("statT").textContent = app.sim.t;
   document.getElementById("statN").textContent = app.sim.N;
   document.getElementById("statM").textContent = app.sim.M;
@@ -2363,6 +2279,7 @@ function refreshAll() {
   if (app.selectedInst != null) renderInspector();
 }
 function renderSnapshotViews() {
+  drawNetwork();
   drawHistogram();
   drawSpreadChart();
   drawMiniChart("divCanvas", "divergence", cssVar("--accent2"), { zeroFloor: true });

@@ -160,6 +160,9 @@ function registerIdsFromHTML(html) {
 // Read here rather than at the point of use: the element registry below is built FROM
 // this markup, so it has to exist first.
 const pageHTML = fs.readFileSync(process.argv[2], "utf8");
+if (!pageHTML.slice(0, 1024).toLowerCase().includes('charset="utf-8"')) {
+  throw new Error("Declare UTF-8 before scripts: labels and Unicode text must decode consistently in the browser");
+}
 
 // Every id the page declares, with its real tag, scanned straight out of the markup.
 // This replaces a hand-maintained list that was the source of truth for four separate
@@ -1248,6 +1251,47 @@ console.log("\\n--- every slider default is inside its own range and on-step ---
   }
 }
 
+console.log("--- network views: recording, selection and historical values ---");
+{
+  const previous = app.sim.params;
+  app.sim = createSim({ ...previous, graphSource: "ba", worldModel: null, N: 100, M: 5, graphAttachment: 2, seed: 101, baseMoveProb: 0.3 });
+  app.following = true; app.viewT = 0; app.selectedInst = null;
+  app.simBase = createBaselineSim(app.sim.params);
+  for (let k = 0; k < 24; k++) doTick();
+  const pick = (id, value) => { const e = document.getElementById(id); e.value = value; e.dispatch("change"); };
+  const initialPositions = JSON.stringify(networkPanel.layout());
+  networkPanel.focus("i0");
+  document.getElementById("networkZoomIn").click();
+  const zoom = networkPanel.state.zoom;
+  for (const mode of ["movement", "change", "structure"]) {
+    pick("networkView", mode);
+    if (app.selectedInst !== 0 || networkPanel.state.zoom !== zoom || app.viewT !== 24) throw new Error("view switch discarded selection, zoom or time");
+    if (JSON.stringify(networkPanel.layout()) !== initialPositions) throw new Error("view switch moved institutions");
+  }
+  pick("networkView", "movement");
+  const flow = networkPanel.scene();
+  const expected = app.sim.history.slice(12, 24).reduce((s, h) => s + h.moves, 0);
+  if (flow.window.routes.reduce((s, r) => s + r.moves, 0) !== expected) throw new Error("movement view disagrees with the last 12 months");
+  if (document.getElementById("networkMovementControls").hidden) throw new Error("movement controls hidden");
+  const liveRadius = networkPanel.scene().entities.get("i0").r;
+  app.following = false; app.viewT = 12; renderSnapshotViews();
+  if (networkPanel.scene().tick !== 12) throw new Error("network ignores historical date");
+  const at12 = app.sim.snapshots[11];
+  if (networkPanel.scene().entities.get("i0").count !== at12.count[0]) throw new Error("network shows live population in history");
+  const inspector = document.getElementById("inspector").innerHTML;
+  if (!inspector.includes(fmtCompact(at12.capability[0]))) throw new Error("inspector shows live capability in history");
+  pick("networkView", "change"); pick("networkComparison", "year");
+  if (networkPanel.scene().comparisonTick !== 0) throw new Error("year comparison has wrong endpoint");
+  if (networkPanel.scene().entities.get("i0").change !== at12.experts[0] - app.sim.networkStart.experts[0]) throw new Error("change colours use wrong date");
+  app.viewT = 24; pick("networkView", "structure"); renderSnapshotViews();
+  if (networkPanel.scene().entities.get("i0").r !== liveRadius) throw new Error("historical playback changed the size scale");
+  app.sim = createSim(app.sim.params); app.simBase = createBaselineSim(app.sim.params);
+  app.following = true; app.viewT = 0; refreshAll();
+  if (app.sim.movement.months.length || networkPanel.state.focus !== null || networkPanel.state.zoom !== 1) throw new Error("rebuild retained stale network state");
+  if (networkPanel.scene().tick !== 0) throw new Error("rebuild retained historical date");
+  console.log("OK: view switching preserves context; routes, change and inspector match the selected date; reset clears recording");
+}
+
 console.log("\\nALL FLOWS COMPLETED WITHOUT THROWING");
 `;
 
@@ -1278,6 +1322,7 @@ function readPageScript(basename) {
   return fs.readFileSync(path.resolve(HTML_DIR, src), "utf8");
 }
 const ENGINE_SRC = readPageScript("engine.js");
+const NETWORK_SRC = readPageScript("network_view.js");
 const WORLD_MODEL_SRC = readPageScript("world_model.js");
 // world-model-data.js is deliberately NOT loaded in the main pass: that keeps the
 // hand-picked-files path under test. A second, minimal pass at the bottom of this file
@@ -1317,6 +1362,7 @@ vm.createContext(sandbox);
 // --- the two <script src> files, loaded as a browser loads them -------------
 try {
   vm.runInContext(ENGINE_SRC, sandbox, { filename: "engine.js" });
+  vm.runInContext(NETWORK_SRC, sandbox, { filename: "network_view.js" });
   vm.runInContext(WORLD_MODEL_SRC, sandbox, { filename: "world_model.js" });
 } catch (err) {
   console.error("\nTHREW loading a <script src> file:", err.stack || err);
@@ -1404,6 +1450,7 @@ console.log("\n--- bundled world-model data: ready at boot ---");
   sandbox2.globalThis = sandbox2;
   vm.createContext(sandbox2);
   vm.runInContext(ENGINE_SRC, sandbox2, { filename: "engine.js" });
+  vm.runInContext(NETWORK_SRC, sandbox2, { filename: "network_view.js" });
   vm.runInContext(WORLD_MODEL_SRC, sandbox2, { filename: "world_model.js" });
   vm.runInContext(WORLD_MODEL_DATA_SRC, sandbox2, { filename: "world-model-data.js" });
   vm.runInContext(scriptMatch[1], sandbox2, { filename: "simulator.html (with bundled data)" });
@@ -1466,6 +1513,61 @@ console.log("\n--- bundled world-model data: ready at boot ---");
   }
   if (!/bundled with this page/.test(state.status)) throw new Error("status line does not say where the data came from: " + state.status);
   console.log("OK: booted with the bundle —", state.M, "institutions ready, booted into the world model at N=" + state.N);
+
+  const hubCount = vm.runInContext(`(() => {
+    const pick = (id, value) => { const e = document.getElementById(id); e.value = value; e.dispatch("change"); };
+    const expected = app.sim.graph.institutions.flatMap((x, j) => x.hubCities.includes("New York") ? [j] : []);
+    const assertMembers = scene => {
+      const actual = [...scene.entities.values()].flatMap(n => n.members).sort((a, b) => a - b);
+      if (actual.length !== app.sim.M || actual.some((j, index) => j !== index)) throw new Error("network duplicated or omitted an institution");
+      if ([...scene.entities.values()].reduce((sum, n) => sum + n.count, 0) !== app.sim.activeCount) throw new Error("network duplicated or omitted population");
+    };
+    for (let t = 0; t < 12; t++) doTick();
+    for (const mode of ["compact", "hubs"]) {
+      pick("networkGroup", mode);
+      const g = networkPanel.scene().grouping;
+      const ny = g.groups.findIndex(x => x.label === "New York");
+      const key = "g" + ny;
+      networkPanel.focus(key);
+      for (const view of ["structure", "movement", "change"]) {
+        pick("networkView", view);
+        const scene = networkPanel.scene();
+        assertMembers(scene);
+        if (JSON.stringify(scene.selectedMembers) !== JSON.stringify(expected)) throw new Error("New York focus omits shared institutions in " + view);
+        const highlighted = [...scene.entities.values()].filter(n => n.highlighted).flatMap(n => n.members).sort((a, b) => a - b);
+        if (JSON.stringify(highlighted) !== JSON.stringify(expected)) throw new Error("New York highlights incorrect institutions in " + view);
+        for (const j of expected) if (app.sim.graph.institutions[j].hubCities.length > 1) {
+          if (!scene.entities.has("i" + j) || !scene.affiliationLinks.some(a => a.hub === ny && a.institution === j)) throw new Error("shared institution lost its node or New York link");
+        }
+        if (view === "movement") {
+          if (scene.shown.length > 15) throw new Error("movement overview ignored the route limit");
+          const ids = new Set(expected), totals = { incoming: 0, outgoing: 0, internal: 0 };
+          for (const r of scene.window.routes) {
+            if (ids.has(r.from) && ids.has(r.to)) totals.internal += r.moves;
+            else if (ids.has(r.from)) totals.outgoing += r.moves;
+            else if (ids.has(r.to)) totals.incoming += r.moves;
+          }
+          const status = document.getElementById("networkStatus").textContent;
+          if (!status.includes(totals.incoming + " incoming · " + totals.outgoing + " outgoing · " + totals.internal + " between selected institutions")) throw new Error("hub movement readout excludes or duplicates shared institutions");
+          const aggregate = scene.flow.edges.reduce((sum, e) => sum + e.value, 0) + [...scene.flow.internal.values()].reduce((sum, x) => sum + x, 0);
+          if (aggregate !== scene.window.routes.reduce((sum, r) => sum + r.moves, 0)) throw new Error("hub rendering duplicated recorded moves");
+        }
+      }
+      pick("networkView", "movement"); pick("networkRouteLimit", "0");
+      const all = networkPanel.scene(), ids = new Set(expected);
+      const touching = all.flow.edges.filter(e => [e.from, e.to].some(key => all.entities.get(key).members.some(j => ids.has(j))));
+      if (all.shown.length !== touching.length) throw new Error("All routes still hides movements involving shared institutions");
+      pick("networkRouteLimit", "15");
+      document.getElementById("networkExpand").click();
+      assertMembers(networkPanel.scene());
+      document.getElementById("networkCollapse").click();
+      assertMembers(networkPanel.scene());
+      if (networkPanel.state.focus !== key) throw new Error("expanding or collapsing lost hub focus");
+    }
+    pick("networkGroup", "compact"); pick("networkView", "structure");
+    return expected.length;
+  })()`, sandbox2);
+  console.log("OK: bundled hub views include all " + hubCount + " New York affiliations; population and movement totals remain unique");
 
   // --- the turnover slider reports whether the intake identity still holds ----------
   // Only meaningful here: the BA graph carries no intake data, so this reading exists

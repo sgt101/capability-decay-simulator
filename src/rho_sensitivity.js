@@ -29,13 +29,17 @@
 //
 // Options:
 //   --config PATH      experiment JSON, as in data/experiments/ (required)
-//   --rho LIST         comma-separated, default 10,100,1000,10000
+//   --rho LIST         comma-separated, default 1,2,4,8,...,2048
 //   --stride N         take every Nth grid value on each axis (default 4)
-//   --replicates N     override the config's replicate count (default: min(config, 3))
+//   --replicates N     replicates per cell, independent of the config's own count (default: 3)
 //   --at TICK          which recorded tick to report (default: the last one)
 //   --out DIR          output directory (default results/rho/<config basename>)
 //   --workers N        default: CPU count - 1
 //   --full-csv         write every recorded tick, not just --at (much larger)
+//   --from-csv         rebuild rho_report.html from OUT/rho_runs.csv instead of
+//                      re-simulating — for a change to how the report is computed from
+//                      already-collected numbers. Needs the same --config, --rho, --stride
+//                      and --at the CSV was written with, to reconstruct matching cells.
 //   --index            (alone) rebuild results/rho/index.html from existing runs and exit
 "use strict";
 const fs = require("fs");
@@ -142,22 +146,26 @@ if (process.argv.includes("--index") && !arg("config")) {
 
 const configPath = arg("config");
 if (!configPath) {
-  console.error("usage: node src/rho_sensitivity.js --config data/experiments/experiment.1.json [--rho 10,100,1000,10000]");
+  console.error("usage: node src/rho_sensitivity.js --config data/experiments/experiment.1.json [--rho 1,2,4,...,2048]");
   console.error("                                   [--stride 4] [--replicates 3] [--at TICK] [--out DIR] [--workers N]");
   process.exit(1);
 }
 assertRhoIsOutputOnly();
 
 const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
-// Powers of two from 8 to 8192, so the curve is resolved rather than sampled at four
-// points. The shipped CAPABILITY_RATIO is ALWAYS included even when not asked for: it is
-// the reference the rank correlations are measured against, and a sweep that omitted it
-// would silently compare everything to whichever value happened to come first.
+// Powers of two from 1 to 2048, so the curve is resolved rather than sampled at four
+// points, and anchored at the degenerate end: rho=1 makes w(E) === 1 for every E (no
+// premium for expertise at all — capability collapses to plain headcount), which is a
+// meaningful reference point for "how much does the convexity assumption itself matter",
+// not just how big it is. The shipped CAPABILITY_RATIO is ALWAYS included even when not
+// asked for: it is the reference the rank correlations are measured against, and a sweep
+// that omitted it would silently compare everything to whichever value happened to come
+// first.
 const RHOS = Array.from(new Set(
-  arg("rho", "8,16,32,64,128,256,512,1024,2048,4096,8192").split(",").map(Number)
+  arg("rho", "1,2,4,8,16,32,64,128,256,512,1024,2048").split(",").map(Number)
     .concat([engine.CAPABILITY_RATIO]))).sort((a, b) => a - b);
-if (RHOS.some((r) => !(r > 1))) {
-  console.error("[rho] every rho must be > 1 — w(1) = rho is the ratio between the ceiling and the threshold");
+if (RHOS.some((r) => !(r > 0))) {
+  console.error("[rho] every rho must be > 0 — w(E) = rho^((E-theta)/(1-theta)) is undefined for rho <= 0");
   process.exit(1);
 }
 // Validated, not clamped: parseInt("") is NaN, Math.max(1, NaN) is NaN, and `i % NaN`
@@ -168,7 +176,18 @@ if (!Number.isInteger(STRIDE) || STRIDE < 1) {
   console.error(`[rho] --stride must be an integer >= 1, got "${arg("stride", "4")}"`);
   process.exit(1);
 }
-const REPS = Math.min(cfg.replicates || 1, parseInt(arg("replicates", "3"), 10));
+// NOT capped at cfg.replicates. This script re-simulates from scratch rather than
+// reading the report's own runs (see "WHY IT RE-RUNS" above), so its replicate count is
+// independent of whatever the report used — capping it there only threw away precision
+// this sweep could otherwise have. Validated for the same reason STRIDE is: a bad value
+// must fail loudly rather than silently run zero replicates.
+// let, not const: --from-csv corrects this below to the replicate count the CSV was
+// actually written with, rather than trust --replicates was passed to match it.
+let REPS = parseInt(arg("replicates", "3"), 10);
+if (!Number.isInteger(REPS) || REPS < 1) {
+  console.error(`[rho] --replicates must be an integer >= 1, got "${arg("replicates", "3")}"`);
+  process.exit(1);
+}
 const OUT = arg("out", path.join(paths.ROOT, "results", "rho", path.basename(configPath, ".json")));
 const FULL_CSV = process.argv.includes("--full-csv");   // every recorded tick, not just --at
 const WORKERS = Math.max(1, parseInt(arg("workers", String(Math.max(1, os.cpus().length - 1))), 10));
@@ -198,6 +217,71 @@ if (!RECORD_AT.includes(AT)) {
 const combos = axisValues.reduce((acc, vals, ax) =>
   acc.flatMap((c) => vals.map((v) => Object.assign({}, c, { [AXES[ax]]: v }))), [{}]);
 
+// --from-csv: rebuild the report from a rho_runs.csv this script already wrote, instead
+// of re-simulating. Every number the report needs — per (cell, arm, rho) capability,
+// averaged over replicates — is already sitting in that file (that is the whole point of
+// writing it as long-form CSV rather than only ever deriving the report in-process). This
+// exists for changes to how the report is COMPUTED from those numbers (a different
+// central-tendency statistic, a new chart) that do not need a single new tick simulated.
+// combos/AXES/RHOS above are recomputed the same deterministic way the original run built
+// them, from the same --config and --stride, so comboIndex lines up with the CSV without
+// having to trust it was labelled correctly at write time.
+if (process.argv.includes("--from-csv")) {
+  const csvPath = path.join(OUT, "rho_runs.csv");
+  if (!fs.existsSync(csvPath)) {
+    console.error(`[rho] --from-csv but ${path.relative(paths.ROOT, csvPath)} does not exist — run the sweep first`);
+    process.exit(1);
+  }
+  const lines = fs.readFileSync(csvPath, "utf8").split("\n").filter(Boolean);
+  const header = lines[0].split(",");
+  const col = (name) => {
+    const i = header.indexOf(name);
+    if (i < 0) { console.error(`[rho] ${csvPath} has no "${name}" column`); process.exit(1); }
+    return i;
+  };
+  const iCombo = col("comboIndex"), iArm = col("arm"), iT = col("t"), iRho = col("rho"),
+    iMeanE = col("meanE"), iCap = col("capability");
+  // (comboIndex, arm, rho) -> the capability values seen for it, one per replicate.
+  const groups = new Map();
+  const meanEGroups = new Map(); // (comboIndex, arm) -> meanE values; rho-independent
+  const push = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
+  for (let i = 1; i < lines.length; i++) {
+    const f = lines[i].split(",");
+    if (+f[iT] !== AT) continue; // a --full-csv run recorded every tick; only AT matters here
+    push(groups, f[iCombo] + "|" + f[iArm] + "|" + f[iRho], +f[iCap]);
+    push(meanEGroups, f[iCombo] + "|" + f[iArm], +f[iMeanE]);
+  }
+  const avg = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const cells = combos.map((combo, ci) => {
+    const treatArm = cfg.pairWithBaseline ? "treatment" : "single";
+    const meanEt = meanEGroups.get(ci + "|" + treatArm), meanEb = meanEGroups.get(ci + "|baseline");
+    return {
+      combo,
+      meanE_t: meanEt ? avg(meanEt) : NaN,
+      meanE_b: meanEb ? avg(meanEb) : NaN,
+      perRho: RHOS.map((r) => {
+        const t = groups.get(ci + "|" + treatArm + "|" + r);
+        const b = cfg.pairWithBaseline ? groups.get(ci + "|baseline|" + r) : null;
+        return { Ct: t ? avg(t) : NaN, Cb: b ? avg(b) : NaN };
+      }),
+    };
+  });
+  if (!cells.every((c) => c.perRho.every((p) => Number.isFinite(p.Ct)))) {
+    console.error(`[rho] --from-csv: some (cell, rho) combinations were not found in ${path.relative(paths.ROOT, csvPath)} —`
+      + ` did --stride, --rho or --at change since it was written?`);
+    process.exit(1);
+  }
+  // The report's "replicates" figure must describe what the CSV actually contains, not
+  // whatever --replicates happened to default to on this invocation (easy to forget to
+  // pass, and silent when forgotten -- it doesn't affect a single computed number, only
+  // this one label). Every (cell, arm, rho) group has the same count by construction, so
+  // the first one found stands for all of them.
+  REPS = groups.values().next().value.length;
+  writeReport(cells);
+  console.log(`[rho] rebuilt ${path.relative(paths.ROOT, OUT)}/rho_report.html from its existing rho_runs.csv (no runs)`);
+  process.exit(0);
+}
+
 const jobs = [];
 combos.forEach((combo, ci) => {
   for (let r = 0; r < REPS; r++) {
@@ -205,7 +289,14 @@ combos.forEach((combo, ci) => {
     const base = Object.assign({}, cfg.fixed, combo);
     if (cfg.pairWithBaseline) {
       jobs.push({ comboIndex: ci, combo, arm: "treatment", seed, horizon: cfg.horizon, recordAt: RECORD_AT, params: Object.assign({}, base, { aiEnabled: true }) });
-      jobs.push({ comboIndex: ci, combo, arm: "baseline", seed, horizon: cfg.horizon, recordAt: RECORD_AT, params: Object.assign({}, base, { aiEnabled: false }) });
+      // baselineParams lets the reference arm differ from the treatment arm in more than
+      // aiEnabled — the recruitment set's baseline also zeroes recruitmentShockYears, so
+      // "what did AI cost" does not silently become "what did AI cost on top of a freeze
+      // that hits both arms". Applied AFTER aiEnabled:false, same order batch_run.js
+      // uses, so a config cannot re-enable AI in the reference arm. Without this, a
+      // config carrying baselineParams would run a baseline this script never intended.
+      jobs.push({ comboIndex: ci, combo, arm: "baseline", seed, horizon: cfg.horizon, recordAt: RECORD_AT,
+        params: Object.assign({}, base, { aiEnabled: false }, cfg.baselineParams || {}) });
     } else {
       jobs.push({ comboIndex: ci, combo, arm: "single", seed, horizon: cfg.horizon, recordAt: RECORD_AT, params: base });
     }
@@ -305,7 +396,11 @@ function spearman(a, b) {
 function crossover(rhos, series) {
   for (let q = 1; q < series.length; q++) {
     const a = series[q - 1], b = series[q];
-    if (!isFinite(a) || !isFinite(b) || a === b) continue;
+    // Number.isFinite, not the global isFinite: series here can be read back from a
+    // JSON summary, where a NaN correlation (see spearman()) round-trips to null, and
+    // the coercing global isFinite(null) is true (null -> 0), which would silently read
+    // a "not computable" cell as a data point at zero instead of skipping it.
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) continue;
     if ((a < 0) === (b < 0)) continue;
     const f = -a / (b - a);
     return Math.exp(Math.log(rhos[q - 1]) + f * (Math.log(rhos[q]) - Math.log(rhos[q - 1])));
@@ -322,7 +417,7 @@ function lineChart(rhos, series, opts) {
   const W = 560, H = 200, L = 52, R = 14, T = 14, B = 34;
   const xs = rhos.map((r) => Math.log(r));
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const all = series.flatMap((s) => s.values).filter(isFinite);
+  const all = series.flatMap((s) => s.values).filter(Number.isFinite);
   let y0 = opts.y0 !== undefined ? opts.y0 : Math.min(...all);
   let y1 = opts.y1 !== undefined ? opts.y1 : Math.max(...all);
   if (y0 === y1) { y0 -= 1; y1 += 1; }
@@ -344,9 +439,9 @@ function lineChart(rhos, series, opts) {
     parts.push(`<text x="${px(xs[i]).toFixed(1)}" y="${H - B + 14}" class="ax" text-anchor="middle">${r}</text>`);
   });
   series.forEach((s) => {
-    const pts = s.values.map((v, i) => (isFinite(v) ? `${px(xs[i]).toFixed(1)},${py(v).toFixed(1)}` : null)).filter(Boolean);
+    const pts = s.values.map((v, i) => (Number.isFinite(v) ? `${px(xs[i]).toFixed(1)},${py(v).toFixed(1)}` : null)).filter(Boolean);
     parts.push(`<polyline points="${pts.join(" ")}" class="ln" style="stroke:${s.color}"/>`);
-    s.values.forEach((v, i) => { if (isFinite(v)) parts.push(`<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(v).toFixed(1)}" r="2.5" style="fill:${s.color}"/>`); });
+    s.values.forEach((v, i) => { if (Number.isFinite(v)) parts.push(`<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(v).toFixed(1)}" r="2.5" style="fill:${s.color}"/>`); });
   });
   parts.push(`<text x="${L}" y="${H - 4}" class="ax">&rho; (log scale)</text>`);
   return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${opts.alt || ""}">${parts.join("")}</svg>`;
@@ -397,7 +492,7 @@ function pgfplot(rhos, series, opts) {
       + ` at (axis cs:${opts.markRho},\\pgfkeysvalueof{/pgfplots/ymin}) {shipped $\\rho=${opts.markRho}$};`);
   }
   series.forEach((sr, i) => {
-    const pts = sr.values.map((v, q) => (isFinite(v) ? `(${rhos[q]},${(+v).toFixed(4)})` : null))
+    const pts = sr.values.map((v, q) => (Number.isFinite(v) ? `(${rhos[q]},${(+v).toFixed(4)})` : null))
       .filter(Boolean).join(" ");
     L.push(`    \\addplot[color=rhoC${i}, mark=*, mark size=1.2pt, thick] coordinates {${pts}};`);
     if (series.length > 1) L.push(`    \\addlegendentry{${texEscape(sr.label || ("series " + (i + 1)))}}`);
@@ -505,7 +600,15 @@ function writeReport(cells) {
   const ref = RHOS.indexOf(engine.CAPABILITY_RATIO);   // guaranteed present, see RHOS
   const rhoCorr = RHOS.map((_, q) => spearman(changes[ref], changes[q]));
   const dE = cells.map((c) => c.meanE_t - c.meanE_b);
-  const median = (a) => { const f = a.filter(isFinite).sort((x, y) => x - y); return f.length ? f[Math.floor(f.length / 2)] : NaN; };
+  // True median: the middle value for odd n, the average of the middle two for even n.
+  // (Previously this picked f[floor(n/2)] unconditionally, which for even n is the upper
+  // of the two middle values rather than their average — every cell count in this study
+  // happens to be even, so that quirk was live everywhere, not an edge case.)
+  const median = (a) => {
+    const f = a.filter(Number.isFinite).sort((x, y) => x - y), n = f.length;
+    if (!n) return NaN;
+    return n % 2 ? f[(n - 1) / 2] : (f[n / 2 - 1] + f[n / 2]) / 2;
+  };
   const medians = RHOS.map((_, q) => median(changes[q]));
   const cellSeries = cells.map((_, i) => RHOS.map((_, q) => changes[q][i]));
   const cellCross = cellSeries.map((s) => crossover(RHOS, s));
@@ -527,7 +630,7 @@ function writeReport(cells) {
     + "</td><td class='n'>" + dE[i].toFixed(4) + "</td>"
     + RHOS.map((_, q) => {
       const v = changes[q][i];
-      return `<td class="n${isFinite(v) && v < 0 ? " neg" : ""}">${isFinite(v) ? v.toFixed(2) : "—"}</td>`;
+      return `<td class="n${Number.isFinite(v) && v < 0 ? " neg" : ""}">${Number.isFinite(v) ? v.toFixed(2) : "—"}</td>`;
     }).join("")
     + `<td class="n">${cellCross[i] === null ? "—" : Math.round(cellCross[i])}</td></tr>`).join("\n");
 
@@ -587,8 +690,8 @@ ${charts}
 <tr><th class="n">&rho;</th><th class="n">slope d ln w/dE</th><th class="n">rank corr. vs shipped</th><th class="n">median capability change (%)</th></tr>
 ${RHOS.map((r, q) => `<tr><td class="n">${r}${r === engine.CAPABILITY_RATIO ? " *" : ""}</td>`
     + `<td class="n">${(Math.log(r) / (1 - THETA)).toFixed(2)}</td>`
-    + `<td class="n">${rhoCorr[q].toFixed(4)}</td>`
-    + `<td class="n${medians[q] < 0 ? " neg" : ""}">${isFinite(medians[q]) ? medians[q].toFixed(2) : "—"}</td></tr>`).join("\n")}
+    + `<td class="n">${Number.isFinite(rhoCorr[q]) ? rhoCorr[q].toFixed(4) : "—"}</td>`
+    + `<td class="n${Number.isFinite(medians[q]) && medians[q] < 0 ? " neg" : ""}">${Number.isFinite(medians[q]) ? medians[q].toFixed(2) : "—"}</td></tr>`).join("\n")}
 </table></div>
 <p class="facts">* the shipped CAPABILITY_RATIO, and the reference the correlations are measured against</p>
 
@@ -693,10 +796,18 @@ ${charts}
 <th class="n">cells changing sign</th><th class="n">median crossover &rho;</th></tr>
 ${runs.map((r) => {
   const q = r.rhos.indexOf(r.shippedRho);
+  // rankCorr/medianChange came through rho_summary.json: a NaN (see spearman() and
+  // median()) serializes as null, so these read Number.isFinite rather than assume a
+  // number. NaN correlation happens whenever a series has zero variance to rank at
+  // all -- e.g. the "wrong" Dell'Acqua variant at rho=1, where capability collapses to
+  // plain headcount and is identical in every cell, both arms, so there is nothing to
+  // correlate.
+  const corr = Number.isFinite(r.rankCorr[0]) ? r.rankCorr[0].toFixed(3) : "—";
+  const change = Number.isFinite(r.medianChange[q]) ? r.medianChange[q].toFixed(2) : "—";
   return `<tr><td><a href="${esc(r.dir)}/rho_report.html">${esc(r.dir)}</a></td>`
     + `<td>${r.axes.map(esc).join(" x ")}</td><td class="n">${r.cells}</td><td class="n">${r.replicates}</td>`
-    + `<td class="n">${r.tick}</td><td class="n">${r.rankCorr[0].toFixed(3)}</td>`
-    + `<td class="n${r.medianChange[q] < 0 ? " neg" : ""}">${r.medianChange[q].toFixed(2)}</td>`
+    + `<td class="n">${r.tick}</td><td class="n">${corr}</td>`
+    + `<td class="n${Number.isFinite(r.medianChange[q]) && r.medianChange[q] < 0 ? " neg" : ""}">${change}</td>`
     + `<td class="n">${r.cellsFlippingSign} / ${r.cells}</td>`
     + `<td class="n">${r.medianCrossover ? Math.round(r.medianCrossover) : "—"}</td></tr>`;
 }).join("\n")}
