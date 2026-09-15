@@ -4,10 +4,15 @@
 //   node src/rho_sensitivity.js --config data/experiments/experiment.1.json [options]
 //
 // w(E) = rho^((E - theta)/(1 - theta)) converts expertise into what a person is worth.
-// theta has an empirical argument behind it (expert_threshold_sensitivity.js); rho does
-// not. It is a stated assumption -- "one person at the ceiling is worth a thousand who
-// merely qualify" -- it appears in engine.js and nowhere else, and every capability
-// magnitude reported scales with it. This measures how much.
+// NEITHER constant is measured against anything external. theta was chosen as a
+// robustness midpoint -- the value making the model's own self-renewal/collapse contrast
+// least dependent on theta -- and doc/paper.md records that the argument was made under
+// the legacy calibration and does NOT carry over to the world-model regime these
+// experiments run in (0.585 sits at the top edge of that band, not its middle; see
+// expert_threshold_sensitivity.js). rho has never had an argument of either kind: it is a
+// stated assumption -- "one person at the ceiling is worth a thousand who merely qualify"
+// -- it appears in engine.js and nowhere else, and every capability magnitude reported
+// scales with it. This measures how much.
 //
 // WHY THIS IS CHEAP. capabilityWeight() feeds output metrics only: tick() destructures
 // { Ebar, count, Teach, transferEff } from institutionStats() and never reads capability,
@@ -29,7 +34,7 @@
 //
 // Options:
 //   --config PATH      experiment JSON, as in data/experiments/ (required)
-//   --rho LIST         comma-separated, default 1,2,4,8,...,2048
+//   --rho LIST         comma-separated, default 1,2,3,...,8,16,32,...,2048
 //   --stride N         take every Nth grid value on each axis (default 4)
 //   --replicates N     replicates per cell, independent of the config's own count (default: 3)
 //   --at TICK          which recorded tick to report (default: the last one)
@@ -146,23 +151,25 @@ if (process.argv.includes("--index") && !arg("config")) {
 
 const configPath = arg("config");
 if (!configPath) {
-  console.error("usage: node src/rho_sensitivity.js --config data/experiments/experiment.1.json [--rho 1,2,4,...,2048]");
+  console.error("usage: node src/rho_sensitivity.js --config data/experiments/experiment.1.json [--rho 1,2,3,...,8,16,...,2048]");
   console.error("                                   [--stride 4] [--replicates 3] [--at TICK] [--out DIR] [--workers N]");
   process.exit(1);
 }
 assertRhoIsOutputOnly();
 
 const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
-// Powers of two from 1 to 2048, so the curve is resolved rather than sampled at four
-// points, and anchored at the degenerate end: rho=1 makes w(E) === 1 for every E (no
-// premium for expertise at all — capability collapses to plain headcount), which is a
-// meaningful reference point for "how much does the convexity assumption itself matter",
-// not just how big it is. The shipped CAPABILITY_RATIO is ALWAYS included even when not
-// asked for: it is the reference the rank correlations are measured against, and a sweep
-// that omitted it would silently compare everything to whichever value happened to come
-// first.
+// Unit steps from 1 to 8 -- resolving the low end where a step of one still roughly
+// doubles rho, rather than jumping straight to the powers-of-two ladder above it -- then
+// powers of two on to 2048. Not floored at 5 the way an earlier version of this comment
+// argued (people routinely spend on the order of 15 years, professional development
+// included, building the expertise a 30-year career then draws on, so rho=1's "no
+// premium for expertise at all" is not realistic): that argument still holds, but the
+// low end is worth resolving rather than skipped over. The shipped CAPABILITY_RATIO is
+// ALWAYS included even when not asked for: it is the reference the rank correlations are
+// measured against, and a sweep that omitted it would silently compare everything to
+// whichever value happened to come first.
 const RHOS = Array.from(new Set(
-  arg("rho", "1,2,4,8,16,32,64,128,256,512,1024,2048").split(",").map(Number)
+  arg("rho", "1,2,3,4,5,6,7,8,16,32,64,128,256,512,1024,2048").split(",").map(Number)
     .concat([engine.CAPABILITY_RATIO]))).sort((a, b) => a - b);
 if (RHOS.some((r) => !(r > 0))) {
   console.error("[rho] every rho must be > 0 — w(E) = rho^((E-theta)/(1-theta)) is undefined for rho <= 0");
@@ -408,157 +415,389 @@ function crossover(rhos, series) {
   return null;
 }
 
-/* ------------------------------------- charting -------------------------------------- */
-// Inline SVG, no library: these pages are read from disk as often as over HTTP, and a
-// chart that needs a CDN is a chart that is blank half the time.
+/* ------------------------------------- LaTeX ----------------------------------------- */
+// Tables leave as LaTeX, charts leave as PNG. The split is deliberate: a table is
+// structured text a document should typeset in its own font, while a chart drawn to match
+// this report is a figure -- reproducing it as pgfplots meant maintaining a second
+// renderer whose output never quite matched what the page showed. PNG keeps one drawing
+// path and one appearance.
 //
-// x is log(rho) throughout -- see crossover() for why that is the right scale.
-function lineChart(rhos, series, opts) {
-  const W = 560, H = 200, L = 52, R = 14, T = 14, B = 34;
-  const xs = rhos.map((r) => Math.log(r));
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const all = series.flatMap((s) => s.values).filter(Number.isFinite);
-  let y0 = opts.y0 !== undefined ? opts.y0 : Math.min(...all);
-  let y1 = opts.y1 !== undefined ? opts.y1 : Math.max(...all);
-  if (y0 === y1) { y0 -= 1; y1 += 1; }
-  const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
-  const px = (x) => L + ((x - x0) / (x1 - x0 || 1)) * (W - L - R);
-  const py = (y) => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
-  const parts = [];
-  // zero rule, where zero is inside the range -- the sign change is the whole point
-  if (y0 < 0 && y1 > 0) parts.push(`<line x1="${L}" y1="${py(0).toFixed(1)}" x2="${W - R}" y2="${py(0).toFixed(1)}" class="zero"/>`);
-  if (opts.markRho) {
-    const mx = px(Math.log(opts.markRho));
-    parts.push(`<line x1="${mx.toFixed(1)}" y1="${T}" x2="${mx.toFixed(1)}" y2="${H - B}" class="mark"/>`);
-    parts.push(`<text x="${(mx + 4).toFixed(1)}" y="${T + 10}" class="lbl">shipped &rho;=${opts.markRho}</text>`);
-  }
-  [y0 + pad, y1 - pad].forEach((v) => parts.push(
-    `<text x="${L - 6}" y="${(py(v) + 3).toFixed(1)}" class="ax" text-anchor="end">${v.toFixed(opts.dp === undefined ? 2 : opts.dp)}</text>`));
-  rhos.forEach((r, i) => {
-    if (rhos.length > 8 && i % 2) return;
-    parts.push(`<text x="${px(xs[i]).toFixed(1)}" y="${H - B + 14}" class="ax" text-anchor="middle">${r}</text>`);
-  });
-  series.forEach((s) => {
-    const pts = s.values.map((v, i) => (Number.isFinite(v) ? `${px(xs[i]).toFixed(1)},${py(v).toFixed(1)}` : null)).filter(Boolean);
-    parts.push(`<polyline points="${pts.join(" ")}" class="ln" style="stroke:${s.color}"/>`);
-    s.values.forEach((v, i) => { if (Number.isFinite(v)) parts.push(`<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(v).toFixed(1)}" r="2.5" style="fill:${s.color}"/>`); });
-  });
-  parts.push(`<text x="${L}" y="${H - 4}" class="ax">&rho; (log scale)</text>`);
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${opts.alt || ""}">${parts.join("")}</svg>`;
-}
-
-// ------------------------------- LaTeX for the charts ---------------------------------
-// The charts are also emitted as pgfplots source, copyable from the page and written to
-// .tex beside it. Preferring code over an image file: a pasted SVG or PNG carries the
-// report's fonts and colours into a document that has its own, and cannot be restyled or
-// rescaled once it is in. pgfplots redraws from the numbers, so the figure takes the
-// document's typeface and the data stays legible in the source.
-//
-// Self-contained apart from the package line: colours are defined inline rather than
-// assumed, because a snippet that silently picks up whatever `blue` means in the host
-// preamble is not reproducible.
-//
-// x is log base 2 -- the sweep is powers of two, and w is exponential in E with slope
-// proportional to log(rho), so equal ratios are the equal steps.
+// Built in Node rather than assembled in browser JS: a .tex file is mostly backslashes,
+// and building one browser-side means every backslash surviving two levels of escaping,
+// which is exactly the class of bug that stays invisible until someone pastes the result
+// into a document.
 function texEscape(t) {
   return String(t).replace(/\\/g, "\\textbackslash{}").replace(/([&%$#_{}])/g, "\\$1")
     .replace(/~/g, "\\textasciitilde{}").replace(/\^/g, "\\textasciicircum{}");
 }
 
-function pgfplot(rhos, series, opts) {
+// ASCII only, this provenance comment included: a .tex file carrying a stray em dash is
+// an inputenc error under pdflatex, and this report's prose is full of typographic
+// characters that must not follow the numbers out. No build date -- a table gets pasted
+// into a document and re-exported as the data changes, and a stale one is worse than none.
+function latexTable(spec) {
+  const wide = spec.header.length > 10;
   const L = [];
-  L.push(`% ${opts.caption}`);
-  L.push(`% Generated by src/rho_sensitivity.js on ${new Date().toISOString().slice(0, 10)}`);
-  L.push("% Requires: \\usepackage{pgfplots} and \\pgfplotsset{compat=1.18} in the preamble.");
-  L.push("\\begin{tikzpicture}");
-  series.forEach((sr, i) => L.push(`  \\definecolor{rhoC${i}}{HTML}{${sr.tex.replace("#", "")}}`));
-  L.push("  \\begin{axis}[");
-  L.push("    width=\\linewidth, height=6cm,");
-  L.push("    xmode=log, log basis x=2, log ticks with fixed point,");
-  L.push(`    xlabel={$\\rho$}, ylabel={${opts.ylabel}},`);
-  if (opts.ymin !== undefined) L.push(`    ymin=${opts.ymin}, ymax=${opts.ymax},`);
-  L.push("    grid=major, grid style={gray!20},");
-  L.push("    tick align=outside, tick pos=left,");
-  if (series.length > 1) L.push("    legend pos=south east, legend cell align=left, legend style={font=\\footnotesize, draw=gray!40},");
-  L.push("  ]");
-  // The reference line first, so the data draws over it.
-  if (opts.zeroLine) {
-    L.push(`    \\addplot[gray, dashed, forget plot, domain=${rhos[0]}:${rhos[rhos.length - 1]}] {0};`);
-  }
-  if (opts.markRho) {
-    L.push(`    \\draw[gray!60, dotted] (axis cs:${opts.markRho},\\pgfkeysvalueof{/pgfplots/ymin})`
-      + ` -- (axis cs:${opts.markRho},\\pgfkeysvalueof{/pgfplots/ymax});`);
-    L.push(`    \\node[gray!70, font=\\scriptsize, anchor=south west, rotate=90]`
-      + ` at (axis cs:${opts.markRho},\\pgfkeysvalueof{/pgfplots/ymin}) {shipped $\\rho=${opts.markRho}$};`);
-  }
-  series.forEach((sr, i) => {
-    const pts = sr.values.map((v, q) => (Number.isFinite(v) ? `(${rhos[q]},${(+v).toFixed(4)})` : null))
-      .filter(Boolean).join(" ");
-    L.push(`    \\addplot[color=rhoC${i}, mark=*, mark size=1.2pt, thick] coordinates {${pts}};`);
-    if (series.length > 1) L.push(`    \\addlegendentry{${texEscape(sr.label || ("series " + (i + 1)))}}`);
-  });
-  L.push("  \\end{axis}");
-  L.push("\\end{tikzpicture}");
+  L.push("% " + spec.caption);
+  L.push("% Generated by src/rho_sensitivity.js");
+  L.push("% Requires: \\usepackage{booktabs}" + (wide ? ",graphicx" : ""));
+  L.push("\\begin{table}[htbp]");
+  L.push("  \\centering");
+  L.push("  \\caption{" + spec.caption + "}");
+  L.push("  \\label{" + spec.label + "}");
+  const ind = wide ? "    " : "  ";
+  if (wide) L.push("  \\resizebox{\\textwidth}{!}{%");
+  L.push(ind + "\\begin{tabular}{" + spec.align + "}");
+  L.push(ind + "  \\toprule");
+  L.push(ind + "  " + spec.header.join(" & ") + " \\\\");
+  L.push(ind + "  \\midrule");
+  spec.rows.forEach((r) => L.push(ind + "  " + r.join(" & ") + " \\\\"));
+  L.push(ind + "  \\bottomrule");
+  L.push(ind + "\\end{tabular}");
+  if (wide) L.push("  }");
+  if (spec.note) L.push("  \\par\\smallskip\\footnotesize " + spec.note);
+  L.push("\\end{table}");
   return L.join("\n") + "\n";
 }
 
-// A function, not a const: writeIndex() runs before this point in the file when
-// --index is passed alone, and a const would still be in its temporal dead zone.
+// LaTeX wants a plain number or an explicit marker, never the page's em dash.
+// A declaration, not a const, for the same reason css() is: writeIndex() runs before this
+// point in the file when --index is passed alone, and a const would still be in its
+// temporal dead zone.
+function texNum(v, dp) { return Number.isFinite(v) ? v.toFixed(dp) : "n/a"; }
+
+/* -------------------------------------- styling -------------------------------------- */
+// The same tokens report.template.html defines, including its three-state theme handling:
+// a bare :root light palette, a prefers-color-scheme override guarded so an explicit
+// light choice still wins, and a [data-theme] pair so a toggle wins in both directions.
+// These pages are opened beside the main reports and should not look like a different
+// study.
+//
+// A function, not a const: writeIndex() runs before this point in the file when --index
+// is passed alone, and a const would still be in its temporal dead zone.
 function css() { return `
-:root{--bg:#eef0ee;--panel:#fff;--ink:#14181a;--muted:#5c6360;--rule:#d7dad6;--accent:#35636b;--warn:#a4553a}
-@media(prefers-color-scheme:dark){:root{--bg:#101314;--panel:#171b1d;--ink:#e6e8e6;--muted:#9aa19d;--rule:#2a2f31;--accent:#7fb3bd;--warn:#d08b6e}}
-*{box-sizing:border-box}body{margin:0;padding:2.5rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
-font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:62rem;margin:0 auto}h1{font-size:1.3rem;margin:0 0 .5rem}h2{font-size:1rem;margin:2.2rem 0 .6rem}
-p{color:var(--muted);max-width:46rem}a{color:var(--accent)}
-table{border-collapse:collapse;width:100%;font-size:.8rem;background:var(--panel);border:1px solid var(--rule)}
-th,td{padding:.32rem .5rem;border-bottom:1px solid var(--rule);text-align:left;white-space:nowrap}
-td.n,th.n{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-td.neg{color:var(--warn)}
-.wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.facts{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--muted)}
-.key{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--accent);padding:.8rem 1rem;border-radius:4px}
-.key p{color:inherit;max-width:none;margin:0}
-.chart{width:100%;max-width:560px;height:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
-.chart .ln{fill:none;stroke-width:1.8}
-.chart .zero{stroke:var(--warn);stroke-width:1;stroke-dasharray:3 3}
-.chart .mark{stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3}
-.chart .ax,.chart .lbl{font:10px ui-monospace,monospace;fill:var(--muted)}
-.charts{display:flex;flex-wrap:wrap;gap:1rem}
-.fig{flex:1 1 320px;min-width:0}
-.figbar{display:flex;align-items:center;gap:.4rem;margin:.3rem 0 0}
-.copy-btn{display:inline-flex;align-items:center;gap:.3rem;background:var(--panel);color:var(--muted);
-border:1px solid var(--rule);border-radius:4px;padding:.2rem .45rem;font:inherit;font-size:.72rem;cursor:pointer}
-.copy-btn:hover{color:var(--ink);border-color:var(--accent)}
+:root{--bg:#eef0ee;--panel:#fff;--panel-2:#f4f5f3;--ink:#14181a;--ink-muted:#5c6360;--ink-faint:#8b918d;
+--rule:#d7dad6;--accent:#a8502c;--accent2:#35636b;--ref-line:#6b3fa0;--warn:#a8502c;
+--shadow:0 1px 2px rgba(20,24,26,.07)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101314;--panel:#171b1d;--panel-2:#1d2224;
+--ink:#e8eae6;--ink-muted:#93a09c;--ink-faint:#656e6b;--rule:#2b3234;--accent:#dd8259;--accent2:#7fb0b7;
+--ref-line:#c79bff;--warn:#dd8259;--shadow:0 1px 3px rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--bg:#101314;--panel:#171b1d;--panel-2:#1d2224;
+--ink:#e8eae6;--ink-muted:#93a09c;--ink-faint:#656e6b;--rule:#2b3234;--accent:#dd8259;--accent2:#7fb0b7;
+--ref-line:#c79bff;--warn:#dd8259;--shadow:0 1px 3px rgba(0,0,0,.5)}
+*{box-sizing:border-box}
+body{margin:0;padding:2.2rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
+font:14.5px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:62rem;margin:0 auto;display:flex;flex-direction:column;gap:1.1rem}
+h1{font-size:1.25rem;margin:0}
+h2{font-size:1.05rem;margin:0}
+h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 .5rem}
+p{margin:0 0 .6rem;color:var(--ink-muted);max-width:46rem}
+p:last-child{margin-bottom:0}
+a{color:var(--accent2)}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);padding:1rem}
+.head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem}
+.head .sub{font-size:.78rem;color:var(--ink-muted)}
+.facts{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--ink-faint)}
+table.data-table{border-collapse:collapse;width:100%;font-size:.82rem}
+table.data-table th,table.data-table td{border:1px solid var(--rule);padding:.35rem .55rem;text-align:right;
+font-family:ui-monospace,monospace;white-space:nowrap}
+table.data-table th:first-child,table.data-table td:first-child{text-align:left}
+table.data-table th{background:var(--panel-2);font-weight:600}
+table.data-table td.neg{color:var(--warn)}
+table.data-table tbody tr.ref td{background:var(--panel-2)}
+.table-scroll{overflow:auto;max-height:480px}
+.fig-toolbar{display:flex;gap:.4rem;align-items:center;justify-content:flex-end;margin:.35rem 0 0}
+.copy-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .6rem;font:inherit;font-size:.72rem;
+color:var(--ink-muted);background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;cursor:pointer}
+.copy-btn:hover{color:var(--ink);border-color:var(--ink-faint)}
+.copy-btn:active{transform:translateY(1px)}
+.copy-btn.is-done{color:#2e7d4f;border-color:#2e7d4f}
+.copy-btn.is-fail{color:#c0392b;border-color:#c0392b}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .copy-btn.is-done{color:#7fd4a2;border-color:#7fd4a2}
+:root:not([data-theme="light"]) .copy-btn.is-fail{color:#f08a80;border-color:#f08a80}}
 .copy-btn svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8}
-.copy-btn.ok{color:var(--accent);border-color:var(--accent)}
-.figcap{font-size:.72rem;color:var(--muted);margin:.15rem 0 0}
+.canvas-wrap{position:relative;overflow-x:auto}
+.canvas-wrap canvas{width:100%;min-width:460px;display:block;cursor:default}
+.figcap{margin:.7rem 0 0;padding-top:.6rem;border-top:1px solid var(--rule);font-size:.74rem;
+line-height:1.55;color:var(--ink-muted)}
+.key{background:var(--panel-2);border:1px solid var(--rule);border-left:3px solid var(--accent2);
+padding:.85rem 1rem;border-radius:4px}
+.key p{color:var(--ink-muted);max-width:none}
+.key b{color:var(--ink)}
 `; }
 
-// A chart plus its "copy as LaTeX" control. The LaTeX itself is built in Node and
-// injected as JSON: assembling pgfplots source in browser JS means backslashes surviving
-// two levels of escaping, which is exactly the class of bug that is invisible until
-// someone pastes the result into a document.
-function figure(id, svg, caption) {
-  return `<div class="fig">${svg}
-  <div class="figbar">
-    <button class="copy-btn" data-tex="${id}" type="button" title="Copy pgfplots source for this chart">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>`
-    + `<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy LaTeX</span>
-    </button>
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+function page(title, body, tail) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
+<style>${css()}</style></head><body><main>${body}</main>${tail || ""}</body></html>`;
+}
+
+/* ------------------------------ figure + table markup -------------------------------- */
+// Declarations rather than consts — see texNum() for why.
+function copyIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>'
+    + '<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+}
+function saveIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/>'
+    + '<path d="M4 17v3h16v-3"/></svg>';
+}
+
+// A chart plus the two PNG controls. Height is set by the client once it knows the
+// container width, so the element does not jump on first draw.
+function figureBlock(id, caption, h) {
+  return `<div class="panel">
+  <div class="canvas-wrap"><canvas id="fig-${id}" style="height:${h}px"></canvas></div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-fig="${id}" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG">${copyIcon()}<span>Copy PNG</span></button>
+    <button class="copy-btn" data-fig="${id}" data-act="save" type="button" title="Save this figure as a PNG file">${saveIcon()}<span>Download PNG</span></button>
   </div>
   <p class="figcap">${caption}</p>
 </div>`;
 }
 
-// Clipboard, with the same fallback the other report pages use: navigator.clipboard is
-// unavailable outside a secure context, and these pages are opened from disk as often as
-// over HTTP, where file:// is not secure and the API is simply absent.
-function clipboardScript(texById) {
-  const blob = JSON.stringify(texById).replace(/</g, "\\u003c");
+function tableBlock(id, title, sub, tableHtml, caption) {
+  return `<div class="panel">
+  <div class="head"><h2>${title}</h2>${sub ? `<span class="sub">${sub}</span>` : ""}</div>
+  <div class="table-scroll">${tableHtml}</div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-tex="${id}" type="button" title="Copy this table as a LaTeX tabular (booktabs)">${copyIcon()}<span>Copy as LaTeX</span></button>
+  </div>
+  ${caption ? `<p class="figcap">${caption}</p>` : ""}
+</div>`;
+}
+
+/* ------------------------------------ client script ---------------------------------- */
+// Canvas, not SVG, and drawn client-side: the figures have to match report.template.html's
+// panels, which are canvas, and the PNG export composites the same pixels the page shows
+// rather than rasterising a second time from different source. x is log(rho) throughout --
+// see crossover() for why that is the right scale.
+function clientScript(figs, texById) {
+  const blob = (o) => JSON.stringify(o).replace(/</g, "\\u003c");
   return `<script>
 (function () {
-  var TEX = ${blob};
+  var FIGS = ${blob(figs)};
+  var TEX = ${blob(texById)};
+  var MONO = "10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+  var SANS = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+
+  function cssVar(n) {
+    return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888888";
+  }
+  function finite(v) { return v !== null && v !== undefined && isFinite(v); }
+
+  // Shared across every panel of a figure, so facets are comparable by eye.
+  function domainOf(spec) {
+    var all = [];
+    spec.panels.forEach(function (p) {
+      p.values.forEach(function (v) { if (finite(v)) all.push(v); });
+    });
+    var lo = spec.y0 !== null && spec.y0 !== undefined ? spec.y0 : Math.min.apply(null, all);
+    var hi = spec.y1 !== null && spec.y1 !== undefined ? spec.y1 : Math.max.apply(null, all);
+    if (!finite(lo) || !finite(hi)) { lo = -1; hi = 1; }
+    if (lo === hi) { lo -= 1; hi += 1; }
+    var pad = (hi - lo) * 0.08;
+    return [lo - pad, hi + pad];
+  }
+
+  function drawPanel(ctx, box, spec, panel, dom, small) {
+    var rhos = spec.rhos;
+    var xs = rhos.map(function (r) { return Math.log(r); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var padL = small ? 40 : 56, padR = small ? 10 : 16;
+    // A two-line facet label needs room above the plot that a one-line one does not.
+    var padT = small ? (panel.sub ? 32 : 18) : 14, padB = small ? 30 : 38;
+    var pw = box.w - padL - padR, ph = box.h - padT - padB;
+    var PX = function (r) { return box.x + padL + ((Math.log(r) - x0) / (x1 - x0 || 1)) * pw; };
+    var PY = function (v) { return box.y + padT + (1 - (v - dom[0]) / (dom[1] - dom[0])) * ph; };
+    var dp = spec.dp === undefined ? 2 : spec.dp;
+
+    // horizontal gridlines + y labels, same weight and alpha as the trajectory panels.
+    // When the zero rule is drawn, the middle gridline IS zero rather than the arithmetic
+    // midpoint of the domain: otherwise the labelled line lands a percent or two off the
+    // solid one and, rounded, reads as its label -- an asymmetric domain like [-22, 25]
+    // put a "1" against the zero rule. Skipped when zero sits too near an end to label
+    // without colliding with the endpoint, where the rule is next to a labelled value
+    // anyway.
+    // Where the caller fixed the scale (y0/y1), label THOSE values rather than the padded
+    // extremes: a correlation axis running -1.2 to 1.2 names two values the statistic
+    // cannot take. The padding stays in the drawing domain, so the series still clears the
+    // panel edges -- only the labelled gridlines move inward.
+    var tLo = (spec.y0 === null || spec.y0 === undefined) ? dom[0] : spec.y0;
+    var tHi = (spec.y1 === null || spec.y1 === undefined) ? dom[1] : spec.y1;
+    var mid = (tLo + tHi) / 2;
+    var zeroInside = spec.zeroLine && dom[0] < 0 && dom[1] > 0;
+    var zeroFrac = (0 - dom[0]) / (dom[1] - dom[0]);
+    if (zeroInside && zeroFrac > 0.12 && zeroFrac < 0.88) mid = 0;
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+    ctx.font = MONO; ctx.fillStyle = cssVar("--ink-faint");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    [tLo, mid, tHi].forEach(function (v) {
+      var y = PY(v);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(box.x + padL, y); ctx.lineTo(box.x + padL + pw, y); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(v.toFixed(dp), box.x + padL - 6, y);
+    });
+
+    // x ticks: every rho when there is room, otherwise thin them out
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    var step = pw / rhos.length < 22 ? (pw / rhos.length < 12 ? 3 : 2) : 1;
+    rhos.forEach(function (r, i) {
+      if (i % step && i !== rhos.length - 1) return;
+      ctx.fillText(String(r), PX(r), box.y + padT + ph + 6);
+    });
+
+    // the zero rule, where zero is inside the range -- the sign change is the whole point,
+    // so it is drawn loud (solid, reserved reference colour) like the trajectory zero line
+    if (zeroInside) {
+      ctx.strokeStyle = cssVar("--ref-line"); ctx.lineWidth = 1.75;
+      ctx.beginPath(); ctx.moveTo(box.x + padL, PY(0)); ctx.lineTo(box.x + padL + pw, PY(0)); ctx.stroke();
+    }
+    // the shipped rho, dashed and faint -- a reference mark, not a datum
+    if (spec.markRho) {
+      ctx.save();
+      ctx.strokeStyle = cssVar("--ink-faint"); ctx.lineWidth = 1.25; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(PX(spec.markRho), box.y + padT); ctx.lineTo(PX(spec.markRho), box.y + padT + ph);
+      ctx.stroke();
+      ctx.restore();
+      if (!small) {
+        ctx.font = "9px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+        ctx.fillStyle = cssVar("--ink-faint");
+        ctx.textAlign = "right"; ctx.textBaseline = "top";
+        ctx.fillText("shipped rho = " + spec.markRho, PX(spec.markRho) - 5, box.y + padT + 2);
+      }
+    }
+
+    // the series
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 2;
+    ctx.beginPath();
+    var started = false;
+    panel.values.forEach(function (v, i) {
+      if (!finite(v)) { started = false; return; }
+      if (started) ctx.lineTo(PX(rhos[i]), PY(v));
+      else { ctx.moveTo(PX(rhos[i]), PY(v)); started = true; }
+    });
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--accent2");
+    panel.values.forEach(function (v, i) {
+      if (!finite(v)) return;
+      ctx.beginPath(); ctx.arc(PX(rhos[i]), PY(v), small ? 2 : 2.8, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // panel label (facets) and axis titles
+    // Two lines: what the pairing IS on top, what it varied beneath it in muted type.
+    // One line would run to ~33 characters for the ACL panels ("acl.12  Dell'a (wrong)
+    // lambda x gamma_below") and overflow into the next facet at four columns.
+    if (panel.label) {
+      var sansFam = " ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.font = "600 " + (small ? "10px" : "11px") + sansFam;
+      ctx.fillStyle = cssVar("--ink");
+      ctx.fillText(panel.label, box.x + padL, box.y + padT - (panel.sub ? 19 : 6));
+      if (panel.sub) {
+        ctx.font = (small ? "9px" : "10px") + sansFam;
+        ctx.fillStyle = cssVar("--ink-muted");
+        ctx.fillText(panel.sub, box.x + padL, box.y + padT - 6);
+      }
+    }
+    ctx.font = SANS; ctx.fillStyle = cssVar("--ink-muted");
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(spec.xlabel, box.x + padL + pw / 2, box.y + padT + ph + 19);
+    if (!small) {
+      ctx.save();
+      ctx.translate(box.x + 12, box.y + padT + ph / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(spec.ylabel, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  function drawFigure(canvas, spec) {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.max(rect.width || 700, 460);
+    var facets = spec.panels.length > 1;
+    var cols = facets ? (w >= 760 ? 4 : 2) : 1;
+    var rows = Math.ceil(spec.panels.length / cols);
+    var ph = facets ? 164 : 250;   // +14 for the two-line facet label, so the plot area is unchanged
+    var h = rows * ph + (facets ? 10 : 0);
+    // Facets share one y scale, so the axis is named once for the whole figure in a left
+    // gutter rather than repeated on every panel (where there is no room for it anyway).
+    var gutter = facets ? 20 : 0;
+    canvas.style.height = h + "px";
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var dom = domainOf(spec);
+    var fw = (w - gutter) / cols;
+    spec.panels.forEach(function (p, i) {
+      var box = { x: gutter + (i % cols) * fw, y: Math.floor(i / cols) * ph, w: fw, h: ph };
+      drawPanel(ctx, box, spec, p, dom, facets);
+    });
+    if (facets) {
+      ctx.save();
+      ctx.font = SANS; ctx.fillStyle = cssVar("--ink-muted");
+      ctx.translate(12, h / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(spec.ylabel, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // Composites title, subtitle, the canvas and a provenance footer onto an opaque
+  // background at the canvas's own pixel ratio. A transparent PNG pasted into a light
+  // document with a dark-theme figure in it is unreadable, which is why the background is
+  // painted rather than left clear. No build date in the footer -- a figure outlives the
+  // page it came from and a stale date on it is worse than none.
+  function compose(canvas, spec) {
+    var dpr = window.devicePixelRatio || 1;
+    var cw = canvas.width / dpr, chh = canvas.height / dpr;
+    var pad = 14, titleH = 22, subH = spec.subtitle ? 16 : 0, footH = 16;
+    var W = cw + pad * 2, H = pad + titleH + subH + chh + footH + pad;
+    var out = document.createElement("canvas");
+    out.width = Math.round(W * dpr); out.height = Math.round(H * dpr);
+    var c = out.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = cssVar("--panel"); c.fillRect(0, 0, W, H);
+    var font = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    var y = pad;
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillStyle = cssVar("--ink"); c.font = "600 14px " + font;
+    c.fillText(spec.title, pad, y); y += titleH;
+    if (spec.subtitle) {
+      c.fillStyle = cssVar("--ink-muted"); c.font = "11px " + font;
+      c.fillText(spec.subtitle, pad, y); y += subH;
+    }
+    c.drawImage(canvas, 0, 0, canvas.width, canvas.height, pad, y, cw, chh);
+    c.fillStyle = cssVar("--ink-muted"); c.font = "9px " + font;
+    c.fillText(spec.foot, pad, H - pad - 9);
+    return out;
+  }
+
+  var resetTimer = {};
+  function flash(btn, cls, text) {
+    var label = btn.querySelector("span");
+    var was = btn.getAttribute("data-label") || label.textContent;
+    btn.setAttribute("data-label", was);
+    btn.classList.remove("is-done", "is-fail");
+    btn.classList.add(cls);
+    label.textContent = text;
+    clearTimeout(resetTimer[btn.id || was]);
+    resetTimer[btn.id || was] = setTimeout(function () {
+      btn.classList.remove("is-done", "is-fail");
+      label.textContent = was;
+    }, 2200);
+  }
+
   function copyText(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
     return new Promise(function (resolve, reject) {
@@ -571,29 +810,76 @@ function clipboardScript(texById) {
       finally { document.body.removeChild(ta); }
     });
   }
-  document.querySelectorAll(".copy-btn[data-tex]").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var label = btn.querySelector("span");
-      var was = label.textContent;
-      copyText(TEX[btn.getAttribute("data-tex")]).then(function () {
-        label.textContent = "Copied"; btn.classList.add("ok");
-      }, function () {
-        label.textContent = "Press Ctrl+C";
+
+  function figureBlob(canvas, spec) {
+    return new Promise(function (resolve, reject) {
+      compose(canvas, spec).toBlob(function (b) { b ? resolve(b) : reject(new Error("toBlob returned null")); }, "image/png");
+    });
+  }
+
+  function wire() {
+    Object.keys(FIGS).forEach(function (id) {
+      var canvas = document.getElementById("fig-" + id);
+      if (canvas) drawFigure(canvas, FIGS[id]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".copy-btn[data-fig]"), function (btn) {
+      btn.addEventListener("click", function () {
+        var spec = FIGS[btn.getAttribute("data-fig")];
+        var canvas = document.getElementById("fig-" + btn.getAttribute("data-fig"));
+        if (!canvas || !canvas.width) { flash(btn, "is-fail", "Nothing drawn"); return; }
+        if (btn.getAttribute("data-act") === "save") {
+          figureBlob(canvas, spec).then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url; a.download = spec.file;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+            flash(btn, "is-done", "Saved");
+          }, function () { flash(btn, "is-fail", "Failed"); });
+          return;
+        }
+        // ClipboardItem is handed the PROMISE, not an awaited blob: Safari drops the user
+        // activation that authorises a clipboard write if you await anything first.
+        if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) {
+          flash(btn, "is-fail", "Use Download"); return;
+        }
+        try {
+          navigator.clipboard.write([new ClipboardItem({ "image/png": figureBlob(canvas, spec) })]).then(
+            function () { flash(btn, "is-done", "Copied"); },
+            function () { flash(btn, "is-fail", "Use Download"); });
+        } catch (e) { flash(btn, "is-fail", "Use Download"); }
       });
-      setTimeout(function () { label.textContent = was; btn.classList.remove("ok"); }, 1800);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".copy-btn[data-tex]"), function (btn) {
+      btn.addEventListener("click", function () {
+        copyText(TEX[btn.getAttribute("data-tex")]).then(
+          function () { flash(btn, "is-done", "Copied"); },
+          function () { flash(btn, "is-fail", "Copy blocked"); });
+      });
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
+  window.addEventListener("resize", function () {
+    Object.keys(FIGS).forEach(function (id) {
+      var canvas = document.getElementById("fig-" + id);
+      if (canvas) drawFigure(canvas, FIGS[id]);
     });
   });
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+      Object.keys(FIGS).forEach(function (id) {
+        var canvas = document.getElementById("fig-" + id);
+        if (canvas) drawFigure(canvas, FIGS[id]);
+      });
+    });
+  }
 })();
 <\/script>`;
 }
 
-function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function page(title, body, tail) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
-<style>${css()}</style></head><body><main>${body}</main>${tail || ""}</body></html>`;
-}
-
+/* -------------------------------------- reports -------------------------------------- */
 function writeReport(cells) {
   const pct = (t, b) => (b > 0 ? ((t - b) / b) * 100 : NaN);
   const changes = RHOS.map((_, q) => cells.map((c) => pct(c.perRho[q].Ct, c.perRho[q].Cb)));
@@ -626,106 +912,147 @@ function writeReport(cells) {
   };
   fs.writeFileSync(path.join(OUT, "rho_summary.json"), JSON.stringify(summary, null, 2));
 
-  const rows = cells.map((c, i) => "<tr><td>" + AXES.map((a) => esc(c.combo[a])).join("</td><td>")
-    + "</td><td class='n'>" + dE[i].toFixed(4) + "</td>"
+  const name = path.basename(configPath, ".json");
+  const shipped = engine.CAPABILITY_RATIO;
+
+  /* ---- figures ---- */
+  const figs = {
+    rankcorr: {
+      title: "Rank correlation against the shipped \u03c1 \u2014 " + name,
+      subtitle: "Spearman correlation of per-cell capability change vs \u03c1 = " + shipped
+        + ". 1.0 means the ordering of cells is identical.",
+      foot: "rho sensitivity \u00b7 " + name + " \u00b7 " + AXES.join(" \u00d7 ") + " \u00b7 "
+        + cells.length + " cells \u00b7 " + REPS + " replicates \u00b7 t = " + AT,
+      file: "rho-" + name + "-rankcorr.png",
+      rhos: RHOS, markRho: shipped, zeroLine: true, y0: -1, y1: 1, dp: 1,
+      ylabel: "rank correlation vs \u03c1 = " + shipped,
+      xlabel: "\u03c1 (log scale)",
+      panels: [{ label: null, values: rhoCorr.map((v) => (Number.isFinite(v) ? v : null)) }],
+    },
+    median: {
+      title: "Median capability change \u2014 " + name,
+      subtitle: "Median across cells of the change from the no-AI baseline, per cent, at each \u03c1.",
+      foot: "rho sensitivity \u00b7 " + name + " \u00b7 " + AXES.join(" \u00d7 ") + " \u00b7 "
+        + cells.length + " cells \u00b7 " + REPS + " replicates \u00b7 t = " + AT,
+      file: "rho-" + name + "-median.png",
+      rhos: RHOS, markRho: shipped, zeroLine: true, dp: 1,
+      ylabel: "median capability change (%)",
+      xlabel: "\u03c1 (log scale)",
+      panels: [{ label: null, values: medians.map((v) => (Number.isFinite(v) ? v : null)) }],
+    },
+  };
+
+  /* ---- tables ---- */
+  const summaryRows = RHOS.map((r, q) => [
+    String(r) + (r === shipped ? " *" : ""),
+    (Math.log(r) / (1 - THETA)).toFixed(2),
+    texNum(rhoCorr[q], 4),
+    texNum(medians[q], 2),
+  ]);
+  const summaryTex = latexTable({
+    caption: "Capability ratio sensitivity, " + texEscape(name) + ": rank correlation and median capability change by $\\rho$.",
+    label: "tab:rho-" + name.replace(/[^A-Za-z0-9]/g, "-") + "-summary",
+    align: "r r r r",
+    header: ["$\\rho$", "$\\mathrm{d}\\ln w/\\mathrm{d}E$", "rank corr.\\ vs shipped", "median capability change (\\%)"],
+    rows: summaryRows,
+    note: "* the shipped capability ratio, and the reference the correlations are measured against.",
+  });
+
+  const cellTex = latexTable({
+    caption: "Capability ratio sensitivity, " + texEscape(name)
+      + ": per-cell capability change (\\%) at each $\\rho$, with the $\\rho$ at which each cell crosses zero.",
+    label: "tab:rho-" + name.replace(/[^A-Za-z0-9]/g, "-") + "-cells",
+    align: AXES.map(() => "r").join(" ") + " r " + RHOS.map(() => "r").join(" ") + " r",
+    header: AXES.map((a) => texEscape(a)).concat(["$\\Delta\\overline{E}$"])
+      .concat(RHOS.map((r) => String(r))).concat(["crossover $\\rho$"]),
+    rows: cells.map((c, i) => AXES.map((a) => String(c.combo[a]))
+      .concat([dE[i].toFixed(4)])
+      .concat(RHOS.map((_, q) => texNum(changes[q][i], 2)))
+      .concat([cellCross[i] === null ? "n/a" : String(Math.round(cellCross[i]))])),
+  });
+  const texById = { summary: summaryTex, cells: cellTex };
+  fs.writeFileSync(path.join(OUT, "rho_summary_table.tex"), summaryTex);
+  fs.writeFileSync(path.join(OUT, "rho_cells_table.tex"), cellTex);
+
+  const summaryHtml = `<table class="data-table"><thead>
+<tr><th>&rho;</th><th>slope d ln w/dE</th><th>rank corr. vs shipped</th><th>median capability change (%)</th></tr>
+</thead><tbody>
+${RHOS.map((r, q) => `<tr${r === shipped ? ' class="ref"' : ""}><td>${r}${r === shipped ? " *" : ""}</td>`
+    + `<td>${(Math.log(r) / (1 - THETA)).toFixed(2)}</td>`
+    + `<td>${Number.isFinite(rhoCorr[q]) ? rhoCorr[q].toFixed(4) : "—"}</td>`
+    + `<td class="${Number.isFinite(medians[q]) && medians[q] < 0 ? "neg" : ""}">${Number.isFinite(medians[q]) ? medians[q].toFixed(2) : "—"}</td></tr>`).join("\n")}
+</tbody></table>`;
+
+  const cellsHtml = `<table class="data-table"><thead>
+<tr>${AXES.map((a) => `<th>${esc(a)}</th>`).join("")}<th>&Delta;meanE</th>${RHOS.map((r) => `<th>${r}</th>`).join("")}<th>crossover &rho;</th></tr>
+</thead><tbody>
+${cells.map((c, i) => "<tr>" + AXES.map((a) => `<td>${esc(c.combo[a])}</td>`).join("")
+    + `<td>${dE[i].toFixed(4)}</td>`
     + RHOS.map((_, q) => {
       const v = changes[q][i];
-      return `<td class="n${Number.isFinite(v) && v < 0 ? " neg" : ""}">${Number.isFinite(v) ? v.toFixed(2) : "—"}</td>`;
+      return `<td class="${Number.isFinite(v) && v < 0 ? "neg" : ""}">${Number.isFinite(v) ? v.toFixed(2) : "—"}</td>`;
     }).join("")
-    + `<td class="n">${cellCross[i] === null ? "—" : Math.round(cellCross[i])}</td></tr>`).join("\n");
+    + `<td>${cellCross[i] === null ? "—" : Math.round(cellCross[i])}</td></tr>`).join("\n")}
+</tbody></table>`;
 
-  const name = path.basename(configPath, ".json");
-  const ACCENT_TEX = "35636B";
-  const figs = [
-    { id: "rankcorr", file: "rho_rankcorr.tex",
-      values: rhoCorr, opts: { y0: -1, y1: 1, dp: 2 },
-      ylabel: `rank correlation vs $\\rho=${engine.CAPABILITY_RATIO}$`,
-      ymin: -1, ymax: 1, zeroLine: false,
-      caption: `Rank correlation of per-cell capability change against the shipped &rho;. 1.0 means the ordering of cells is identical.`,
-      texCaption: `Capability ratio sensitivity, ${name}: rank correlation` },
-    { id: "median", file: "rho_median.tex",
-      values: medians, opts: { dp: 1 },
-      ylabel: "median capability change (\\%)",
-      zeroLine: true,
-      caption: "Median capability change, per cent. The dashed line is zero: where the curve crosses it, AI stops reading as a gain and starts reading as a loss.",
-      texCaption: `Capability ratio sensitivity, ${name}: median capability change` },
-  ];
-  const texById = {};
-  const blocks = figs.map((f) => {
-    const svg = lineChart(RHOS, [{ values: f.values, color: "var(--accent)" }],
-      Object.assign({ markRho: engine.CAPABILITY_RATIO, alt: f.texCaption }, f.opts));
-    const tex = pgfplot(RHOS, [{ values: f.values, tex: ACCENT_TEX }], {
-      caption: f.texCaption, ylabel: f.ylabel, ymin: f.ymin, ymax: f.ymax,
-      zeroLine: f.zeroLine, markRho: engine.CAPABILITY_RATIO,
-    });
-    texById[f.id] = tex;
-    // Also written to disk. The copy button is the intended route, but a page opened in
-    // a browser that refuses clipboard access on file:// still has to be usable.
-    fs.writeFileSync(path.join(OUT, f.file), tex);
-    return figure(f.id, svg, f.caption);
-  });
-  const charts = `<div class="charts">\n${blocks.join("\n")}\n</div>`;
-
-  writeReportPage(cells.length, rows, rhoCorr, medians, medCross, flipped, charts, texById);
+  writeReportPage({ name, nCells: cells.length, medCross, flipped, figs, texById, summaryHtml, cellsHtml });
 }
 
-function writeReportPage(nCells, rows, rhoCorr, medians, medCross, flipped, charts, texById) {
+function writeReportPage(o) {
+  const shipped = engine.CAPABILITY_RATIO;
   const body = `
-<h1>Capability ratio sensitivity — ${esc(path.basename(configPath, ".json"))}</h1>
-<p>How much of the capability result is the assumed constant &rho;? The capability weight is
-w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup> with &theta; = ${THETA}, so &rho;
-asserts that one person at the ceiling is worth &rho; people at the expert threshold. &theta;
-has an empirical argument behind it; &rho; does not &mdash; it is a stated assumption that
-appears in engine.js and nowhere else. It affects reported output only, never the update, so
-one set of runs yields every &rho; here.</p>
-<p class="facts">config: ${esc(path.basename(configPath))} &middot; axes: ${AXES.map(esc).join(" x ")}
-&middot; ${nCells} cells (stride ${STRIDE}) &middot; ${REPS} replicates &middot; t = ${AT}
-&middot; ${RHOS.length} values of &rho; &middot; generated ${new Date().toISOString().slice(0, 10)}
-&middot; <a href="../index.html">all experiments</a></p>
+<div class="panel">
+  <div class="head"><h1>Capability ratio sensitivity &mdash; ${esc(o.name)}</h1></div>
+  <p>How much of the capability result is the assumed constant &rho;? The capability weight is
+  w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup> with &theta; = ${THETA}, so &rho; asserts
+  that one person at the ceiling is worth &rho; people at the expert threshold. Neither constant is
+  measured against anything external: &theta; was chosen as a robustness midpoint, and that argument
+  was made under the legacy calibration rather than the world-model regime these experiments run in.
+  &rho; has never had an argument of either kind &mdash; it is a stated assumption that appears in
+  engine.js and nowhere else. It affects reported output only, never the update, so one set of runs
+  yields every &rho; here.</p>
+  <p class="facts">config: ${esc(path.basename(configPath))} &middot; axes: ${AXES.map(esc).join(" x ")}
+  &middot; ${o.nCells} cells (stride ${STRIDE}) &middot; ${REPS} replicates &middot; t = ${AT}
+  &middot; ${RHOS.length} values of &rho; &middot; <a href="../index.html">all experiments</a></p>
+</div>
 
-${charts}
+${figureBlock("rankcorr", "Rank correlation of per-cell capability change against the shipped &rho;. 1.0 means the ordering of cells is identical; the dashed line marks &rho; = " + shipped + ", where the correlation is 1 by construction.", 250)}
 
-<h2>Summary</h2>
-<div class="wrap"><table>
-<tr><th class="n">&rho;</th><th class="n">slope d ln w/dE</th><th class="n">rank corr. vs shipped</th><th class="n">median capability change (%)</th></tr>
-${RHOS.map((r, q) => `<tr><td class="n">${r}${r === engine.CAPABILITY_RATIO ? " *" : ""}</td>`
-    + `<td class="n">${(Math.log(r) / (1 - THETA)).toFixed(2)}</td>`
-    + `<td class="n">${Number.isFinite(rhoCorr[q]) ? rhoCorr[q].toFixed(4) : "—"}</td>`
-    + `<td class="n${Number.isFinite(medians[q]) && medians[q] < 0 ? " neg" : ""}">${Number.isFinite(medians[q]) ? medians[q].toFixed(2) : "—"}</td></tr>`).join("\n")}
-</table></div>
-<p class="facts">* the shipped CAPABILITY_RATIO, and the reference the correlations are measured against</p>
+${figureBlock("median", "Median capability change, per cent. The solid rule is zero: where the curve crosses it, AI stops reading as a gain and starts reading as a loss.", 250)}
 
-<h2>Reading this</h2>
-<div class="key"><p>Two different questions, and they have different answers.</p>
-<p style="margin-top:.6rem"><strong>Does &rho; reorder the cells?</strong> That is the rank
-correlation. Where it is 1.000 every comparative claim &mdash; &ldquo;this condition is worse
-than that one&rdquo; &mdash; is independent of the assumption. Where it is not, the reported
-ordering holds only at the &rho; that produced it.</p>
-<p style="margin-top:.6rem"><strong>Does &rho; set the sign?</strong> That is the crossover
-column. A natural guess is that &rho; only rescales, because capability change would then be
-exp(k&middot;&Delta;E) &minus; 1 with k = ln&rho;/(1&minus;&theta;). That holds only when a
-condition shifts the whole expertise distribution uniformly. In general
-C = &sum;<sub>i</sub> w(E<sub>i</sub>)&#8467;(E<sub>i</sub>) is a sum over the population and
-&rho; decides <em>which part of it dominates</em>: at low &rho; the weight is nearly flat and C
-behaves like a headcount, so the AI leverage term &#8467; drives the result; at high &rho;
-almost all of C sits in the top tail, and the result is whatever happened to the best few
-percent. A cell whose crossover falls inside the swept range reports a capability
-<em>gain</em> below it and a <em>loss</em> above it.</p>
-<p style="margin-top:.6rem"><strong>Here: ${flipped} of ${nCells} cells change sign</strong>
-within &rho; = ${RHOS[0]}&ndash;${RHOS[RHOS.length - 1]}${medCross
-    ? `, and the median cell crosses at &rho; &asymp; ${Math.round(medCross)}`
-    : ", and the median cell does not cross"}.</p></div>
+${tableBlock("summary", "Summary", "one row per &rho;", o.summaryHtml,
+    "* the shipped CAPABILITY_RATIO, and the reference the correlations are measured against.")}
 
-<h2>Per cell</h2>
-<p>Capability change from baseline to treatment, per cent, at each &rho;. &Delta;meanE is the
-same cell&rsquo;s expertise change &mdash; the quantity that does not depend on &rho; at all.
-The last column is the &rho; at which that cell&rsquo;s capability change crosses zero.</p>
-<div class="wrap"><table>
-<tr>${AXES.map((a) => `<th>${esc(a)}</th>`).join("")}<th class="n">&Delta;meanE</th>${RHOS.map((r) => `<th class="n">${r}</th>`).join("")}<th class="n">crossover &rho;</th></tr>
-${rows}
-</table></div>`;
+<div class="panel">
+  <div class="head"><h2>Reading this</h2></div>
+  <div class="key">
+    <p>Two different questions, and they have different answers.</p>
+    <p style="margin-top:.6rem"><b>Does &rho; reorder the cells?</b> That is the rank correlation.
+    Where it is 1.000 every comparative claim &mdash; &ldquo;this condition is worse than that
+    one&rdquo; &mdash; is independent of the assumption. Where it is not, the reported ordering
+    holds only at the &rho; that produced it.</p>
+    <p style="margin-top:.6rem"><b>Does &rho; set the sign?</b> That is the crossover column. A
+    natural guess is that &rho; only rescales, because capability change would then be
+    exp(k&middot;&Delta;E) &minus; 1 with k = ln&rho;/(1&minus;&theta;). That holds only when a
+    condition shifts the whole expertise distribution uniformly. In general
+    C = &sum;<sub>i</sub> w(E<sub>i</sub>)&#8467;(E<sub>i</sub>) is a sum over the population and
+    &rho; decides <em>which part of it dominates</em>: at low &rho; the weight is nearly flat and C
+    behaves like a headcount, so the AI leverage term &#8467; drives the result; at high &rho;
+    almost all of C sits in the top tail, and the result is whatever happened to the best few per
+    cent. A cell whose crossover falls inside the swept range reports a capability <em>gain</em>
+    below it and a <em>loss</em> above it.</p>
+    <p style="margin-top:.6rem"><b>Here: ${o.flipped} of ${o.nCells} cells change sign</b> within
+    &rho; = ${RHOS[0]}&ndash;${RHOS[RHOS.length - 1]}${o.medCross
+    ? `, and the median cell crosses at &rho; &asymp; ${Math.round(o.medCross)}`
+    : ", and the median cell does not cross"}.</p>
+  </div>
+</div>
+
+${tableBlock("cells", "Per cell", "capability change (%) at each &rho;", o.cellsHtml,
+    "&Delta;meanE is the same cell&rsquo;s expertise change &mdash; the quantity that does not depend on &rho; at all. The last column is the &rho; at which that cell&rsquo;s capability change crosses zero.")}
+`;
   fs.writeFileSync(path.join(OUT, "rho_report.html"),
-    page("Capability ratio sensitivity", body, clipboardScript(texById)));
+    page("Capability ratio sensitivity — " + o.name, body, clientScript(o.figs, o.texById)));
 }
 
 /* -------------------------------------- index ---------------------------------------- */
@@ -747,73 +1074,194 @@ function writeIndex() {
   // --rho by hand for one experiment. Stated rather than silently interpolated.
   const grid = runs[0].rhos;
   const same = runs.every((r) => r.rhos.length === grid.length && r.rhos.every((v, i) => v === grid[i]));
-  const palette = ["#35636b", "#a4553a", "#5b7f4e", "#7a5b8f", "#8a7136", "#3f6ea8"];
-  const texById = {};
-  let charts;
-  if (same) {
-    const mk = (key) => runs.map((r, i) => ({ values: r[key], color: palette[i % palette.length],
-      tex: palette[i % palette.length].replace("#", ""), label: r.dir }));
-    const figs = [
-      { id: "rankcorr", file: "rho_rankcorr_all.tex", key: "rankCorr",
-        opts: { y0: -1, y1: 1, dp: 2 }, ymin: -1, ymax: 1, zeroLine: false,
-        ylabel: `rank correlation vs $\\rho=${runs[0].shippedRho}$`,
-        caption: "Rank correlation of per-cell capability change against the shipped &rho;, by experiment.",
-        texCaption: "Capability ratio sensitivity: rank correlation by experiment" },
-      { id: "median", file: "rho_median_all.tex", key: "medianChange",
-        opts: { dp: 1 }, zeroLine: true,
-        ylabel: "median capability change (\\%)",
-        caption: "Median capability change, per cent, by experiment. The dashed line is zero.",
-        texCaption: "Capability ratio sensitivity: median capability change by experiment" },
-    ];
-    const blocks = figs.map((f) => {
-      const series = mk(f.key);
-      const svg = lineChart(grid, series, Object.assign({ markRho: runs[0].shippedRho, alt: f.texCaption }, f.opts));
-      const tex = pgfplot(grid, series, { caption: f.texCaption, ylabel: f.ylabel,
-        ymin: f.ymin, ymax: f.ymax, zeroLine: f.zeroLine, markRho: runs[0].shippedRho });
-      texById[f.id] = tex;
-      fs.writeFileSync(path.join(root, f.file), tex);
-      return figure(f.id, svg, f.caption);
+  const shipped = runs[0].shippedRho;
+  const num = (v) => (Number.isFinite(v) ? v : null);
+
+  // Facet labels: "exp.25  λ × γ_below" rather than the bare directory name. The prefix
+  // says which set the pairing came from and the symbols say what was varied, so a reader
+  // can take a panel at face value instead of cross-referencing the table below it. Same
+  // glyphs report.template.html's SYMBOL map uses, so a figure lifted from here sits
+  // beside one lifted from the main reports without a change of notation.
+  const SHORT_SET = { experiment: "exp", structure: "str", recruitment: "rec", acl: "acl" };
+  const SYMBOL = {
+    aiLevelFraction: "λ", aiDampeningBelow: "γ_below", aiDampeningAbove: "γ_above",
+    transferRate: "β", decayRate: "δ", turnoverRate: "r",
+    M: "M", graphAttachment: "m", frontierBreadth: "b",
+    recruitmentFraction: "f_hire", recruitmentShockYears: "Y_freeze",
+    expertiseMean: "μ_E", entrantExpertiseMean: "μ_ent",
+  };
+  // The three ACL pairings all sweep the same axes — what separates them is the
+  // Dell'Acqua capability variant — so naming them by axes would print three identical
+  // labels. They are named by variant instead. Read from the ACL manifest rather than
+  // hardcoded: the variant/number mapping is generated, and pinning it here would drift
+  // the first time the set is regenerated.
+  const aclVariant = {};
+  try {
+    const am = JSON.parse(fs.readFileSync(paths.data("experiments.acl.manifest.json"), "utf8"));
+    const SHORT_VARIANT = { published: "pub", weak: "weak", wrong: "wrong" };
+    (am.experiments || []).forEach((e) => {
+      if (e.variant) aclVariant["acl." + e.n] = SHORT_VARIANT[e.variant] || e.variant;
     });
-    charts = `<div class="charts">\n${blocks.join("\n")}\n</div>\n`
-      + `<p class="facts">${runs.map((r, i) => `<span style="color:${palette[i % palette.length]}">&#9632;</span> ${esc(r.dir)}`).join(" &middot; ")}</p>`;
-  } else {
-    charts = `<p class="facts">experiments were swept over different &rho; grids, so the curves are not
-       overlaid; open the individual reports below.</p>`;
+  } catch (e) { /* no ACL manifest here — fall back to the generic set.n + axes label */ }
+
+  // {label, sub}: the pairing's name on the first line, the axes it swept on the second.
+  const panelLabel = (r) => {
+    const dot = r.dir.indexOf(".");
+    const set = dot < 0 ? r.dir : r.dir.slice(0, dot);
+    const rest = dot < 0 ? "" : r.dir.slice(dot);
+    const short = (SHORT_SET[set] || set) + rest;
+    return {
+      label: aclVariant[r.dir] ? short + "  Dell'a (" + aclVariant[r.dir] + ")" : short,
+      sub: r.axes.map((a) => SYMBOL[a] || a).join(" × "),
+    };
+  };
+
+  // Faceted rather than overlaid. Eight series on one pair of axes needs eight
+  // categorical hues, and eight hues cannot be separated well enough to read: the best
+  // arrangement this study could find still put two of them at dE 7.1 for NORMAL colour
+  // vision, against a floor of 15. Small multiples drop the problem entirely, share one
+  // y-scale so the curves stay comparable, and export as a single figure.
+  const figs = {};
+  if (same) {
+    figs.rankcorr = {
+      title: "Rank correlation against the shipped \u03c1, by experiment",
+      subtitle: "Spearman correlation of per-cell capability change vs \u03c1 = " + shipped
+        + ", shared scale. 1.0 means the ordering of cells is unchanged.",
+      foot: "rho sensitivity \u00b7 " + runs.length + " experiments \u00b7 "
+        + runs[0].replicates + " replicates \u00b7 \u03c1 = " + grid[0] + "\u2013" + grid[grid.length - 1],
+      file: "rho-rankcorr-by-experiment.png",
+      rhos: grid, markRho: shipped, zeroLine: true, y0: -1, y1: 1, dp: 1,
+      ylabel: "rank correlation", xlabel: "\u03c1 (log scale)",
+      panels: runs.map((r) => Object.assign(panelLabel(r), { values: r.rankCorr.map(num) })),
+    };
+    figs.median = {
+      title: "Median capability change, by experiment",
+      subtitle: "Median across cells of the change from the no-AI baseline, per cent, shared scale.",
+      foot: "rho sensitivity \u00b7 " + runs.length + " experiments \u00b7 "
+        + runs[0].replicates + " replicates \u00b7 \u03c1 = " + grid[0] + "\u2013" + grid[grid.length - 1],
+      file: "rho-median-by-experiment.png",
+      rhos: grid, markRho: shipped, zeroLine: true, dp: 0,
+      ylabel: "median change (%)", xlabel: "\u03c1 (log scale)",
+      panels: runs.map((r) => Object.assign(panelLabel(r), { values: r.medianChange.map(num) })),
+    };
   }
 
-  const body = `
-<h1>Capability ratio sensitivity</h1>
-<p>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup> converts expertise into capability.
-&theta; has an empirical argument behind it; &rho; is a stated assumption with none, and every
-capability magnitude in the reports scales with it. These sweeps measure whether the
-<em>conclusions</em> scale with it too. Regenerate with
-<code>./src/run_rho_sensitivity.sh</code>.</p>
-${charts}
-<h2>Experiments</h2>
-<div class="wrap"><table>
-<tr><th>experiment</th><th>axes</th><th class="n">cells</th><th class="n">reps</th><th class="n">t</th>
-<th class="n">corr. at &rho;=${grid[0]}</th><th class="n">median change at shipped &rho; (%)</th>
-<th class="n">cells changing sign</th><th class="n">median crossover &rho;</th></tr>
+  /* ---- the low-rho correlation table ---- */
+  // The interesting region: the correlation curve does most of its moving in the first
+  // few steps, so the headline table's single "corr at the bottom of the range" number
+  // hides the shape. These are the columns that show whether a config settles quickly or
+  // stays reordered well past any defensible rho.
+  const LOW = grid.filter((r) => r <= 8);
+  const lowRows = runs.map((r) => [r.dir].concat(LOW.map((k) => {
+    const i = r.rhos.indexOf(k);
+    return i < 0 ? null : num(r.rankCorr[i]);
+  })));
+
+  const lowTex = latexTable({
+    caption: "Rank correlation of per-cell capability change against the shipped $\\rho="
+      + shipped + "$, at low $\\rho$.",
+    label: "tab:rho-low-correlation",
+    align: "l " + LOW.map(() => "r").join(" "),
+    header: ["experiment"].concat(LOW.map((r) => "$\\rho=" + r + "$")),
+    rows: lowRows.map((row) => [texEscape(row[0])].concat(row.slice(1).map((v) => texNum(v, 3)))),
+    note: "A correlation of 1 would mean the ordering of cells is identical to the ordering at the shipped $\\rho$; "
+      + "0 means unrelated; negative means the ordering is inverted. \\emph{n/a} marks a $\\rho$ at which the series "
+      + "has no variance to rank.",
+  });
+
+  const expTex = latexTable({
+    caption: "Capability ratio sensitivity across the study: one representative pairing per experiment set.",
+    label: "tab:rho-experiments",
+    align: "l l r r r r r r",
+    header: ["experiment", "axes", "cells", "reps", "$t$", "corr.\\ at $\\rho=" + grid[0] + "$",
+      "median change at shipped $\\rho$ (\\%)", "cells changing sign"],
+    rows: runs.map((r) => {
+      const q = r.rhos.indexOf(r.shippedRho);
+      return [texEscape(r.dir), texEscape(r.axes.join(" x ")), String(r.cells), String(r.replicates),
+        String(r.tick), texNum(num(r.rankCorr[0]), 3), texNum(num(r.medianChange[q]), 2),
+        r.cellsFlippingSign + " / " + r.cells];
+    }),
+  });
+  const texById = { low: lowTex, experiments: expTex };
+  fs.writeFileSync(path.join(root, "rho_low_correlation_table.tex"), lowTex);
+  fs.writeFileSync(path.join(root, "rho_experiments_table.tex"), expTex);
+
+  const lowHtml = `<table class="data-table"><thead>
+<tr><th>experiment</th>${LOW.map((r) => `<th>&rho;=${r}</th>`).join("")}</tr>
+</thead><tbody>
+${lowRows.map((row) => "<tr><td>" + esc(row[0]) + "</td>"
+    + row.slice(1).map((v) => `<td class="${Number.isFinite(v) && v < 0 ? "neg" : ""}">${Number.isFinite(v) ? v.toFixed(3) : "—"}</td>`).join("")
+    + "</tr>").join("\n")}
+</tbody></table>`;
+
+  const expHtml = `<table class="data-table"><thead>
+<tr><th>experiment</th><th>axes</th><th>cells</th><th>reps</th><th>t</th>
+<th>corr. at &rho;=${grid[0]}</th><th>median change at shipped &rho; (%)</th>
+<th>cells changing sign</th><th>median crossover &rho;</th></tr>
+</thead><tbody>
 ${runs.map((r) => {
-  const q = r.rhos.indexOf(r.shippedRho);
-  // rankCorr/medianChange came through rho_summary.json: a NaN (see spearman() and
-  // median()) serializes as null, so these read Number.isFinite rather than assume a
-  // number. NaN correlation happens whenever a series has zero variance to rank at
-  // all -- e.g. the "wrong" Dell'Acqua variant at rho=1, where capability collapses to
-  // plain headcount and is identical in every cell, both arms, so there is nothing to
-  // correlate.
-  const corr = Number.isFinite(r.rankCorr[0]) ? r.rankCorr[0].toFixed(3) : "—";
-  const change = Number.isFinite(r.medianChange[q]) ? r.medianChange[q].toFixed(2) : "—";
-  return `<tr><td><a href="${esc(r.dir)}/rho_report.html">${esc(r.dir)}</a></td>`
-    + `<td>${r.axes.map(esc).join(" x ")}</td><td class="n">${r.cells}</td><td class="n">${r.replicates}</td>`
-    + `<td class="n">${r.tick}</td><td class="n">${corr}</td>`
-    + `<td class="n${Number.isFinite(r.medianChange[q]) && r.medianChange[q] < 0 ? " neg" : ""}">${change}</td>`
-    + `<td class="n">${r.cellsFlippingSign} / ${r.cells}</td>`
-    + `<td class="n">${r.medianCrossover ? Math.round(r.medianCrossover) : "—"}</td></tr>`;
-}).join("\n")}
-</table></div>
-<p class="facts">generated ${new Date().toISOString().slice(0, 10)}</p>`;
+    const q = r.rhos.indexOf(r.shippedRho);
+    const corr = Number.isFinite(r.rankCorr[0]) ? r.rankCorr[0].toFixed(3) : "—";
+    const change = Number.isFinite(r.medianChange[q]) ? r.medianChange[q].toFixed(2) : "—";
+    return `<tr><td><a href="${esc(r.dir)}/rho_report.html">${esc(r.dir)}</a></td>`
+      + `<td>${r.axes.map(esc).join(" x ")}</td><td>${r.cells}</td><td>${r.replicates}</td>`
+      + `<td>${r.tick}</td><td class="${Number.isFinite(r.rankCorr[0]) && r.rankCorr[0] < 0 ? "neg" : ""}">${corr}</td>`
+      + `<td class="${Number.isFinite(r.medianChange[q]) && r.medianChange[q] < 0 ? "neg" : ""}">${change}</td>`
+      + `<td>${r.cellsFlippingSign} / ${r.cells}</td>`
+      + `<td>${r.medianCrossover ? Math.round(r.medianCrossover) : "—"}</td></tr>`;
+  }).join("\n")}
+</tbody></table>`;
+
+  const body = `
+<div class="panel">
+  <div class="head"><h1>Capability ratio sensitivity</h1></div>
+  <p class="facts">${runs.length} experiments &middot; ${runs[0].replicates} replicates &middot;
+  ${grid.length} values of &rho; (${grid[0]}&ndash;${grid[grid.length - 1]}) &middot; shipped &rho; = ${shipped}</p>
+</div>
+
+${same ? figureBlock("rankcorr", "One panel per experiment, shared scale. The dashed line marks the shipped &rho;, where the correlation is 1 by construction; the solid rule is zero.", 320)
+    : `<div class="panel"><p class="facts">experiments were swept over different &rho; grids, so the curves are not shown together; open the individual reports below.</p></div>`}
+
+${same ? figureBlock("median", "One panel per experiment, shared scale. The solid rule is zero: where a curve crosses it, AI stops reading as a capability gain and starts reading as a loss.", 320) : ""}
+
+${tableBlock("low", "Rank correlation at low &rho;", "vs the shipped &rho; = " + shipped, lowHtml,
+    "1.000 means the ordering of cells is identical to the shipped &rho;; 0 means unrelated; negative means inverted. &ldquo;&mdash;&rdquo; marks a &rho; at which the series has no variance to rank.")}
+
+<div class="panel">
+  <div class="head"><h2>What these correlations are telling us</h2></div>
+  <div class="key">
+    <p>The correlation answers one specific question: <b>when a report says &ldquo;condition A
+    produced a bigger capability loss than condition B&rdquo;, does that claim survive if &rho;
+    were smaller than ${shipped} &mdash; or was it only ever true <em>because</em> &rho; = ${shipped}
+    weights the top of the distribution so heavily?</b></p>
+    <p style="margin-top:.6rem">That is narrower than &ldquo;does &rho; matter&rdquo;. The
+    magnitudes plainly move: the median change shifts by double digits across the sweep.
+    Correlation is blind to magnitude &mdash; it asks only whether the <em>order</em> of cells is
+    preserved. A config can have a wildly &rho;-sensitive effect size and a rock-solid ranking.</p>
+    <p style="margin-top:.6rem"><b>Where it is high</b> the comparative claims rest on the
+    mechanism, not the assumption: whatever is said about &ldquo;this cell beats that cell&rdquo;
+    would still hold at &rho; = 8 instead of ${shipped}.</p>
+    <p style="margin-top:.6rem"><b>Where it is low or negative</b> the ranking itself is contingent
+    on &rho;. That is stronger than &ldquo;the numbers are noisy&rdquo;: a negative correlation
+    means the ordering <em>reverses</em>, so the cell that looks worst at the shipped &rho; is
+    close to the one that looked best at the bottom of the range. Any claim of the form
+    &ldquo;X is most damaging when Y&rdquo; drawn from such a set needs stating as a claim about
+    &rho; = ${shipped} specifically, not about the mechanism.</p>
+    <p style="margin-top:.6rem"><b>Why the split falls where it does.</b> Pairings that act by
+    shifting the <em>whole</em> expertise distribution &mdash; dampening, or reshaping peer pools
+    through M &mdash; move everyone&rsquo;s E together, so reweighting the sum by &rho; mostly
+    rescales and the ranking survives. The assisted-learning pairings encode a leverage term that
+    treats different <em>bands</em> of the distribution asymmetrically, by where each person sits
+    relative to the AI&rsquo;s level. Which cell &ldquo;wins&rdquo; then depends on exactly where
+    &rho; concentrates the sum, and that is a different question cell by cell &mdash; which is why
+    the ordering can invert rather than merely rescale.</p>
+  </div>
+</div>
+
+${tableBlock("experiments", "Experiments", "one representative pairing per set", expHtml,
+    "Each row links to that experiment&rsquo;s own report, with the full per-cell breakdown.")}
+`;
   fs.writeFileSync(path.join(root, "index.html"),
-    page("Capability ratio sensitivity", body, clipboardScript(texById)));
+    page("Capability ratio sensitivity", body, clientScript(figs, texById)));
   console.log(`[rho] wrote ${path.relative(paths.ROOT, root)}/index.html  (${runs.length} experiment(s))`);
 }

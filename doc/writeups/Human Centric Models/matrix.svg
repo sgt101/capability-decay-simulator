@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 760" width="4000" height="3040">
+  <style>
+    :root {
+      --caption-size: 14px;
+      --label-size: 16px;
+    }
+    .caption {
+      font-size: var(--caption-size);
+    }
+    .label {
+      font-size: var(--label-size);
+    }
+  </style>
+  <rect width="1000" height="760" fill="#ffffff"/>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#000000" />
+    </marker>
+  </defs>
+
+  <!-- Column header labels (absolute coordinates) -->
+  <text x="220" y="14" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="label">Drivers</text>
+  <text x="420" y="14" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="label">Transmitters</text>
+  <text x="585" y="14" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="label">Functions</text>
+  <text x="740" y="14" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="label">Harms</text>
+
+  <!-- Arrows below diagram — outlined block arrows with text inside -->
+  <g transform="translate(120, 660)">
+    <!-- Arrow 1: Generates (Col 1 → Col 2) -->
+    <polygon points="100,38 235,38 235,26 270,50 235,74 235,62 100,62" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="168" y="55" font-family="Arial" font-weight="bold" font-size="14" fill="#000000" text-anchor="middle">Generates</text>
+
+    <!-- Arrow 2: Impacts (Col 2 → Col 3) -->
+    <polygon points="300,38 435,38 435,26 470,50 435,74 435,62 300,62" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="368" y="55" font-family="Arial" font-weight="bold" font-size="14" fill="#000000" text-anchor="middle">Impacts</text>
+
+    <!-- Arrow 3: Creates (Col 3 → Col 4) -->
+    <polygon points="500,38 635,38 635,26 670,50 635,74 635,62 500,62" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="568" y="55" font-family="Arial" font-weight="bold" font-size="14" fill="#000000" text-anchor="middle">Creates</text>
+  </g>
+
+  <g transform="translate(120, 20)">
+
+    <!-- Column 1: Drivers — 3 Blocks (w=200, h=80, total=260, centred at y=310, starts y=180) -->
+    <rect x="0" y="180" width="200" height="80" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="100" y="202" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">DIFFERENT TYPE</text>
+    <text x="100" y="220" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">OF INTERACTION</text>
+    <text x="100" y="238" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">AND INTERFACE</text>
+
+    <rect x="0" y="270" width="200" height="80" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="100" y="292" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">AI AS</text>
+    <text x="100" y="310" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">A GENERAL PURPOSE</text>
+    <text x="100" y="328" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">TOOL</text>
+
+    <rect x="0" y="360" width="200" height="80" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="100" y="382" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">MODERN AI</text>
+    <text x="100" y="400" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">IS</text>
+    <text x="100" y="418" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">CAPITAL INTENSIVE</text>
+
+
+    <!-- Column 2: Transmitters — 2 Blocks (w=160, h=180, total=370, centred at y=310, starts y=125) -->
+    <rect x="220" y="125" width="160" height="180" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="300" y="207" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">INDIVIDUAL</text>
+    <text x="300" y="225" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">PSYCHOLOGY</text>
+
+    <rect x="220" y="315" width="160" height="180" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="300" y="397" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">INSTITUTIONAL</text>
+    <text x="300" y="415" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">CULTURE</text>
+
+
+    <!-- Column 3: Functions — 6 Blocks (w=130, h=75, total=500, centred at y=310, starts y=60) -->
+    <rect x="400" y="60"  width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="102" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">PAYMENTS</text>
+
+    <rect x="400" y="145" width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="175" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">CAPITAL</text>
+    <text x="465" y="193" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">POOLING</text>
+
+    <rect x="400" y="230" width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="260" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">RESOURCE</text>
+    <text x="465" y="278" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">TRANSFER</text>
+
+    <rect x="400" y="315" width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="345" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">RISK</text>
+    <text x="465" y="363" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">MANAGEMENT</text>
+
+    <rect x="400" y="400" width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="442" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">INFORMATION</text>
+
+    <rect x="400" y="485" width="130" height="75" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="465" y="515" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">INCENTIVE</text>
+    <text x="465" y="533" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">MANAGEMENT</text>
+
+
+    <!-- Column 4: Harms — 3 Blocks (w=140, h=200, total=620, centred at y=310, starts y=0) -->
+    <rect x="550" y="0"   width="140" height="200" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="620" y="82"  font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">DIRECT</text>
+    <text x="620" y="100" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">CONSUMER</text>
+    <text x="620" y="118" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">HARMS</text>
+
+    <rect x="550" y="210" width="140" height="200" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="620" y="292" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">MARKET</text>
+    <text x="620" y="310" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">FUNCTION</text>
+    <text x="620" y="328" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">HARMS AND GAPS</text>
+
+    <rect x="550" y="420" width="140" height="200" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+    <text x="620" y="502" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">SOUNDNESS AND</text>
+    <text x="620" y="520" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">STABILITY</text>
+    <text x="620" y="538" font-family="Arial" font-weight="bold" fill="#000000" text-anchor="middle" class="caption">RISKS</text>
+
+  </g>
+
+</svg>

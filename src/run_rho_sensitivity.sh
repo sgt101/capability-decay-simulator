@@ -7,10 +7,13 @@
 #   RHO=10,50,100,1000,10000 ./src/run_rho_sensitivity.sh
 #   REPS=10 ./src/run_rho_sensitivity.sh         # override the replicate count
 #
-# WHY THIS EXISTS. w(E) = rho^((E-theta)/(1-theta)) turns expertise into capability.
-# theta has an empirical argument behind it (expert_threshold_sensitivity.js); rho is a
-# stated assumption with none, and every capability magnitude in the reports scales with
-# it. This measures whether the CONCLUSIONS scale with it too.
+# WHY THIS EXISTS. w(E) = rho^((E-theta)/(1-theta)) turns expertise into capability, and
+# neither constant is measured against anything external. theta at least has a documented
+# provenance -- a robustness midpoint, though expert_threshold_sensitivity.js and
+# doc/paper.md both record that the argument was made under the legacy calibration and
+# does not carry over to the world-model regime these experiments run in. rho has never
+# had an argument of either kind, and every capability magnitude in the reports scales
+# with it. This measures whether the CONCLUSIONS scale with it too.
 #
 # WHY IT RE-RUNS. results/*.csv store scalar summaries and a systemCapability already
 # collapsed at rho = 1000. C is a sum over the whole population, which no set of summary
@@ -22,16 +25,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Powers of two from 1 to 2048. Four points could not resolve the sign change: the
-# crossover rho -- where AI stops reading as a capability gain and starts reading as a
-# loss -- is the number this experiment exists to find, and it needs a curve, not a
-# sample. 1 is the degenerate end (no premium for expertise -- capability is plain
-# headcount), included deliberately as the reference for "does the convexity assumption
-# itself matter", not just its size. The shipped CAPABILITY_RATIO is always added by
-# rho_sensitivity.js.
-RHO="${RHO:-1,2,4,8,16,32,64,128,256,512,1024,2048}"
+# Unit steps from 1 to 8, then powers of two on to 2048: the crossover rho -- where AI
+# stops reading as a capability gain and starts reading as a loss -- is the number this
+# experiment exists to find, and both ends of the range need resolving, not just the top.
+# rho=1 (w(E) === 1 for every E -- no premium for expertise at all) is not a realistic
+# reference on its own -- people routinely spend on the order of 15 years, professional
+# development included, building the expertise a 30-year career then draws on -- but it's
+# worth keeping as the labelled low end of a resolved ladder rather than skipped. The
+# shipped CAPABILITY_RATIO is always added by rho_sensitivity.js.
+RHO="${RHO:-1,2,3,4,5,6,7,8,16,32,64,128,256,512,1024,2048}"
 # 32 to match the replicate count the structure and recruitment sets themselves report
-# at, applied uniformly across all seven configs here regardless of what each one's own
+# at, applied uniformly across all eight configs here regardless of what each one's own
 # report used — rho_sensitivity.js no longer caps this at the config's own replicate
 # count (see its REPS validation), so this is a genuine, deliberate increase in precision
 # for the experiment.*/acl.* configs, not a no-op.
@@ -40,8 +44,9 @@ QUICK=0
 if [ "${1:-}" = "--quick" ]; then QUICK=1; REPS=2; fi
 
 # A slice, not the whole study: the full worldmodel pairing alone is 21x21x3x2 = 2,646
-# runs and there are 28 of them across all four sets. These seven span the axes that
-# actually move capability, one representative pairing per reported set:
+# runs and there are 28 of them across all four sets. These eight (six pairings, three of
+# them the ACL variants) span the axes that actually move capability, one representative
+# pairing per reported set:
 #
 #   experiment.25  aiLevelFraction x aiDampeningBelow — the two dials the model's central
 #                  claim runs on, so the pairing whose capability numbers matter most
