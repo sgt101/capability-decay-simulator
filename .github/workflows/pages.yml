@@ -30,6 +30,17 @@ on:
       - doc/report.html
       - doc/structure_report.html
       - doc/results_ACL.html
+      - doc/recruitment_report.html
+      # Linked FROM recruitment_report.html rather than from the landing page, so it is
+      # published alongside it and has to be watched alongside it too.
+      - doc/recruitment_notes.html
+      # The capability-ratio sensitivity pages. Committed for the same reason the report
+      # browsers are -- CI cannot rebuild them without results/ -- see .gitignore.
+      - results/rho/**
+      # The landing page's own source. Everything else here is something the site
+      # CONTAINS; this is the page that lists them.
+      - src/landing.template.html
+      - src/test/test_landing_links.js
   workflow_dispatch:
 
 permissions:
