@@ -446,16 +446,29 @@ assert(summary.verification.state === "skipped",
       "the capability-level metric and the rho brackets both engage");
     assert(probe.gxIdx === 2 && probe.gxLabel === String(summary.grid.g_x[2]),
       `the g_x slider's readout follows it (showed ${probe.gxLabel})`);
-    // The readout is rho, not a multiple. w(E) = rho^((E-theta)/(1-theta)) raises rho to a
-    // fractional exponent for everyone below the ceiling, so rho equals a multiple at
-    // E = 1 and nowhere else; a control that called it "x800" would be stating a fact
-    // about one person as though it described the whole scale. This assertion exists to
-    // stop that being reintroduced.
+    // The control is w at a fixed expertise, with rho derived. Both must appear: w is the
+    // claim a reader can judge, rho is what every other page and CSV column is keyed to.
+    //
+    // The anchor must NOT be the ceiling. w(1) = rho exactly, so a readout anchored there
+    // would be rho with a multiplication sign in front of it — the label that was wrong
+    // once already, because it describes one person and implies it describes the scale.
     {
       const r = summary.rhos[3];
-      const want = r >= 100 ? String(Math.round(r)) : String(+r.toFixed(1));
-      assert(probe.rhoIdx === 3 && probe.rhoLabel === want,
-        `the rho slider reads out rho itself (showed ${probe.rhoLabel}, want ${want} for rho ${r})`);
+      const theta = snap.theta;
+      const anchor = 0.8;
+      const wv = Math.pow(r, (anchor - theta) / (1 - theta));
+      const wTxt = "\u00d7" + (wv >= 100 ? Math.round(wv) : wv >= 10 ? wv.toFixed(0) : wv.toFixed(1));
+      assert(probe.rhoIdx === 3, `the expert-value slider moves rho by index (index ${probe.rhoIdx})`);
+      assert(probe.rhoLabel.indexOf(wTxt) === 0,
+        `the slider leads with w at E ${anchor} (showed "${probe.rhoLabel}", want it to start ${wTxt})`);
+      assert(/\u03c1\s*\d/.test(probe.rhoLabel),
+        `the slider still shows the rho behind it (showed "${probe.rhoLabel}")`);
+      assert(anchor < 1,
+        "w is quoted below the ceiling, where it is not simply rho renamed");
+      // The inversion itself: rho = w^((1-theta)/(E-theta)) must return the rho it came
+      // from, or the control and the arithmetic behind it have drifted apart.
+      const back = Math.pow(wv, (1 - theta) / (anchor - theta));
+      close(back, r, 1e-12, "w and rho invert each other exactly");
     }
     assert(Math.abs(probe.azAfterDrag - (-0.62)) > 1e-6 && Math.abs(probe.azAfterReset - (-0.62)) < 1e-9,
       "a drag rotates the view and Reset view puts it back");
@@ -467,10 +480,10 @@ assert(summary.verification.state === "skipped",
       "the table switches to capability levels and names the no-AI arm");
     assert(/loss/.test(probe.legend) && /gain/.test(probe.legend) && /zero contour/.test(probe.legend),
       "the legend names both directions of the diverging scale and the contour, not colour alone");
-    // The table's options are rho values, matching the rho reports beside this page and
-    // the rho column in acl_grid.csv.
-    assert(/^\d+(\.\d+)?$/.test(probe.rhoOptions),
-      `the table's rho options are rho values (e.g. "${probe.rhoOptions}")`);
+    // The table's options carry both, so a reader can join this page to the rho reports
+    // beside it and to the rho column in acl_grid.csv.
+    assert(/^\u00d7[\d.]+\s+\(\u03c1 [\d.]+\)$/.test(probe.rhoOptions),
+      `the expert-value options name w and the rho behind it (e.g. "${probe.rhoOptions}")`);
     assert(downloads.length === 2 && downloads.every((d) => /\.png$/.test(d)),
       `Download PNG names a file per figure (${downloads.join(", ")})`);
 

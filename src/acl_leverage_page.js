@@ -151,6 +151,11 @@ function writePage(ctx) {
   // Rounded before embedding: the coefficients carry far more digits than they mean, and
   // the page's arithmetic is a comparison against zero, not a published figure.
   const round = (v) => +v.toPrecision(8);
+  // Where w is quoted. 0.8 is inside the expert band and clear of the ceiling: at E = 1,
+  // w IS rho, so a readout anchored there would be the Greek letter with a multiplication
+  // sign in front of it. Over the swept rho this maps to a range a reader can judge —
+  // "one of these is worth 8 of those" against "worth 32 of those".
+  const ANCHOR_E = 0.8;
   // w at one expertise, for stating what a change in rho actually does. NOT a single
   // "rho means xN" claim: w(E) = rho^((E-theta)/(1-theta)) puts rho under a FRACTIONAL
   // exponent for everyone below the ceiling, so rho equals the multiple at E = 1 and at no
@@ -160,6 +165,10 @@ function writePage(ctx) {
   // whose expertise is being counted, so the prose states a spread across E and the control
   // says rho.
   const wAt = (E, rho) => Math.pow(rho, (E - snap.theta) / (1 - snap.theta));
+  const wMark = (rho) => {
+    const v = wAt(ANCHOR_E, rho);
+    return "\u00d7" + (v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  };
   const mult = (E, rho) => {
     const v = wAt(E, rho);
     return v >= 10 ? String(Math.round(v)) : String(+v.toFixed(1));
@@ -169,6 +178,9 @@ function writePage(ctx) {
     axes: snap.axes, rhos: RHOS, rhoRange: [r0, r1],
     gn: GN, gx: GX, dn: DN, shipped: sh, shippedRho: snap.shippedRho, marks: MARKS,
     theta: snap.theta, breadth: snap.frontierBreadth, sharpness: snap.aclBlendSharpness,
+    // The expertise the w readout is quoted at. Well inside the population and well below
+    // the ceiling, where w(1) = rho would make the control rho by another name.
+    anchorE: ANCHOR_E,
     // One entry per cell: the axis values that define it, coef[rho][0..3], and the no-AI
     // arm's own capability per rho. The coefficients give the comparison, cb gives the
     // levels both sides of it are measured on, and the page needs both.
@@ -213,7 +225,8 @@ checked against the published &rho; report.</p></div>`;
   <p>Does AI leave the system with more capability than it had without? The answer turns on three numbers
   from one study of one profession &mdash; <b>Novice Gain</b> (<code>g<sub>n</sub></code>), <b>Expert Gain</b>
   (<code>g<sub>x</sub></code>) and <b>Novice Deficit</b> (<code>d<sub>n</sub></code>) &mdash; and on
-  <code>&rho;</code>, swept here from ${r0} to ${r1}. All four are controls below, not settings.</p>
+  <b>expert value</b> &mdash; what one person at E = ${ANCHOR_E} is worth in threshold experts, swept from
+  ${wMark(r0)} to ${wMark(r1)}, which is &rho; ${r0} to ${r1}. All four are controls below, not settings.</p>
   <p class="facts">${summary.cells} cells &times; ${summary.replicates} replicates, expertise snapshotted at tick ${snap.tick} &middot;
   axes ${esc(snap.axes.join(" x "))} &middot; &theta; = ${snap.theta} &middot; frontier breadth ${snap.frontierBreadth} &middot;
   blend sharpness ${snap.aclBlendSharpness} &middot; ${summary.rhos.length} log-spaced values of &rho; from
@@ -229,11 +242,12 @@ checked against the published &rho; report.</p></div>`;
     levels the field rather than lifting it evenly.</li>
     <li><b>Novice Deficit</b> (<code>aclNoviceDeficit</code>) &mdash; output lost outside the frontier, by
     people who cannot tell the AI's work is wrong.</li>
-    <li><b>&rho;</b> &mdash; how steeply value rises with expertise, in
-    <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>. Not a multiplier on everyone: it
-    is raised to a fraction below the ceiling, so &rho; ${r0} &rarr; ${r1} moves a person at E = 0.8 by
-    ${(wAt(0.8, r1) / wAt(0.8, r0)).toFixed(1)}&times; and one at the ceiling by ${(r1 / r0).toFixed(1)}&times;.
-    A stated assumption, never measured, which is why it is swept.</li>
+    <li><b>Expert value</b> &mdash; the control is <code>w</code> at E = ${ANCHOR_E}, and &rho; is derived
+    from it by <code>&rho; = w<sup>(1&minus;&theta;)/(E&minus;&theta;)</sup></code>. The two are one number
+    shown two ways, and both appear on every readout: &rho; is what the rest of the study and every CSV column
+    is keyed to. Note that <code>w</code> is <em>not</em> a single multiple for everyone &mdash; at
+    ${wMark(r1)} for E = ${ANCHOR_E}, a person at E = 0.9 is worth ${mult(0.9, r1)} and one at the ceiling
+    ${r1}. A stated assumption, never measured, which is why it is swept.</li>
   </ul>
   <p>None of the four touches a career &mdash; they are read off the population at the end of the run. That is
   why one run answers for three of the published configs at once, and why no simulation was needed to draw
@@ -251,10 +265,10 @@ checked against the published &rho; report.</p></div>`;
       <label><input type="radio" name="metric" value="level"> capability, both arms</label>
     </span>
     <label>Expert Gain <input type="range" id="gx-slider" min="0" max="${GX.length - 1}" value="${GX.indexOf(sh.g_x) < 0 ? 0 : GX.indexOf(sh.g_x)}"> <b id="gx-val">${sh.g_x}</b></label>
-    <label title="rho: how steeply value rises with expertise, in w(E) = rho^((E-theta)/(1-theta))">&rho;
+    <label title="what one person at E = ${ANCHOR_E} is worth, in threshold experts. Sets rho: w(E) = rho^((E-theta)/(1-theta))">expert value
       <input type="range" id="rho-slider" min="0" max="${RHOS.length - 1}" value="${RHOS.length - 1}">
-      <b id="rho-val">${RHOS[RHOS.length - 1]}</b></label>
-    <label><input type="checkbox" id="show-bracket"> bracket &rho; ${r0} and ${r1}</label>
+      <b id="rho-val">${wMark(RHOS[RHOS.length - 1])}&nbsp; (&rho; ${RHOS[RHOS.length - 1]})</b></label>
+    <label><input type="checkbox" id="show-bracket"> bracket ${wMark(r0)} and ${wMark(r1)}</label>
     <label><input type="checkbox" id="show-shipped" checked> mark the published parameterisations</label>
     <button class="copy-btn" id="reset-view" type="button">Reset view</button>
   </div>
@@ -265,9 +279,10 @@ checked against the published &rho; report.</p></div>`;
      both arms</b> it is capability in threshold-expert equivalents on a log scale, with the no-AI arm drawn as
      the flat reference surface &mdash; the same comparison, read as two levels rather than one ratio. Across
      the floor: <b>Novice Gain</b>, the in-frontier gain to weaker performers, and <b>Novice Deficit</b>, the
-     loss outside the frontier. <b>Expert Gain</b> and <b>&rho;</b> are the two sliders. <b>Bracket &rho;</b>
-     overlays the same surface at ${r0} and ${r1}, so the width of that gap is how much of the answer that one
-     assumption is responsible for.`)}
+     loss outside the frontier. <b>Expert Gain</b> and <b>expert value</b> are the two sliders &mdash; the
+     second sets how much a person at E = ${ANCHOR_E} is worth in threshold experts, which fixes &rho;.
+     <b>Bracket</b> overlays the same surface at ${wMark(r0)} and ${wMark(r1)}, so the width of that gap is
+     how much of the answer that one assumption is responsible for.`)}
   <div class="legend" id="cube-legend"></div>
 </div>
 
@@ -287,7 +302,7 @@ checked against the published &rho; report.</p></div>`;
     <span class="sub">median capability change, per cent, against the no-AI arm</span></div>
   <div class="controls">
     <label>Expert Gain <select id="tbl-gx"></select></label>
-    <label>&rho; <select id="tbl-rho"></select></label>
+    <label>expert value <select id="tbl-rho"></select></label>
     <label><input type="checkbox" id="tbl-levels"> show capability, not the change</label>
   </div>
   <div class="table-scroll" id="tbl-host"></div>
@@ -428,14 +443,24 @@ function clientJs() {
     var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
-  // rho, shown as rho. An earlier version of this page relabelled the control "top
-  // performer x800", on the grounds that w(1) = rho. That is true at E = 1 and nowhere
-  // else: w(E) = rho^((E-theta)/(1-theta)) raises rho to a FRACTION for everyone below the
-  // ceiling, so over rho 60 -> 800 someone at E = 0.8 moves 3.8x and someone at E = 0.65
-  // moves 1.5x, not 13.3x. A single multiple cannot stand in for the scale, and a label
-  // that implies it does is worse than the Greek letter it replaced. The multiple is
-  // carried alongside, named for the one person it actually describes.
+  // The control is w, and rho is derived from it. Inverting w(E) = rho^((E-theta)/(1-theta))
+  // gives rho = w^((1-theta)/(E-theta)), so a w and the E it is quoted at pin rho exactly.
+  //
+  // WHICH E. Not the ceiling: w(1) = rho, so a slider anchored there would be rho wearing a
+  // multiplication sign, which is the label that misled once already. D.anchorE is a point
+  // inside the population the study is actually about, where "one of these is worth N of
+  // those" is a claim a reader can hold an opinion about. rho stays visible beside it,
+  // because rho is what the rest of the study and every CSV column is keyed to.
   function fmtRho(rho) { return rho >= 100 ? String(Math.round(rho)) : String(+rho.toFixed(1)); }
+  function wAt(rho) { return Math.pow(rho, (D.anchorE - D.theta) / (1 - D.theta)); }
+  function fmtW(rho) {
+    var v = wAt(rho);
+    return "\u00d7" + (v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  }
+  // What the slider says: the multiple, with the rho behind it. Both, always — one is the
+  // quantity the reader is being asked to judge, the other is the key to every other page
+  // and file in the study, and dropping either one strands somebody.
+  function fmtScale(rho) { return fmtW(rho) + "  (\u03c1 " + fmtRho(rho) + ")"; }
   // Axis numbers with no decoration: "0", "0.2", "0.43". A floor axis seen at an angle is
   // crowded to begin with, and "0.00" spends four characters saying what "0" says in one.
   function fmtAx(v) { return String(+(+v).toFixed(2)); }
@@ -718,7 +743,8 @@ function clientJs() {
     // copied out as a PNG loses its sliders and has to say what slice it is.
     ctx.textAlign = "left";
     ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = faint;
-    ctx.fillText("Expert Gain " + G.gx + "   rho " + fmtRho(RH[ST.rhoIdx]), 10, 16);
+    ctx.fillText("Expert Gain " + G.gx + "   expert value " + fmtW(RH[ST.rhoIdx])
+      + " at E " + D.anchorE + "  (rho " + fmtRho(RH[ST.rhoIdx]) + ")", 10, 16);
     if (!lin) ctx.fillText("no-AI " + fmtCap(G.ref), 10, 30);
 
     FIGS.cube.hit = { proj: proj, G: G, nu: nu, nv: nv, nz: nz };
@@ -843,14 +869,14 @@ function clientJs() {
       + 'loss &larr; 0 &rarr; gain, vs no-AI</span>'
       + '<span class="it"><span class="sw" style="background:' + mid + ';opacity:.6"></span>'
       + (ST.metric === "change" ? 'zero' : 'the no-AI arm') + '</span>'
-      + (ST.bracket ? '<span class="it">outlines: &rho; ' + D.rhoRange[0]
-        + ' and ' + D.rhoRange[1] + '</span>' : '')
+      + (ST.bracket ? '<span class="it">outlines: ' + fmtW(D.rhoRange[0])
+        + ' and ' + fmtW(D.rhoRange[1]) + '</span>' : '')
       + markLegend();
     document.getElementById("panel-legend").innerHTML =
       '<span class="it"><span class="ramp" style="background:' + rampCss() + '"></span>'
       + 'change vs no-AI, &plusmn;' + (FIGS.panels.scale || 0).toFixed(1) + '%</span>'
       + '<span class="it">heavier line: the zero contour</span>'
-      + '<span class="it">&rho; = <b>' + fmtRho(RH[ST.rhoIdx]) + '</b></span>';
+      + '<span class="it">expert value <b>' + fmtScale(RH[ST.rhoIdx]) + '</b></span>';
   }
 
   /* ----------------------------------- the table ----------------------------------- */
@@ -900,10 +926,11 @@ function clientJs() {
       + "</b> &middot; Novice Deficit <b>" + (+dn).toFixed(3) + "</b><br>"
       + "with AI <b>" + fmtCap(medianCapAI(q, gn, gx, dn)) + "</b><br>"
       + "without <b>" + fmtCap(medianCapNoAI(q)) + "</b><br>"
-      + "<b>" + (ch > 0 ? "+" : "") + ch.toFixed(2) + "%</b> at &rho; " + fmtRho(RH[q]) + "<br>"
+      + "<b>" + (ch > 0 ? "+" : "") + ch.toFixed(2) + "%</b> at " + fmtW(RH[q])
+      + " (&rho; " + fmtRho(RH[q]) + ")<br>"
       + (cross === null
-        ? (ch > 0 ? "a gain at every &rho; tested" : "a loss at every &rho; tested")
-        : "flips sign at &rho; <b>" + fmtRho(cross) + "</b>");
+        ? (ch > 0 ? "a gain across the whole range" : "a loss across the whole range")
+        : "flips sign at " + fmtW(cross) + " (&rho; " + fmtRho(cross) + ")");
   }
 
   function wireCube() {
@@ -996,7 +1023,7 @@ function clientJs() {
     var rhoSel = document.getElementById("tbl-rho");
     RH.forEach(function (r, q) {
       var o = document.createElement("option");
-      o.value = q; o.textContent = fmtRho(r);
+      o.value = q; o.textContent = fmtScale(r);
       if (q === RH.length - 1) o.selected = true;
       rhoSel.appendChild(o);
     });
@@ -1018,7 +1045,7 @@ function clientJs() {
     var sl = document.getElementById("rho-slider");
     sl.addEventListener("input", function () {
       ST.rhoIdx = +sl.value;
-      document.getElementById("rho-val").textContent = fmtRho(RH[ST.rhoIdx]);
+      document.getElementById("rho-val").textContent = fmtScale(RH[ST.rhoIdx]);
       gridCache = null;
       // Both figures follow rho: the panels are the flat reading of the same slice, and a
       // page where the two disagreed about which rho it was showing would be a trap.
