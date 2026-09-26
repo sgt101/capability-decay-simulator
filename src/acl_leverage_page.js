@@ -1071,25 +1071,26 @@ function clientJs() {
 }
 
 /* --------------------------------------- index --------------------------------------- */
-// One index across every config swept, written by --index.
+// A contact sheet, not a table of contents. Five thumbnails of the SAME figure the
+// per-config pages draw, one per experiment, each one a link into its own page.
 //
-// LIVE, in the same sense the per-config pages are: it carries each run's coefficients and
-// recomputes on the reader's controls, rather than tabulating numbers frozen at build time.
-// The alternative — an index of static summary rows — answers "what did the sweep find at
-// the published parameters", which is one point of a space the reader is here to move
-// around in. Same identity, same four coefficients per (cell, rho); the arithmetic is
-// cheap enough that doing it for five configs at once is still nothing.
+// It replaced a line chart overlaying the five runs' capability change against rho. That
+// chart was defensible and not worth its place: it answered a question — "how do the five
+// compare at one parameter point" — that the reader has not got to yet on arriving, while
+// pushing the actual figures behind a table of links they had to notice. A reader landing
+// here wants to see what this is; five small versions of it say that in one glance, and
+// the differences between the five are visible in the shapes themselves.
 //
-// The five ACL configs differ only in aiDampeningAbove, so that is what the index is
-// organised by: one line per config on a shared pair of axes, at whatever leverage
-// parameters the reader sets. That comparison is the reason for an index at all — it is
-// the one figure no per-config page can draw.
+// LIVE, in the same sense as the per-config pages: the thumbnails carry each run's four
+// coefficients per (cell, rho) and redraw on the shared controls, so moving a slider moves
+// all five at once. That is the comparison the old line chart was for, kept, but read off
+// the figures rather than a separate abstraction of them.
 function writeIndex(ctx) {
   const { root, runs } = ctx;
 
-  // What separates the configs. Read from each summary's own fixed parameters rather than
-  // hardcoded: if the family is ever regenerated with different dampening levels, a
-  // hardcoded mapping would keep printing the old ones.
+  // What separates the configs, read from each one rather than hardcoded: the ACL family
+  // happens to differ in aiDampeningAbove today, and a mapping typed in here would keep
+  // printing that after the family was regenerated with something else.
   const SYMBOL = {
     aiDampeningAbove: "γ_above", aiDampeningBelow: "γ_below",
     aiLevelFraction: "λ", frontierBreadth: "b",
@@ -1099,38 +1100,42 @@ function writeIndex(ctx) {
     const keys = new Set();
     runs.forEach((r) => Object.keys(r.distinguishing || {}).forEach((k) => keys.add(k)));
     keys.forEach((k) => {
-      const vals = new Set(runs.map((r) => JSON.stringify((r.distinguishing || {})[k])));
-      if (vals.size > 1) varying.push(k);
+      if (new Set(runs.map((r) => JSON.stringify((r.distinguishing || {})[k]))).size > 1) varying.push(k);
     });
   }
 
   const r0 = runs[0].rhoRange[0], r1 = runs[0].rhoRange[1];
-  // Comparable only where the grids and the rho ladders match. Stated rather than silently
-  // interpolated onto a common ladder — two sweeps run with different --rho are two
-  // different measurements, and an index that hid that would be inviting a wrong reading.
+  // Comparable only where the grids and rho ladders match. Two sweeps run with different
+  // --rho are two different measurements, and thumbnails on a shared colour scale would be
+  // inviting a wrong reading, so the sheet says so and drops to plain links instead.
   const same = runs.every((r) =>
     r.rhos.length === runs[0].rhos.length && r.rhos.every((v, i) => v === runs[0].rhos[i])
     && JSON.stringify(r.grid) === JSON.stringify(runs[0].grid));
 
   const DATA = {
     rhos: runs[0].rhos, rhoRange: [r0, r1], grid: runs[0].grid,
-    shipped: runs[0].shipped, marks: runs[0].marks || [], comparable: same,
-    varying,
+    shipped: runs[0].shipped, comparable: same, varying,
     runs: runs.map((r) => ({
       dir: r.dir, config: r.config, tick: r.tick, replicates: r.replicates,
       cells: r.cellCount, distinguishing: r.distinguishing || {},
       verification: r.verification && r.verification.state,
-      cellCoef: r.cellCoef, cb: r.cb,
+      cellCoef: r.cellCoef,
     })),
   };
 
-  const label = (r) => {
-    const bits = varying.map((k) => (SYMBOL[k] || k) + " " + r.distinguishing[k]);
-    return bits.length ? bits.join(", ") : r.dir;
-  };
+  const label = (r) => varying.map((k) => (SYMBOL[k] || k) + " = " + r.distinguishing[k]).join(", ");
+
+  // One <a> per run, each wrapping its own canvas. Anchors rather than click handlers: a
+  // thumbnail that cannot be opened in a new tab, or whose destination does not appear in
+  // the status bar, is a worse link for no gain.
+  const sheet = runs.map((r, i) => `<a class="thumb" href="${esc(r.dir)}/acl_leverage.html">
+  <canvas id="thumb-${i}" height="150"></canvas>
+  <span class="cap"><b>${esc(r.dir)}</b>${label(r) ? " &middot; " + esc(label(r)) : ""}</span>
+  <span class="sub" id="thumb-sub-${i}"></span>
+</a>`).join("\n");
 
   const rows = runs.map((r) => `<tr><td><a href="${esc(r.dir)}/acl_leverage.html">${esc(r.dir)}</a></td>`
-    + `<td>${esc(label(r))}</td><td>${r.cellCount}</td><td>${r.replicates}</td><td>${r.tick}</td>`
+    + `<td>${esc(label(r) || r.config)}</td><td>${r.cellCount}</td><td>${r.replicates}</td><td>${r.tick}</td>`
     + `<td>${r.verification === "pass" ? "passed" : r.verification === "fail" ? "FAILED" : "not run"}</td></tr>`).join("\n");
 
   const body = `
@@ -1139,32 +1144,31 @@ function writeIndex(ctx) {
     <h1>Where AI is a net gain in capability</h1>
     <span class="sub">${runs.length} experiment${runs.length === 1 ? "" : "s"} &middot; &rho; ${r0}&ndash;${r1}</span>
   </div>
-  <p>Each of these runs asks the same question of a different population: with AI helping weaker performers
-  inside its frontier and hurting those who cannot check it outside, does the system end up with more
-  capability than it had without AI? The three leverage parameters are controls here, not settings &mdash;
-  move them and every line redraws, because capability is linear in all three and this page carries the
-  coefficients rather than a table of answers.</p>
-  ${varying.length ? `<p>What separates the runs: <b>${esc(varying.map((k) => SYMBOL[k] || k).join(", "))}</b>.
-  Everything else about them is identical, including the seeds.</p>` : ""}
+  <p>AI helps weaker performers on work inside its frontier and hurts those who cannot check it outside.
+  Whether a whole system ends up ahead depends on three numbers from one study of one profession, and on
+  &rho;, an assumption about how steeply value rises with expertise that nobody has measured. Each panel
+  below is one experiment: blue where the system ends up with more capability than it had without AI, red
+  where it ends up with less. Open one for the full surface, the cell-by-cell reading and the numbers.</p>
+  ${varying.length ? `<p>The experiments differ in <b>${esc(varying.map((k) => SYMBOL[k] || k).join(", "))}</b>
+  and nothing else &mdash; same cells, same seeds, same populations.</p>` : ""}
 </div>
 
 <div class="panel">
-  <div class="head"><h2>All ${runs.length}, compared</h2>
-    <span class="sub">capability change vs no-AI, across &rho;</span></div>
   <div class="controls">
     <label>Novice Gain <input type="range" id="gn-slider" min="0" max="${runs[0].grid.g_n.length - 1}" value="0"> <b id="gn-val"></b></label>
     <label>Expert Gain <input type="range" id="gx-slider" min="0" max="${runs[0].grid.g_x.length - 1}" value="0"> <b id="gx-val"></b></label>
-    <label>Novice Deficit <input type="range" id="dn-slider" min="0" max="${runs[0].grid.d_n.length - 1}" value="0"> <b id="dn-val"></b></label>
+    <label>&rho; <input type="range" id="rho-slider" min="0" max="${runs[0].rhos.length - 1}" value="${runs[0].rhos.length - 1}"> <b id="rho-val"></b></label>
     <button class="copy-btn" id="reset-published" type="button">Published values</button>
   </div>
-  ${same ? figureBlock("index", 380,
-    `One line per experiment: the median capability change against that experiment's own no-AI arm, as &rho;
-     runs from ${r0} to ${r1} on a log axis. Above the zero rule AI left the system with more capability than
-     it had without; below it, less. Where a line crosses is where the answer depends on an assumption nobody
-     has measured. The sliders set the three leverage parameters for every line at once.`)
-    : `<p>These runs were swept on different &rho; ladders or different parameter grids, so they are not
-       comparable line for line. Open them individually below.</p>`}
-  ${same ? '<div class="legend" id="index-legend"></div>' : ""}
+  ${same ? `<div class="sheet">${sheet}</div>
+  <div class="legend" id="sheet-legend"></div>
+  <p class="figcap">Each panel is Novice Gain across and Novice Deficit up, at the Expert Gain and &rho; set
+  above &mdash; the same reading as the second figure on each experiment's own page, on one shared colour
+  scale so the five can be compared directly. The line is where capability equals the no-AI arm. Novice Gain
+  is a control here as well as an axis: it sets where the marker sits, which is the parameterisation each
+  panel is annotated for.</p>`
+    : `<p>These experiments were swept on different &rho; ladders or parameter grids, so they cannot share a
+       colour scale. Open them individually below.</p>`}
 </div>
 
 <div class="panel">
@@ -1173,19 +1177,33 @@ function writeIndex(ctx) {
     <thead><tr><th>experiment</th><th>what differs</th><th>cells</th><th>replicates</th><th>tick</th><th>checked against the &rho; report</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="figcap">Each links to its own page, where the same numbers are drawn as a surface over the two
-  gain and loss parameters. Verification compares this sweep against the published &rho; report at the
-  published leverage values; it needs a matching replicate count to be exact.</p>
+  <p class="figcap">Verification compares each sweep against the published &rho; report at the published
+  leverage values; it needs a matching replicate count to be exact.</p>
 </div>`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ACL leverage &times; &rho; &mdash; all experiments</title>
-<style>${css()}</style></head><body><main>${body}</main>
+<style>${css()}${sheetCss()}</style></head><body><main>${body}</main>
 <script>window.ACL_INDEX = ${JSON.stringify(DATA)};<\/script>
 <script>${indexJs()}<\/script>
 </body></html>`;
   fs.writeFileSync(path.join(root, "index.html"), html);
+}
+
+function sheetCss() {
+  return `
+.sheet{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.9rem}
+.thumb{display:block;text-decoration:none;color:inherit;background:var(--panel-2);border:1px solid var(--rule);
+border-radius:5px;padding:.6rem;transition:border-color .12s,transform .12s}
+.thumb:hover{border-color:var(--accent2);transform:translateY(-1px)}
+.thumb:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.thumb canvas{width:100%;display:block;border-radius:3px}
+.thumb .cap{display:block;margin-top:.5rem;font-size:.78rem;color:var(--ink);
+font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.thumb .sub{display:block;margin-top:.15rem;font-size:.72rem;color:var(--ink-muted)}
+@media(max-width:560px){.sheet{grid-template-columns:1fr 1fr}}
+`;
 }
 
 /* ---------------------------------- index client JS ---------------------------------- */
@@ -1196,10 +1214,11 @@ function indexJs() {
   var D = window.ACL_INDEX;
   if (!D.comparable) return;
   var RH = D.rhos, G = D.grid, SH = D.shipped;
-  var ST = { gn: G.g_n.indexOf(SH.g_n), gx: G.g_x.indexOf(SH.g_x), dn: G.d_n.indexOf(SH.d_n) };
-  if (ST.gn < 0) ST.gn = 0;
-  if (ST.gx < 0) ST.gx = 0;
-  if (ST.dn < 0) ST.dn = 0;
+  var ST = {
+    gn: Math.max(0, G.g_n.indexOf(SH.g_n)),
+    gx: Math.max(0, G.g_x.indexOf(SH.g_x)),
+    rho: RH.length - 1,
+  };
 
   // The same identity the per-config pages use, over each run's own cells.
   function medianChange(run, q, gn, gx, dn) {
@@ -1213,111 +1232,133 @@ function indexJs() {
     return n % 2 ? out[(n - 1) / 2] : (out[n / 2 - 1] + out[n / 2]) / 2;
   }
 
-  // Categorical hues in fixed order, never cycled: the run a colour belongs to must not
-  // change when the reader moves a slider, so the index into this list is the run's
-  // position and nothing else. Five runs, five slots.
-  var SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-  var SERIES_DK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+  // Diverging, same ramp as the per-config pages: a gain and a loss are opposite things
+  // and the midpoint is grey, never a hue.
+  var POS = ["#cde2fb","#9ec5f4","#6da7ec","#3987e5","#2a78d6","#1c5cab","#0d366b"];
+  var NEG = ["#fbd9d9","#f4b0b0","#ef8a8a","#e34948","#c62f2f","#a32020","#6f1414"];
+  var MID_LIGHT = "#f0efec", MID_DARK = "#383835";
   function isDark() {
     var t = document.documentElement.getAttribute("data-theme");
     if (t === "dark") return true;
     if (t === "light") return false;
     return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
-  function hue(i) { return (isDark() ? SERIES_DK : SERIES)[i % SERIES.length]; }
+  function mix(a, b, t) {
+    function p(h) { return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+    var x = p(a), y = p(b), o = "#";
+    for (var i = 0; i < 3; i++) {
+      var c = Math.round(x[i] + (y[i] - x[i]) * t).toString(16);
+      o += c.length < 2 ? "0" + c : c;
+    }
+    return o;
+  }
+  function diverge(t) {
+    var mid = isDark() ? MID_DARK : MID_LIGHT;
+    if (!isFinite(t)) return mid;
+    var stops = [mid].concat(t < 0 ? NEG : POS);
+    var x = Math.min(1, Math.abs(t)) * (stops.length - 1), i = Math.floor(x);
+    if (i >= stops.length - 1) return stops[stops.length - 1];
+    return mix(stops[i], stops[i + 1], x - i);
+  }
   function tok(name, fallback) {
     var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
 
-  var HIT = null;
   function draw() {
-    var cv = document.getElementById("fig-index");
-    if (!cv) return;
-    var dpr = window.devicePixelRatio || 1;
-    var W = cv.clientWidth || 700, H = parseFloat(cv.style.height) || 380;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    var ctx = cv.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var gn = G.g_n[ST.gn], gx = G.g_x[ST.gx], q = ST.rho;
+    // ONE scale across all five panels, computed over every panel's values. Panels that
+    // each normalised themselves would make the mildest and the harshest experiment look
+    // identical, which is the opposite of what a contact sheet is for.
+    var big = 0;
+    D.runs.forEach(function (run) {
+      G.g_n.forEach(function (a) {
+        G.d_n.forEach(function (b) { big = Math.max(big, Math.abs(medianChange(run, q, a, gx, b))); });
+      });
+    });
+    big = big || 1;
+
     var ink = tok("--ink", "#14181a"), muted = tok("--ink-muted", "#5c6360"),
-        faint = tok("--ink-faint", "#8b918d"), rule = tok("--rule", "#d7dad6"),
-        surface = tok("--surface-1", "#fcfcfb");
-    ctx.clearRect(0, 0, W, H); ctx.fillStyle = surface; ctx.fillRect(0, 0, W, H);
+        surface = tok("--surface-1", "#fcfcfb"), rule = tok("--rule", "#d7dad6");
 
-    var gn = G.g_n[ST.gn], gx = G.g_x[ST.gx], dn = G.d_n[ST.dn];
-    var lines = D.runs.map(function (run) {
-      return RH.map(function (_, q) { return medianChange(run, q, gn, gx, dn); });
-    });
-    var lo = 0, hi = 0;
-    lines.forEach(function (s) { s.forEach(function (v) { if (v < lo) lo = v; if (v > hi) hi = v; }); });
-    // Zero is always in range: the rule at zero is the comparison, and an axis that
-    // cropped it would hide whether a line had crossed.
-    var pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad;
+    D.runs.forEach(function (run, idx) {
+      var cv = document.getElementById("thumb-" + idx);
+      if (!cv) return;
+      var dpr = window.devicePixelRatio || 1;
+      var W = cv.clientWidth || 200, H = 150;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      var ctx = cv.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = surface; ctx.fillRect(0, 0, W, H);
 
-    var L = 58, R = 130, T = 18, B = 42;
-    var x = function (q) { return L + (W - L - R) * (Math.log(RH[q]) - Math.log(RH[0]))
-      / (Math.log(RH[RH.length - 1]) - Math.log(RH[0])); };
-    var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+      var L = 26, R = 6, T = 6, B = 20;
+      var cw = (W - L - R) / G.g_n.length, ch = (H - T - B) / G.d_n.length;
+      G.g_n.forEach(function (a, i) {
+        G.d_n.forEach(function (b, j) {
+          var v = medianChange(run, q, a, gx, b);
+          var x = L + i * cw, y = T + (H - T - B) - (j + 1) * ch;
+          ctx.fillStyle = diverge(v / big);
+          ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+          // The zero contour: the boundary is the point of the panel, and at thumbnail
+          // size a colour ramp alone leaves the reader guessing where it falls.
+          if (j > 0 && (medianChange(run, q, a, gx, G.d_n[j - 1]) > 0) !== (v > 0)) {
+            ctx.strokeStyle = ink; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(x, y + ch); ctx.lineTo(x + cw, y + ch); ctx.stroke();
+          }
+        });
+      });
+      ctx.strokeStyle = rule; ctx.lineWidth = 1;
+      ctx.strokeRect(L, T, W - L - R, H - T - B);
 
-    // Grid and axes, recessive.
-    ctx.strokeStyle = rule; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, H - B); ctx.lineTo(W - R, H - B); ctx.stroke();
-    ctx.font = "10.5px ui-monospace, monospace"; ctx.fillStyle = faint; ctx.textAlign = "right";
-    for (var t = 0; t <= 1.0001; t += 0.25) {
-      var v = lo + (hi - lo) * t, yy = y(v);
-      ctx.fillText((v > 0 ? "+" : "") + v.toFixed(1) + "%", L - 8, yy + 3.5);
-      ctx.strokeStyle = rule; ctx.globalAlpha = 0.5;
-      ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
+      // Where the current Novice Gain sits, so the slider's effect is visible on the
+      // panel and not only in the caption.
+      var mx = L + (G.g_n.indexOf(gn) + 0.5) * cw;
+      ctx.strokeStyle = ink; ctx.globalAlpha = 0.35; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(mx, T); ctx.lineTo(mx, H - B); ctx.stroke();
       ctx.globalAlpha = 1;
-    }
-    ctx.textAlign = "center";
-    [RH[0], RH[Math.floor(RH.length / 2)], RH[RH.length - 1]].forEach(function (r, i) {
-      var q = i === 0 ? 0 : i === 1 ? Math.floor(RH.length / 2) : RH.length - 1;
-      ctx.fillText(Math.round(r), x(q), H - B + 16);
-    });
-    ctx.fillStyle = muted; ctx.font = "600 11px ui-sans-serif, sans-serif";
-    ctx.fillText("rho  (log)", (L + W - R) / 2, H - 8);
-    ctx.save(); ctx.translate(14, (T + H - B) / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center"; ctx.fillText("% vs no-AI", 0, 0); ctx.restore();
 
-    // The zero rule: heavier than the grid, because crossing it is the whole question.
-    if (lo < 0 && hi > 0) {
-      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
-      ctx.beginPath(); ctx.moveTo(L, y(0)); ctx.lineTo(W - R, y(0)); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+      // Axis ends only: at 210px there is room for the extremes and nothing else.
+      ctx.fillStyle = muted; ctx.font = "9px ui-monospace, monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(String(+G.d_n[G.d_n.length - 1]), L - 4, T + 8);
+      ctx.fillText(String(+G.d_n[0]), L - 4, H - B - 1);
+      ctx.textAlign = "center";
+      ctx.fillText(String(+G.g_n[0]), L + cw / 2, H - B + 11);
+      ctx.fillText(String(+G.g_n[G.g_n.length - 1]), W - R - cw / 2, H - B + 11);
+      ctx.textAlign = "left";
+      ctx.fillText("Novice Gain \\u2192", L, H - 2);
+      ctx.save(); ctx.translate(9, T + (H - T - B) / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center"; ctx.fillText("Novice Deficit \\u2192", 0, 0); ctx.restore();
 
-    // 2px lines, and each one direct-labelled at its right end rather than left to a
-    // legend box: five series is within the range where naming them in place beats making
-    // the reader match colours.
-    lines.forEach(function (s, i) {
-      ctx.strokeStyle = hue(i); ctx.lineWidth = 2; ctx.beginPath();
-      s.forEach(function (v, q) { if (q) ctx.lineTo(x(q), y(v)); else ctx.moveTo(x(q), y(v)); });
-      ctx.stroke();
-      var last = s[s.length - 1];
-      ctx.beginPath(); ctx.arc(x(s.length - 1), y(last), 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = hue(i); ctx.fill();
-      ctx.strokeStyle = surface; ctx.lineWidth = 2; ctx.stroke();
-      ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = ink;
-      ctx.fillText(D.runs[i].dir, W - R + 8, y(last) + 3.5);
-      ctx.font = "10px ui-sans-serif, sans-serif"; ctx.fillStyle = muted;
-      var bits = Object.keys(D.runs[i].distinguishing).map(function (k) { return D.runs[i].distinguishing[k]; });
-      if (bits.length) ctx.fillText(bits.join(", "), W - R + 8, y(last) + 15);
+      // The panel's own headline, under it: what this experiment says at the parameters
+      // currently set. A thumbnail nobody can read a number off is decoration.
+      var here = medianChange(run, q, gn, gx, D.shipped.d_n);
+      var sub = document.getElementById("thumb-sub-" + idx);
+      if (sub) {
+        sub.textContent = "at Novice Deficit " + D.shipped.d_n + ": "
+          + (here > 0 ? "+" : "") + here.toFixed(1) + "% vs no-AI";
+      }
     });
 
-    ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = faint;
-    ctx.fillText("Novice Gain " + gn + "   Expert Gain " + gx + "   Novice Deficit " + dn, L, 12);
-    HIT = { x: x, y: y, lines: lines, L: L, R: R, W: W };
+    var legend = document.getElementById("sheet-legend");
+    if (legend) {
+      var stops = [];
+      for (var i = -8; i <= 8; i++) stops.push(diverge(i / 8));
+      legend.innerHTML = '<span class="it"><span class="ramp" style="background:linear-gradient(90deg,'
+        + stops.join(",") + ')"></span>loss &larr; 0 &rarr; gain vs no-AI, &plusmn;' + big.toFixed(1) + '%</span>'
+        + '<span class="it">heavier line: capability equals the no-AI arm</span>'
+        + '<span class="it">vertical rule: the Novice Gain set above</span>';
+    }
   }
 
   function paintReadouts() {
     document.getElementById("gn-val").textContent = G.g_n[ST.gn];
     document.getElementById("gx-val").textContent = G.g_x[ST.gx];
-    document.getElementById("dn-val").textContent = G.d_n[ST.dn];
+    document.getElementById("rho-val").textContent = RH[ST.rho];
   }
 
   function wire() {
-    [["gn-slider", "gn"], ["gx-slider", "gx"], ["dn-slider", "dn"]].forEach(function (pair) {
+    [["gn-slider", "gn"], ["gx-slider", "gx"], ["rho-slider", "rho"]].forEach(function (pair) {
       var el = document.getElementById(pair[0]);
       el.value = ST[pair[1]];
       el.addEventListener("input", function () { ST[pair[1]] = +el.value; paintReadouts(); draw(); });
@@ -1325,19 +1366,12 @@ function indexJs() {
     document.getElementById("reset-published").addEventListener("click", function () {
       ST.gn = Math.max(0, G.g_n.indexOf(SH.g_n));
       ST.gx = Math.max(0, G.g_x.indexOf(SH.g_x));
-      ST.dn = Math.max(0, G.d_n.indexOf(SH.d_n));
+      ST.rho = RH.length - 1;
       document.getElementById("gn-slider").value = ST.gn;
       document.getElementById("gx-slider").value = ST.gx;
-      document.getElementById("dn-slider").value = ST.dn;
+      document.getElementById("rho-slider").value = ST.rho;
       paintReadouts(); draw();
     });
-    var legend = document.getElementById("index-legend");
-    if (legend) {
-      legend.innerHTML = D.runs.map(function (r, i) {
-        return '<span class="it"><span class="sw" style="background:' + hue(i) + '"></span>'
-          + r.dir + '</span>';
-      }).join("") + '<span class="it">above the rule: more capability than without AI</span>';
-    }
     paintReadouts(); draw();
   }
 
@@ -1345,7 +1379,7 @@ function indexJs() {
   else wire();
   window.addEventListener("resize", draw);
   if (window.matchMedia) {
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { wire(); });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
   }
 })();
 `;

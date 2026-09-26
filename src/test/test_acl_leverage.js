@@ -536,6 +536,100 @@ assert(summary.verification.state === "skipped",
   }
 }
 
+/* ------------------------------ 4. the index contact sheet ------------------------------ */
+// The index is the front door, and it is the one page a reader sees before deciding the
+// rest is worth opening. It carries the same live coefficients, so the same class of
+// silent failure applies: a sheet that throws while drawing looks exactly like one that
+// drew, to everything but a reader.
+{
+  // SNAP is one config's directory, so the index's root is its parent — the same
+  // relationship results/acl-leverage/ has to results/acl-leverage/acl.1/.
+  execFileSync(node, [paths.src("acl_leverage_sweep.js"), "--index", "--root", TMP],
+    { stdio: "pipe" });
+  const idxPath = path.join(TMP, "index.html");
+  assert(fs.existsSync(idxPath), "--index writes an index beside the sweeps");
+
+  if (fs.existsSync(idxPath)) {
+    const html = fs.readFileSync(idxPath, "utf8");
+    const drawn = [], rects = [];
+    const CTX = new Proxy({}, {
+      get(t, p) {
+        if (p in t) return t[p];
+        if (p === "measureText") return (str) => ({ width: String(str).length * 6 });
+        if (p === "fillText") return (str, x, y) => drawn.push({ text: String(str), x, y });
+        if (p === "fillRect") return (x, y, w, h) => rects.push({ x, y, w, h, fill: t.fillStyle });
+        return function () {};
+      },
+      set(t, p, v) { t[p] = v; return true; },
+    });
+    const reg = new Map();
+    class El {
+      constructor(tag) {
+        this.tagName = (tag || "div").toUpperCase();
+        this._id = ""; this._v = ""; this._t = ""; this._h = "";
+        this.style = {}; this.children = []; this.L = {}; this.clientWidth = 210; this.disabled = false;
+      }
+      get id() { return this._id; } set id(v) { this._id = v; reg.set(v, this); }
+      get value() { return this._v; } set value(v) { this._v = String(v); }
+      get textContent() { return this._t; } set textContent(v) { this._t = String(v); }
+      get innerHTML() { return this._h; } set innerHTML(v) { this._h = String(v); }
+      addEventListener(t, f) { (this.L[t] = this.L[t] || []).push(f); }
+      dispatch(t, e) { (this.L[t] || []).forEach((f) => f(Object.assign({ target: this }, e))); }
+      getContext() { return CTX; }
+      getAttribute() { return null; }
+      appendChild(c) { this.children.push(c); return c; }
+    }
+    for (const m of html.matchAll(/<(\w+)[^>]*\bid="([\w-]+)"[^>]*>/g)) {
+      const e = new El(m[1]); e._id = m[2]; reg.set(m[2], e);
+    }
+    const de = new El("html"); de.getAttribute = () => null;
+    const sandbox = {
+      document: { documentElement: de, readyState: "complete", body: new El("body"),
+        getElementById: (id) => reg.get(id) || null, createElement: (t) => new El(t),
+        querySelectorAll: () => [] },
+      window: { devicePixelRatio: 1, addEventListener() {},
+        matchMedia: () => ({ matches: false, addEventListener() {} }) },
+      getComputedStyle: () => ({ getPropertyValue: () => "#888888" }),
+      console, Math, Array, Object, JSON, String, Number, isFinite, parseInt, parseFloat,
+    };
+    vm.createContext(sandbox);
+    let threw = null;
+    try {
+      vm.runInContext([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n"),
+        sandbox, { filename: "index.js" });
+    } catch (e) { threw = e; }
+    assert(!threw, "the index draws without throwing" + (threw ? "\n  " + (threw.stack || threw) : ""));
+
+    if (!threw) {
+      const nThumbs = [0, 1, 2, 3].filter((i) => reg.has("thumb-" + i)).length;
+      assert(nThumbs >= 1, `the sheet has a thumbnail per experiment (${nThumbs})`);
+      // One fill per (Novice Gain, Novice Deficit) cell per thumbnail, plus one surface
+      // wash each. Derived from the grid this run actually used rather than a round
+      // number, so the check still means something when the grid changes size.
+      const perThumb = summary.grid.g_n.length * summary.grid.d_n.length;
+      assert(rects.length >= nThumbs * perThumb,
+        `the thumbnails fill every cell (${rects.length} fills, want at least ${nThumbs * perThumb})`);
+      // More than a couple of colours: a sheet drawn entirely in one fill would pass a
+      // "did it draw" check while showing the reader nothing.
+      const fills = new Set(rects.map((r) => r.fill)).size;
+      assert(fills > 5, `the thumbnails are shaded by value, not flat (${fills} distinct fills)`);
+      // Each panel states its own number: a thumbnail nobody can read a figure off is
+      // decoration, and this is the line that stops it becoming that.
+      const subs = [0, 1, 2, 3].map((i) => reg.get("thumb-sub-" + i)).filter(Boolean)
+        .map((e) => e.textContent).filter((t) => /vs no-AI/.test(t));
+      assert(subs.length === nThumbs,
+        `every thumbnail carries its own headline number (${subs.length} of ${nThumbs})`);
+      assert(/href="[^"]*acl_leverage\.html"/.test(html),
+        "the thumbnails are real links into the per-experiment pages");
+      // The line chart the sheet replaced is gone, not merely hidden.
+      assert(!/fig-index/.test(html), "the superseded overlay chart is not still in the page");
+      const legend = reg.get("sheet-legend");
+      assert(legend && /loss/.test(legend.innerHTML) && /gain/.test(legend.innerHTML),
+        "the sheet's shared scale is named in words");
+    }
+  }
+}
+
 /* ------------------------------------- housekeeping ------------------------------------- */
 fs.rmSync(TMP, { recursive: true, force: true });
 if (failures) {

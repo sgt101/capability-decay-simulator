@@ -57,6 +57,7 @@
 //   --strict           make a failed verification a non-zero exit
 //   --index            (alone) rebuild results/acl-leverage/index.html from the sweeps
 //                      already on disk and exit — no snapshot is read
+//   --root DIR         with --index: index that directory instead of results/acl-leverage
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -431,7 +432,9 @@ if (STRICT && verification.state === "fail") process.exit(2);
 // else.
 function writeCrossIndex(opts) {
   const quiet = opts && opts.quiet;
-  const root = path.join(paths.RESULTS, "acl-leverage");
+  // --root exists so a test can build an index over a throwaway directory instead of
+  // rewriting the real one as a side effect of running the suite.
+  const root = arg("root", path.join(paths.RESULTS, "acl-leverage"));
   if (!fs.existsSync(root)) {
     if (!quiet) die(`nothing to index — ${path.relative(paths.ROOT, root)} does not exist`);
     return;
