@@ -147,6 +147,22 @@ results/*
 !results/rho/
 results/rho/**/rho_runs.csv
 
+# results/acl-leverage/ — the leverage x rho sweep behind acl-leverage/index.html, written
+# by ./src/run_acl_leverage.sh. Same bargain as results/rho/ above: the pages are generated,
+# but only by a machine holding the expertise snapshots, so CI cannot rebuild them and the
+# only way the Pages site can serve them is for the built files to be committed.
+#
+# Two things stay ignored, and they are the bulk of it. expertise.f32 is every person's
+# expertise at the reported year — 52 MB per config, 260 MB for the family — and it is the
+# input the pages were built FROM, regenerable by re-running the snapshots. snapshots.json
+# is its index and is useless without it. acl_grid.csv and acl_surface.csv are the sweep's
+# full output tables, ~1.4 MB per config, and every number in them is recomputed live by
+# the page from the coefficients it already carries.
+!results/acl-leverage/
+results/acl-leverage/**/expertise.f32
+results/acl-leverage/**/snapshots.json
+results/acl-leverage/**/*.csv
+
 # results/rho-trajectories/ — the valuation-band trajectories behind
 # doc/valuation_trajectories.html, written by ./src/run_valuation_trajectories.sh. Same
 # bargain as results/rho/ above: the .tex tables are committed so the paper can \input them

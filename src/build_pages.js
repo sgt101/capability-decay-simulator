@@ -278,6 +278,50 @@ if (fs.existsSync(path.join(RHO_ROOT, "index.html"))) {
 }
 const rhoExperiments = rhoFiles.filter((f) => f.endsWith("/rho_report.html")).length;
 
+// --- ACL leverage x rho sweep --------------------------------------------------------
+//
+// Same shape as the rho block above: a directory of per-config pages plus a combined
+// index that links into them with relative hrefs, so the layout has to be preserved under
+// site/acl-leverage/ for those links to resolve.
+//
+// OPTIONAL, same story again: built by ./src/run_acl_leverage.sh, which needs data/ but
+// also 52 MB of expertise snapshots per config that are NOT in the repository, so this is
+// usually absent in a fresh clone and the site publishes without it.
+//
+// Only .html and .json leave results/acl-leverage/. acl_grid.csv and acl_surface.csv are
+// the sweep's full output tables — 1.3 MB per config, and the page recomputes everything
+// they contain from the coefficients it already carries, so publishing them would add
+// weight to the site without adding anything a reader can do. expertise.f32 is the raw
+// population and is excluded for the same reason results/*.csv is.
+const ACL_ROOT = path.join(paths.RESULTS, "acl-leverage");
+const ACL_KEEP = /\.(html|json)$/;
+const aclFiles = [];
+if (fs.existsSync(path.join(ACL_ROOT, "index.html"))) {
+  const copyKept = (srcDir, destDir) => {
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.readdirSync(srcDir).forEach((f) => {
+      const full = path.join(srcDir, f);
+      // snapshots.json is the index into expertise.f32, which is not published: a reader
+      // cannot use one without the other, and it is 330 KB of offsets.
+      if (f === "snapshots.json") return;
+      if (fs.statSync(full).isFile() && ACL_KEEP.test(f)) {
+        fs.copyFileSync(full, path.join(destDir, f));
+        aclFiles.push(path.relative(OUT, path.join(destDir, f)));
+      }
+    });
+  };
+  copyKept(ACL_ROOT, path.join(OUT, "acl-leverage"));
+  fs.readdirSync(ACL_ROOT)
+    .filter((f) => fs.statSync(path.join(ACL_ROOT, f)).isDirectory()
+      && fs.existsSync(path.join(ACL_ROOT, f, "acl_leverage.html")))
+    .sort()
+    .forEach((name) => copyKept(path.join(ACL_ROOT, name), path.join(OUT, "acl-leverage", name)));
+} else {
+  console.error(`[build_pages] note: results/acl-leverage/index.html not present — publishing without`
+    + ` the ACL leverage pages (run ./src/run_acl_leverage.sh)`);
+}
+const aclExperiments = aclFiles.filter((f) => f.endsWith("/acl_leverage.html")).length;
+
 // --- landing page -------------------------------------------------------------------
 //
 // index.html USED to be the simulator itself. It is now a list, and the simulator moved
@@ -429,6 +473,34 @@ if (rhoExperiments) {
   });
 }
 
+if (aclExperiments) {
+  // Facts from the index's own data block rather than typed here — the sweep's grid and
+  // rho range are command-line options, so anything hardcoded would drift the first time
+  // someone re-swept with different ones.
+  let s2 = null;
+  try {
+    const src = fs.readFileSync(path.join(ACL_ROOT, "index.html"), "utf8");
+    s2 = JSON.parse(/window\.ACL_INDEX = (\{[\s\S]*?\});<\/script>/.exec(src)[1]);
+  } catch (e) { /* index present but unreadable — list it without the facts line */ }
+  entries.push({
+    href: "acl-leverage/index.html",
+    title: "Where AI is a net gain in capability",
+    blurb: "The Dell'Acqua leverage parameters — what AI adds to weaker performers inside "
+      + "its frontier, what it adds to stronger ones, and what it costs those who cannot "
+      + "tell its work is wrong — are four numbers from one study of one profession on one "
+      + "model generation. These pages sweep all three against ρ, to show where the system "
+      + "ends up with more capability than it had without AI, and where that answer depends "
+      + "on an assumption rather than on a measurement.",
+    facts: [
+      aclExperiments + " experiments swept",
+      s2 ? (s2.grid.g_n.length + "×" + s2.grid.g_x.length + "×" + s2.grid.d_n.length
+        + " leverage grid") : null,
+      s2 ? ("ρ " + s2.rhoRange[0] + "–" + s2.rhoRange[1]) : null,
+      "no simulation re-run per parameter point",
+    ].filter(Boolean),
+  });
+}
+
 {
   const templatePath = paths.src("landing.template.html");
   let landing = fs.readFileSync(templatePath, "utf8");
@@ -473,4 +545,5 @@ publishedReports.forEach((r) =>
 publishedNotes.forEach((f) => console.log(`  ${f}  (notes page)`));
 publishedDocPages.forEach((d) => console.log(`  ${d.dest}  (${d.title}, written)`));
 if (rhoExperiments) console.log(`  rho/  (capability-ratio sensitivity, ${rhoExperiments} experiment(s), ${rhoFiles.length} files)`);
+if (aclExperiments) console.log(`  acl-leverage/  (leverage x rho sweep, ${aclExperiments} experiment(s), ${aclFiles.length} files)`);
 console.log(`\npreview locally:  npx serve site    (or: cd site && python3 -m http.server)`);

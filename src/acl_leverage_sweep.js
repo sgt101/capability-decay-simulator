@@ -55,17 +55,28 @@
 //   --verify PATH      a rho_summary.json to check the shipped point against
 //                      (default: results/rho/<config>/rho_summary.json if it exists)
 //   --strict           make a failed verification a non-zero exit
+//   --index            (alone) rebuild results/acl-leverage/index.html from the sweeps
+//                      already on disk and exit — no snapshot is read
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const engine = require("./engine.js");
 const paths = require("./paths.js");
+const page = require("./acl_leverage_page.js");
 
 function arg(name, def) {
   const i = process.argv.indexOf("--" + name);
   return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : def;
 }
 function die(msg) { console.error("[acl] " + msg); process.exit(1); }
+
+// Rebuilding the cross-config index needs no snapshots, so it is handled before
+// --snapshots is demanded. Each sweep writes acl_summary.json beside its page; the index
+// is assembled from whatever is on disk, so it never needs a sweep repeated.
+if (process.argv.includes("--index") && !arg("snapshots")) {
+  writeCrossIndex();
+  process.exit(0);
+}
 
 const SNAP_DIR = arg("snapshots");
 if (!SNAP_DIR) {
@@ -388,8 +399,11 @@ const summary = {
 fs.writeFileSync(path.join(OUT, "acl_summary.json"), JSON.stringify(summary, null, 2));
 
 /* -------------------------------------- the page ------------------------------------- */
-const { writePage } = require("./acl_leverage_page.js");
-writePage({ out: OUT, snap, summary, cells, RHOS, GN, GX, DN, MARKS });
+page.writePage({ out: OUT, snap, summary, cells, RHOS, GN, GX, DN, MARKS });
+
+// The index is rewritten after every sweep as well as on demand: a page that silently
+// described four of five runs because the fifth was swept later is worse than no page.
+writeCrossIndex({ quiet: true });
 
 const rel = path.relative(paths.ROOT, OUT);
 console.log(`\n[acl] ${nPosAll} point(s) positive at every rho, ${nNegAll} negative at every rho, ${nFlip} flip inside ${rhoRange[0]}..${rhoRange[1]}`);
@@ -405,3 +419,66 @@ if (verification.state === "pass") {
 console.log(`[acl] wrote ${rel}/acl_grid.csv, ${rel}/acl_surface.csv, ${rel}/acl_summary.json`);
 console.log(`[acl] wrote ${rel}/acl_leverage.html   <- open this`);
 if (STRICT && verification.state === "fail") process.exit(2);
+
+/* ----------------------------------- the index ---------------------------------------- */
+// One page across every config swept. Built from each run's acl_summary.json plus the
+// coefficients that make the per-config pages live — the index recomputes on its own
+// controls rather than tabulating a frozen answer, so it needs the same numbers.
+//
+// What distinguishes one run from another is read from the configs themselves rather than
+// hardcoded: the ACL family happens to differ in aiDampeningAbove today, and a mapping
+// typed in here would keep printing that after the family was regenerated with something
+// else.
+function writeCrossIndex(opts) {
+  const quiet = opts && opts.quiet;
+  const root = path.join(paths.RESULTS, "acl-leverage");
+  if (!fs.existsSync(root)) {
+    if (!quiet) die(`nothing to index — ${path.relative(paths.ROOT, root)} does not exist`);
+    return;
+  }
+  const dirs = fs.readdirSync(root)
+    .filter((d) => fs.existsSync(path.join(root, d, "acl_summary.json")))
+    .sort((a, b) => {
+      // acl.10 after acl.9, not between acl.1 and acl.2.
+      const na = parseInt((a.match(/\d+/) || [0])[0], 10), nb = parseInt((b.match(/\d+/) || [0])[0], 10);
+      return na - nb || a.localeCompare(b);
+    });
+  if (!dirs.length) {
+    if (!quiet) die("no acl_summary.json found — run some sweeps first");
+    return;
+  }
+
+  const runs = dirs.map((dir) => {
+    const sum = JSON.parse(fs.readFileSync(path.join(root, dir, "acl_summary.json"), "utf8"));
+    // The coefficients live in the per-config page, not the summary, so they are read back
+    // out of it — one parse rather than a second copy on disk that could fall out of step
+    // with the page it was meant to match.
+    const pageSrc = fs.readFileSync(path.join(root, dir, "acl_leverage.html"), "utf8");
+    const m = /window\.ACL = (\{[\s\S]*?\});<\/script>/.exec(pageSrc);
+    if (!m) die(`${dir}/acl_leverage.html has no data block — rebuild it with this script`);
+    const page = JSON.parse(m[1]);
+    // What makes this config different from its siblings: its own fixed ACL parameters and
+    // dampening, taken from the config the snapshot names.
+    let distinguishing = {};
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(paths.ROOT, sum.configPath
+        || path.join("data", "experiments-acl", sum.config)), "utf8"));
+      ["aiDampeningAbove", "aiDampeningBelow", "frontierBreadth"].forEach((k) => {
+        if (cfg.fixed && cfg.fixed[k] !== undefined) distinguishing[k] = cfg.fixed[k];
+      });
+    } catch (e) { /* config moved or renamed — the index still lists the run by name */ }
+    return {
+      dir, config: sum.config, tick: sum.tick, replicates: sum.replicates,
+      cellCount: sum.cells, rhos: sum.rhos, rhoRange: sum.rhoRange, grid: sum.grid,
+      shipped: sum.shipped, marks: sum.marks, verification: sum.verification,
+      distinguishing,
+      cellCoef: page.cells.map((c) => c.coef),
+      cb: page.cells.map((c) => c.cb),
+    };
+  });
+
+  page.writeIndex({ root, runs });
+  if (!quiet) {
+    console.log(`[acl] wrote ${path.relative(paths.ROOT, root)}/index.html  (${runs.length} experiment(s))`);
+  }
+}

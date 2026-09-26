@@ -1,41 +1,7 @@
-#!/usr/bin/env node
-// The page acl_leverage_sweep.js writes: acl_leverage.html.
-//
-// Kept in its own file because the sweep is arithmetic and this is 700 lines of drawing;
-// mixing them made neither reviewable. Exports one function, writePage().
-//
-// WHAT THE PAGE CARRIES. Not a rendered grid — the four coefficients per (cell, rho) and
-// the identity change% = 100*(q0 + g_x*q1 + (g_n - g_x)*q2 - d_n*q3) (see the sweep's
-// header for the derivation). That is about 1,800 numbers for an 18-cell config, and it
-// makes every parameter a live control rather than a re-run: the page recomputes the whole
-// map on a slider drag, and a reader can put the three parameters anywhere, not only on
-// the grid the sweep happened to tabulate.
-//
-// WHAT IS ON THE VERTICAL AXIS. The quantity itself: the capability change against the
-// no-AI arm, or capability in threshold-expert equivalents with the no-AI arm drawn as the
-// reference surface. Not a derived summary of it. An earlier version of this page plotted
-// the critical d_n at which the sign turns over — a defensible object, but it answered a
-// question nobody asked and it hid the magnitudes, which are the thing worth seeing. The
-// sign boundary is still there, where the surface meets its reference plane, which is
-// where a reader will look for it anyway.
-//
-// Colour is diverging, because the quantity has a real zero with opposite meanings either
-// side: two hues and a neutral grey midpoint, never a hue at the middle. The reserved
-// status pair marks the published parameterisations, each with words beside it, and a
-// table view carries every number the figures shade — so nothing is carried by colour
-// alone.
-"use strict";
-const fs = require("fs");
-const path = require("path");
-
-/* -------------------------------------- styling -------------------------------------- */
-// The same tokens report.template.html and rho_sensitivity.js define, including the
-// three-state theme handling: a bare :root light palette, a prefers-color-scheme override
-// guarded so an explicit light choice still wins, and a [data-theme] pair so a toggle wins
-// in both directions. This page is opened beside those reports and should not look like a
-// different study.
-function css() {
-  return `
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACL leverage &times; &rho; &mdash; acl.5.json</title>
+<style>
 :root{--bg:#eef0ee;--panel:#fff;--panel-2:#f4f5f3;--ink:#14181a;--ink-muted:#5c6360;--ink-faint:#8b918d;
 --rule:#d7dad6;--accent:#a8502c;--accent2:#35636b;--warn:#a8502c;--shadow:0 1px 2px rgba(20,24,26,.07);
 --surface-1:#fcfcfb}
@@ -109,99 +75,11 @@ padding:.85rem 1rem;border-radius:4px}
 .key b{color:var(--ink)}
 .verdict-ok{border-left-color:#0ca30c}
 .verdict-bad{border-left-color:#d03b3b}
-`;
-}
-
-function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function copyIcon() {
-  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>'
-    + '<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
-}
-function saveIcon() {
-  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/>'
-    + '<path d="M4 17v3h16v-3"/></svg>';
-}
-// A chart, its PNG controls and its tooltip host. Height is set here so the element does
-// not jump when the client sizes the backing store on first draw.
-function figureBlock(id, h, caption) {
-  return `<div class="canvas-wrap"><canvas id="fig-${id}" style="height:${h}px"></canvas>
-  <div class="tip" id="tip-${id}"></div></div>
-<div class="fig-toolbar">
-  <button class="copy-btn" data-fig="${id}" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG">${copyIcon()}<span>Copy PNG</span></button>
-  <button class="copy-btn" data-fig="${id}" data-act="save" type="button" title="Save this figure as a PNG file">${saveIcon()}<span>Download PNG</span></button>
-</div>
-<p class="figcap">${caption}</p>`;
-}
-
-/* --------------------------------------- page ---------------------------------------- */
-function writePage(ctx) {
-  const { out, snap, summary, cells, RHOS, GN, GX, DN, MARKS } = ctx;
-  const sh = snap.shipped;
-  const r0 = summary.rhoRange[0], r1 = summary.rhoRange[1];
-
-  // Rounded before embedding: the coefficients carry far more digits than they mean, and
-  // the page's arithmetic is a comparison against zero, not a published figure.
-  const round = (v) => +v.toPrecision(8);
-  // w at one expertise, for stating what a change in rho actually does. NOT a single
-  // "rho means xN" claim: w(E) = rho^((E-theta)/(1-theta)) puts rho under a FRACTIONAL
-  // exponent for everyone below the ceiling, so rho equals the multiple at E = 1 and at no
-  // other point. An earlier version of this page labelled the control "top performer x800"
-  // on that basis; it was wrong about everyone the study is actually about, since the
-  // population sits well below the ceiling. The multiple a reader should picture depends on
-  // whose expertise is being counted, so the prose states a spread across E and the control
-  // says rho.
-  const wAt = (E, rho) => Math.pow(rho, (E - snap.theta) / (1 - snap.theta));
-  const mult = (E, rho) => {
-    const v = wAt(E, rho);
-    return v >= 10 ? String(Math.round(v)) : String(+v.toFixed(1));
-  };
-  const DATA = {
-    config: snap.config, tick: snap.tick, replicates: snap.replicates,
-    axes: snap.axes, rhos: RHOS, rhoRange: [r0, r1],
-    gn: GN, gx: GX, dn: DN, shipped: sh, shippedRho: snap.shippedRho, marks: MARKS,
-    theta: snap.theta, breadth: snap.frontierBreadth, sharpness: snap.aclBlendSharpness,
-    // One entry per cell: the axis values that define it, coef[rho][0..3], and the no-AI
-    // arm's own capability per rho. The coefficients give the comparison, cb gives the
-    // levels both sides of it are measured on, and the page needs both.
-    cells: cells.map((c) => ({
-      combo: c.combo, dMeanE: round(c.meanE_t - c.meanE_b),
-      coef: c.coef.map((k) => k.map(round)),
-      cb: c.cb.map(round),
-    })),
-  };
-
-  const v = summary.verification;
-  const verifyPanel = (() => {
-    if (v.state === "pass") {
-      return `<div class="key verdict-ok"><h3>Verification</h3>
-<p><b>Passed.</b> At the published leverage values (Novice Gain ${sh.g_n}, Expert Gain ${sh.g_x},
-Novice Deficit ${sh.d_n}) this page reproduces every median capability change in
-<code>${esc(v.file)}</code>, across all ${v.rows.length} &rho; values that report covers. Worst relative
-difference ${v.worst.toExponential(2)} &mdash; the size expected from storing expertise as 32-bit
-rather than 64-bit floats, and nothing more. The charts below are therefore the same
-measurement as the published &rho; report, extended over the leverage parameters.</p></div>`;
-    }
-    if (v.state === "fail") {
-      const bad = v.rows.filter((x) => x.relErr > v.tol).slice(0, 6)
-        .map((x) => `&rho;&nbsp;${x.rho}: report ${x.expect.toFixed(3)}%, here ${x.got.toFixed(3)}%`).join("; ");
-      return `<div class="key verdict-bad"><h3>Verification</h3>
-<p><b>Failed.</b> At the published leverage values this page does not reproduce
-<code>${esc(v.file)}</code>. Worst relative difference ${v.worst.toExponential(2)}, tolerance
-${v.tol.toExponential(0)}. ${esc(bad)}. Treat every number on this page as unconfirmed until that is
-explained: the two should be the same engine, the same configs and the same seeds.</p></div>`;
-    }
-    return `<div class="key"><h3>Verification</h3>
-<p><b>Not run.</b> ${esc(v.why || "no reference was available")} Until it runs, nothing here has been
-checked against the published &rho; report.</p></div>`;
-  })();
-
-  const body = `
+</style></head><body><main>
 <div class="panel">
   <div class="head">
     <h1>Where AI is a net gain in capability</h1>
-    <span class="sub">${esc(snap.config)} &middot; tick ${snap.tick} &middot; generated ${esc(summary.generated)}</span>
+    <span class="sub">acl.5.json &middot; tick 1440 &middot; generated 2026-09-26</span>
   </div>
   <p>System capability is <code>C = &Sigma; w(E) &#8467;(E)</code>: each person's expertise converted into
   threshold-expert equivalents by <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>, then
@@ -216,12 +94,12 @@ checked against the published &rho; report.</p></div>`;
   </ul>
   <p>All three come from a single study of one profession on one model generation. This page asks which values
   of them leave AI ahead of the no-AI arm, and whether that answer survives the other assumption in
-  <code>w</code>: <code>&rho;</code>, swept from ${r0} to ${r1}.</p>
+  <code>w</code>: <code>&rho;</code>, swept from 60 to 800.</p>
   <p><code>&rho;</code> is <em>not</em> a multiplier applied to everyone. It sits under a fractional exponent,
-  so the same change in it moves people by very different amounts: going from &rho; ${r0} to ${r1} multiplies
-  what a person at the ceiling is worth by ${(r1 / r0).toFixed(1)}&times;, but someone at E = 0.8 by only
-  ${(wAt(0.8, r1) / wAt(0.8, r0)).toFixed(1)}&times; and someone at E = 0.65 by
-  ${(wAt(0.65, r1) / wAt(0.65, r0)).toFixed(1)}&times;. It sets the curvature of the expertise-to-value
+  so the same change in it moves people by very different amounts: going from &rho; 60 to 800 multiplies
+  what a person at the ceiling is worth by 13.3&times;, but someone at E = 0.8 by only
+  3.8&times; and someone at E = 0.65 by
+  1.5&times;. It sets the curvature of the expertise-to-value
   conversion, not its scale. The figures use the parameter names; the symbols above are the paper's notation
   for the same numbers.</p>
   <p>The three numbers never touch a career &mdash; they are read off the population at the end of the run,
@@ -229,12 +107,12 @@ checked against the published &rho; report.</p></div>`;
   published configurations at once: the ACL family's fifteen configs differ only in these three parameters and
   in <code>aiDampeningAbove</code>, which does change how people learn. So the fifteen are five simulations
   read out at three parameter points. All three are marked on the figures below and pinned exactly onto the
-  grid; <b>${esc(snap.config)}</b> is the one this run was taken under, at
-  ${esc(String(summary.marks.filter(function(m){return m.primary;}).map(function(m){return "(" + [m.g_n,m.g_x,m.d_n].join(", ") + ")";})[0] || ""))}.</p>
-  <p class="facts">${summary.cells} cells &times; ${summary.replicates} replicates, expertise snapshotted at tick ${snap.tick} &middot;
-  axes ${esc(snap.axes.join(" x "))} &middot; &theta; = ${snap.theta} &middot; frontier breadth ${snap.frontierBreadth} &middot;
-  blend sharpness ${snap.aclBlendSharpness} &middot; ${summary.rhos.length} log-spaced values of &rho; from
-  ${r0} to ${r1} &middot; no simulation was run to draw this</p>
+  grid; <b>acl.5.json</b> is the one this run was taken under, at
+  (0.43, 0.17, 0.19).</p>
+  <p class="facts">18 cells &times; 32 replicates, expertise snapshotted at tick 1440 &middot;
+  axes aiLevelFraction x aiDampeningBelow &middot; &theta; = 0.585 &middot; frontier breadth 1 &middot;
+  blend sharpness 20 &middot; 25 log-spaced values of &rho; from
+  60 to 800 &middot; no simulation was run to draw this</p>
 </div>
 
 <div class="key"><h3>How to read it</h3>
@@ -242,11 +120,11 @@ checked against the published &rho; report.</p></div>`;
 <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>. Everyone at the expert threshold
 counts 1 at every &rho;; the person at the ceiling counts &rho;; everyone in between counts &rho; raised to a
 fraction. So &rho; sets <em>how steeply</em> value rises across the distribution, and it does not convert into
-a single multiple: at &rho; ${r1} a person at E = 0.8 is worth ${mult(0.8, r1)} threshold experts and one at
-E = 0.9 is worth ${mult(0.9, r1)}, against ${mult(0.8, r0)} and ${mult(0.9, r0)} at &rho; ${r0}. It is a
+a single multiple: at &rho; 800 a person at E = 0.8 is worth 32 threshold experts and one at
+E = 0.9 is worth 160, against 8.3 and 22 at &rho; 60. It is a
 stated assumption, never measured, and it is swept here for exactly that reason. Nothing about the simulated
 careers changes with it &mdash; only how their expertise is added up.</p>
-<p>Everything plotted is the median across the ${summary.cells} AI-level &times; dampening cells of this
+<p>Everything plotted is the median across the 18 AI-level &times; dampening cells of this
 experiment, each compared against its <em>own</em> no-AI arm. Both arms start from the same populations and the
 same seeds, so the difference between them is what AI did and nothing else. Two effects are in that difference
 and they pull opposite ways: the treatment arm has already lost expertise to AI-dampened learning before any
@@ -260,35 +138,45 @@ leverage is applied, and the leverage then has to earn that back. A surface abov
       <label><input type="radio" name="metric" value="change" checked> change vs no-AI (%)</label>
       <label><input type="radio" name="metric" value="level"> capability, both arms</label>
     </span>
-    <label>Expert Gain <input type="range" id="gx-slider" min="0" max="${GX.length - 1}" value="${GX.indexOf(sh.g_x) < 0 ? 0 : GX.indexOf(sh.g_x)}"> <b id="gx-val">${sh.g_x}</b></label>
+    <label>Expert Gain <input type="range" id="gx-slider" min="0" max="10" value="3"> <b id="gx-val">0.17</b></label>
     <label title="rho: how steeply value rises with expertise, in w(E) = rho^((E-theta)/(1-theta))">&rho;
-      <input type="range" id="rho-slider" min="0" max="${RHOS.length - 1}" value="${RHOS.length - 1}">
-      <b id="rho-val">${RHOS[RHOS.length - 1]}</b></label>
-    <label><input type="checkbox" id="show-bracket"> bracket &rho; ${r0} and ${r1}</label>
+      <input type="range" id="rho-slider" min="0" max="24" value="24">
+      <b id="rho-val">800</b></label>
+    <label><input type="checkbox" id="show-bracket"> bracket &rho; 60 and 800</label>
     <label><input type="checkbox" id="show-shipped" checked> mark the published parameterisations</label>
     <button class="copy-btn" id="reset-view" type="button">Reset view</button>
   </div>
-  ${figureBlock("cube", 440,
-    `The vertical axis is the quantity itself. In <b>change vs no-AI</b> it is the median capability change
+  <div class="canvas-wrap"><canvas id="fig-cube" style="height:440px"></canvas>
+  <div class="tip" id="tip-cube"></div></div>
+<div class="fig-toolbar">
+  <button class="copy-btn" data-fig="cube" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy PNG</span></button>
+  <button class="copy-btn" data-fig="cube" data-act="save" type="button" title="Save this figure as a PNG file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg><span>Download PNG</span></button>
+</div>
+<p class="figcap">The vertical axis is the quantity itself. In <b>change vs no-AI</b> it is the median capability change
      against each cell's own no-AI arm, in per cent, with the flat grey plane at zero: surface above the plane
      means AI left the system with more capability than it had without, below it means less. In <b>capability,
      both arms</b> it is capability in threshold-expert equivalents on a log scale, with the no-AI arm drawn as
      the flat reference surface &mdash; the same comparison, read as two levels rather than one ratio. Across
      the floor: <b>Novice Gain</b>, the in-frontier gain to weaker performers, and <b>Novice Deficit</b>, the
      loss outside the frontier. <b>Expert Gain</b> and <b>&rho;</b> are the two sliders. <b>Bracket &rho;</b>
-     overlays the same surface at ${r0} and ${r1}, so the width of that gap is how much of the answer that one
-     assumption is responsible for.`)}
+     overlays the same surface at 60 and 800, so the width of that gap is how much of the answer that one
+     assumption is responsible for.</p>
   <div class="legend" id="cube-legend"></div>
 </div>
 
 <div class="panel">
   <div class="head"><h2>Cell by cell</h2>
     <span class="sub">one panel per Expert Gain, at the &rho; chosen above</span></div>
-  ${figureBlock("panels", 300,
-    `The same numbers read flat. Each square is one <b>Expert Gain</b>; within it, <b>Novice Gain</b> across
+  <div class="canvas-wrap"><canvas id="fig-panels" style="height:300px"></canvas>
+  <div class="tip" id="tip-panels"></div></div>
+<div class="fig-toolbar">
+  <button class="copy-btn" data-fig="panels" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy PNG</span></button>
+  <button class="copy-btn" data-fig="panels" data-act="save" type="button" title="Save this figure as a PNG file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg><span>Download PNG</span></button>
+</div>
+<p class="figcap">The same numbers read flat. Each square is one <b>Expert Gain</b>; within it, <b>Novice Gain</b> across
      and <b>Novice Deficit</b> up, shaded by the capability change against the no-AI arm &mdash; blue above zero, red below,
      neutral at zero. The heavier line is the zero contour: the boundary this whole study is about. Outlined
-     cells are the published parameterisations.`)}
+     cells are the published parameterisations.</p>
   <div class="legend" id="panel-legend"></div>
 </div>
 
@@ -308,33 +196,23 @@ leverage is applied, and the leverage then has to earn that back. A surface abov
   &mdash; every shaded cell there has a number here.</p>
 </div>
 
-${verifyPanel}
+<div class="key verdict-ok"><h3>Verification</h3>
+<p><b>Passed.</b> At the published leverage values (Novice Gain 0.43, Expert Gain 0.17,
+Novice Deficit 0.19) this page reproduces every median capability change in
+<code>results/rho/acl.5/rho_summary.json</code>, across all 21 &rho; values that report covers. Worst relative
+difference 3.16e-14 &mdash; the size expected from storing expertise as 32-bit
+rather than 64-bit floats, and nothing more. The charts below are therefore the same
+measurement as the published &rho; report, extended over the leverage parameters.</p></div>
 
 <div class="panel">
   <h3>Provenance</h3>
-  <p class="facts">snapshots ${esc(summary.snapshots)} &middot; grid ${GN.length}&times;${GX.length}&times;${DN.length} = ${summary.points} points &middot;
-  ${summary.positiveAtEveryRho} positive at every &rho;, ${summary.negativeAtEveryRho} negative at every
-  &rho;, ${summary.flipsInRange} flipping inside the range &middot; full tables in acl_grid.csv and acl_surface.csv &middot;
-  rebuilt by: node src/acl_leverage_sweep.js --snapshots ${esc(summary.snapshots)}</p>
-</div>`;
-
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ACL leverage &times; &rho; &mdash; ${esc(snap.config)}</title>
-<style>${css()}</style></head><body><main>${body}</main>
-<script>window.ACL = ${JSON.stringify(DATA)};<\/script>
-<script>${clientJs()}<\/script>
-</body></html>`;
-
-  fs.writeFileSync(path.join(out, "acl_leverage.html"), html);
-}
-
-/* ------------------------------------- client JS ------------------------------------- */
-// Written as one IIFE, in the same idiom as the other reports' embedded scripts: no build
-// step, no dependencies, canvas drawn at device pixel ratio, redrawn on resize and on a
-// theme change.
-function clientJs() {
-  return `
+  <p class="facts">snapshots results/acl-leverage/acl.5 &middot; grid 11&times;11&times;10 = 1210 points &middot;
+  0 positive at every &rho;, 956 negative at every
+  &rho;, 254 flipping inside the range &middot; full tables in acl_grid.csv and acl_surface.csv &middot;
+  rebuilt by: node src/acl_leverage_sweep.js --snapshots results/acl-leverage/acl.5</p>
+</div></main>
+<script>window.ACL = {"config":"acl.5.json","tick":1440,"replicates":32,"axes":["aiLevelFraction","aiDampeningBelow"],"rhos":[60,66.838,74.455,82.941,92.393,102.923,114.653,127.72,142.276,158.491,176.553,196.675,219.089,244.058,271.873,302.857,337.373,375.823,418.654,466.367,519.518,578.726,644.681,718.154,800],"rhoRange":[60,800],"gn":[0,0.1,0.15,0.2,0.3,0.4,0.43,0.5,0.6,0.7,0.8],"gx":[0,0.05,0.1,0.17,0.2,0.3,0.4,0.5,0.6,0.7,0.8],"dn":[0,0.1,0.19,0.2,0.3,0.4,0.5,0.6,0.7,0.8],"shipped":{"g_n":0.43,"g_x":0.17,"d_n":0.19},"shippedRho":1000,"marks":[{"key":"0.43,0.17,0.19","g_n":0.43,"g_x":0.17,"d_n":0.19,"primary":true},{"key":"0.15,0.05,0.4","g_n":0.15,"g_x":0.05,"d_n":0.4,"primary":false},{"key":"0,0,0","g_n":0,"g_x":0,"d_n":0,"primary":false}],"theta":0.585,"breadth":1,"sharpness":20,"cells":[{"combo":{"aiLevelFraction":0.2,"aiDampeningBelow":0.8385},"dMeanE":-0.035813711,"coef":[[-0.28839158,0.14232168,0.00014777069,0.00059108275],[-0.29428746,0.14114251,0.00012893083,0.00051572334],[-0.30012179,0.13997564,0.00011256519,0.00045026074],[-0.30589679,0.13882064,0.000098344746,0.00039337898],[-0.31161246,0.13767751,0.000085988626,0.0003439545],[-0.31727115,0.13654577,0.000075247537,0.00030099015],[-0.32287358,0.13542528,0.000065908324,0.00026363329],[-0.32842097,0.13431581,0.000057784907,0.00023113963],[-0.33391424,0.13321715,0.000050716229,0.00020286492],[-0.33935455,0.13212909,0.000044562282,0.00017824913],[-0.34474257,0.13105149,0.00003920213,0.00015680852],[-0.35007993,0.12998401,0.000034530036,0.00013812014],[-0.35536683,0.12892663,0.000030455588,0.00012182235],[-0.36060455,0.12787909,0.000026899543,0.00010759817],[-0.36579388,0.12684122,0.000023793616,0.000095174466],[-0.3709354,0.12581292,0.00002107872,0.000084314881],[-0.37603016,0.12479397,0.0000187034,0.000074813601],[-0.38107883,0.12378423,0.000016623274,0.000066493096],[-0.38608195,0.12278361,0.000014799895,0.000059199579],[-0.39104044,0.12179191,0.000013199823,0.000052799292],[-0.39595489,0.12080902,0.000011794163,0.000047176653],[-0.40082591,0.11983482,0.000010557865,0.000042231459],[-0.40565409,0.11886918,0.0000094691908,0.000037876763],[-0.4104402,0.11791196,0.0000085092585,0.000034037034],[-0.4151847,0.11696306,0.0000076617355,0.000030646942]],"cb":[37461.86,39533.205,41748.148,44117.477,46651.924,49364.131,52267.001,55374.732,58702.499,62266.83,66085.265,70177.473,74563.612,79266.345,84309.751,89719.633,95524.407,101754.35,108442.07,115623.23,123336.07,131621.87,140525.29,150094.94,160382.83]},{"combo":{"aiLevelFraction":0.2,"aiDampeningBelow":0.8113},"dMeanE":-0.03740034,"coef":[[-0.29980736,0.14003853,0.00014831834,0.00059327337],[-0.30602835,0.13879433,0.00012934142,0.00051736568],[-0.31218814,0.13756237,0.00011286435,0.00045145739],[-0.31828874,0.13634225,0.000098553816,0.00039421527],[-0.32432981,0.13513404,0.000086125329,0.00034450132],[-0.33031352,0.1339373,0.000075326523,0.00030130609],[-0.3362403,0.13275194,0.000065941677,0.00026376671],[-0.34211114,0.13157777,0.000057782554,0.00023113022],[-0.34792674,0.13041465,0.000050686293,0.00020274517],[-0.35368803,0.12926239,0.000044511379,0.00017804551],[-0.35939543,0.12812091,0.000039135624,0.0001565425],[-0.36505043,0.12698991,0.000034452252,0.00013780901],[-0.37065298,0.1258694,0.000030369992,0.00012147997],[-0.37620422,0.12475916,0.000026808892,0.00010723557],[-0.38170473,0.12365905,0.000023700086,0.000094800344],[-0.38715491,0.12256902,0.00002098401,0.000083936038],[-0.3925557,0.12148886,0.00001860882,0.000074435281],[-0.39790758,0.12041848,0.000016529821,0.000066119283],[-0.40321097,0.11935781,0.00001470831,0.000058833241],[-0.40846665,0.11830667,0.000013110645,0.00005244258],[-0.4136751,0.11726498,0.000011707767,0.000046831067],[-0.4188368,0.11623264,0.000010474496,0.000041897984],[-0.42395226,0.11520955,0.0000093889947,0.000037555979],[-0.42902212,0.11419558,0.0000084323013,0.000033729205],[-0.43404678,0.11319064,0.0000075880235,0.000030352094]],"cb":[37568.777,39657.009,41890.832,44281.241,46839.186,49577.555,52509.516,55649.559,59013.18,62617.255,66479.707,70620.632,75060.639,79822.901,84932.046,90414.477,96299.275,102617.44,109402.36,116690.57,124521.27,132936.75,141982.81,151709.3,162169.59]},{"combo":{"aiLevelFraction":0.2,"aiDampeningBelow":0.7636},"dMeanE":-0.040545075,"coef":[[-0.30445559,0.13910888,0.00015054207,0.0006021683],[-0.31050389,0.13789922,0.00013118569,0.00052474276],[-0.31648785,0.13670243,0.00011439141,0.00045756563],[-0.32240987,0.13551803,0.000099815973,0.00039926389],[-0.32827007,0.13434599,0.000087166571,0.00034866629],[-0.33407099,0.1331858,0.000076183718,0.00030473487],[-0.33981343,0.13203731,0.000066645742,0.00026658297],[-0.34549876,0.13090025,0.000058359375,0.0002334375],[-0.351128,0.1297744,0.000051157523,0.00020463009],[-0.35670239,0.12865952,0.000044895111,0.00017958044],[-0.3622227,0.12755546,0.000039446964,0.00015778786],[-0.36769066,0.12646187,0.000034703785,0.00013881514],[-0.37310653,0.12537869,0.000030572209,0.00012228883],[-0.37847168,0.12430566,0.000026970517,0.00010788207],[-0.38378694,0.12324261,0.000023828368,0.000095313473],[-0.38905296,0.12218941,0.000021084968,0.000084339873],[-0.39427087,0.12114583,0.000018687443,0.000074749771],[-0.39944136,0.12011173,0.000016590237,0.000066360948],[-0.40456505,0.11908699,0.000014753934,0.000059015738],[-0.40964289,0.11807142,0.000013144295,0.000052577179],[-0.41467552,0.1170649,0.000011731764,0.000046927057],[-0.41966358,0.11606728,0.000010490752,0.000041963008],[-0.42460772,0.11507846,0.0000093990779,0.000037596312],[-0.42950872,0.11409826,0.0000084374974,0.00003374999],[-0.43436708,0.11312658,0.0000075893834,0.000030357534]],"cb":[37649.926,39740.926,41977.423,44370.384,46930.732,49671.324,52605.292,55747.088,59112.163,62717.347,66580.509,70721.687,75161.425,79922.826,85030.439,90510.583,96392.244,102706.32,109486.08,116767.95,124590.98,132997.32,142032.61,151746.53,162192.25]},{"combo":{"aiLevelFraction":0.4,"aiDampeningBelow":0.8385},"dMeanE":-0.028255671,"coef":[[-0.25783011,0.29686796,0.0032064963,0.0048097445],[-0.26361518,0.29455393,0.0029363024,0.0044044537],[-0.26935181,0.29225927,0.002690599,0.0040358986],[-0.27504144,0.28998343,0.0024670378,0.0037005566],[-0.28068337,0.28772665,0.0022635769,0.0033953654],[-0.28627931,0.28548828,0.0020782857,0.0031174286],[-0.29182937,0.28326825,0.0019094744,0.0028642115],[-0.29733422,0.28106631,0.0017555973,0.002633396],[-0.30279429,0.27888229,0.0016152652,0.0024228977],[-0.30821023,0.27671591,0.0014872155,0.0022308232],[-0.31358229,0.27456709,0.0013703168,0.0020554753],[-0.31891168,0.27243533,0.001263526,0.0018952891],[-0.32419824,0.2703207,0.0011659276,0.0017488914],[-0.32944289,0.26822285,0.0010766723,0.0016150085],[-0.33464608,0.26614157,0.00099500093,0.0014925014],[-0.33980808,0.26407677,0.00092022849,0.0013803427],[-0.34492968,0.26202813,0.00085172773,0.0012775916],[-0.35001126,0.2599955,0.00078893614,0.0011834042],[-0.35505313,0.25797875,0.00073134474,0.0010970171],[-0.36005594,0.25597762,0.00067848838,0.0010177326],[-0.3650201,0.25399196,0.00062994827,0.00094492241],[-0.36994598,0.25202161,0.00058534468,0.00087801702],[-0.37483401,0.2500664,0.00054433264,0.00081649896],[-0.37968474,0.24812611,0.00050659797,0.00075989696],[-0.38449846,0.24620061,0.00047185748,0.00070778621]],"cb":[37627.958,39718.68,41955.061,44348.097,46908.743,49649.892,52584.716,55727.713,59094.385,62701.618,66567.345,70711.676,75155.235,79921.213,85034.26,90520.803,96409.954,102732.75,109522.6,116816.12,124652.54,133074.21,142127.01,151860.88,162329.27]},{"combo":{"aiLevelFraction":0.4,"aiDampeningBelow":0.8113},"dMeanE":-0.030450171,"coef":[[-0.26929758,0.29228097,0.003216151,0.0048242264],[-0.2752651,0.28989396,0.0029445196,0.0044167794],[-0.28118041,0.28752783,0.0026975882,0.0040463823],[-0.28704494,0.28518202,0.0024729786,0.0037094678],[-0.29285791,0.28285684,0.0022686234,0.0034029352],[-0.298621,0.2805516,0.0020825696,0.0031238545],[-0.30433425,0.2782663,0.0019131084,0.0028696626],[-0.30999831,0.27600068,0.0017586777,0.0026380165],[-0.31561354,0.27375458,0.0016178739,0.0024268109],[-0.32118057,0.27152777,0.0014894226,0.0022341339],[-0.32669959,0.26932017,0.001372182,0.002058273],[-0.33217181,0.26713128,0.0012650999,0.0018976498],[-0.33759701,0.26496119,0.0011672532,0.0017508798],[-0.34297612,0.26280955,0.0010777863,0.0016166795],[-0.34830956,0.26067618,0.00099593439,0.0014939016],[-0.35359758,0.25856097,0.00092100779,0.0013815117],[-0.35884098,0.25646361,0.00085237521,0.0012785628],[-0.36404013,0.25438395,0.00078947077,0.0011842062],[-0.36919534,0.25232186,0.00073178257,0.0010976739],[-0.37430729,0.25027708,0.00067884303,0.0010182645],[-0.37937639,0.24824944,0.00063023125,0.00094534688],[-0.38440303,0.24623879,0.00058556578,0.00087834866],[-0.38938765,0.24424494,0.00054450014,0.00081675021],[-0.39433086,0.24226766,0.00050671891,0.00076007836],[-0.39923296,0.24030682,0.00047193782,0.00070790673]],"cb":[37533.029,39617.095,41846.269,44231.494,46783.666,49515.613,52440.437,55572.559,58927.392,62521.729,66373.399,70502.393,74929.21,79676.899,84769.954,90234.634,96099.858,102396.45,109157.61,116419.68,124221.6,132605.44,141616.74,151305.02,161723.36]},{"combo":{"aiLevelFraction":0.4,"aiDampeningBelow":0.7636},"dMeanE":-0.03624642,"coef":[[-0.28990956,0.28403618,0.0032254308,0.0048381462],[-0.29596311,0.28161475,0.0029511229,0.0044266843],[-0.30195693,0.27921723,0.0027019387,0.0040529081],[-0.30789289,0.27684285,0.0024754411,0.0037131616],[-0.31377062,0.27449175,0.0022695122,0.0034042683],[-0.31959224,0.2721631,0.002082154,0.0031232311],[-0.32535814,0.26985674,0.0019116194,0.0028674291],[-0.33106932,0.26757227,0.0017563127,0.002634469],[-0.33672646,0.26530942,0.0016148013,0.002422202],[-0.3423305,0.2630678,0.0014857857,0.0022286785],[-0.34788192,0.26084723,0.0013681022,0.0020521533],[-0.3533822,0.25864712,0.00126068,0.00189102],[-0.35883136,0.25646745,0.0011625799,0.0017438698],[-0.36423057,0.25430777,0.0010729323,0.0016093984],[-0.36958046,0.25216781,0.00099096043,0.0014864406],[-0.37488151,0.25004739,0.00091596446,0.0013739467],[-0.38013469,0.24794612,0.00084730433,0.0012709565],[-0.38534056,0.24586377,0.00078440668,0.00117661],[-0.39049961,0.24380016,0.00072675325,0.0010901299],[-0.39561266,0.24175494,0.00067387106,0.0010108066],[-0.40068028,0.23972789,0.00062533464,0.00093800196],[-0.40570299,0.2377188,0.00058075863,0.00087113795],[-0.41068139,0.23572744,0.00053979333,0.00080969],[-0.41561617,0.23375353,0.00050212056,0.00075318084],[-0.42050779,0.23179688,0.00046745378,0.00070118067]],"cb":[37649.502,39740.445,41976.974,44370.073,46930.682,49671.679,52606.217,55748.775,59114.829,62721.242,66585.917,70728.928,75170.863,79934.869,85045.549,90529.277,96415.101,102733.99,109519.29,116807.5,124637.78,133052.36,142097.01,151821.52,162279.19]},{"combo":{"aiLevelFraction":0.6,"aiDampeningBelow":0.8385},"dMeanE":-0.025589665,"coef":[[-0.23896565,0.45662061,0.052865795,0.035243863],[-0.24465386,0.45320768,0.050410942,0.033607295],[-0.25030641,0.44981615,0.048073563,0.032049042],[-0.25592393,0.44644564,0.045847708,0.030565138],[-0.26150497,0.44309702,0.043728528,0.029152352],[-0.26705047,0.43976972,0.04171052,0.027807013],[-0.27255985,0.43646409,0.039789028,0.026526018],[-0.27803309,0.43318015,0.037959415,0.025306277],[-0.28346996,0.42991802,0.036217352,0.024144901],[-0.28887053,0.42667768,0.034558632,0.023039088],[-0.29423444,0.42345934,0.032979378,0.021986252],[-0.29956236,0.42026258,0.031475608,0.020983739],[-0.30485359,0.41708785,0.030043923,0.020029282],[-0.31010856,0.41393486,0.028680777,0.019120518],[-0.31532726,0.41080364,0.027382917,0.018255278],[-0.32050952,0.40769429,0.026147283,0.017431522],[-0.32565571,0.40460657,0.024970834,0.016647223],[-0.33076583,0.4015405,0.023850762,0.015900508],[-0.33583981,0.39849611,0.022784402,0.015189601],[-0.34087798,0.39547321,0.021769138,0.014512759],[-0.34588043,0.39247174,0.020802529,0.013868353],[-0.35084722,0.38949167,0.019882249,0.013254833],[-0.35577849,0.3865329,0.019006069,0.012670713],[-0.36067456,0.38359526,0.018171839,0.012114559],[-0.36553548,0.38067871,0.017377555,0.011585036]],"cb":[37782.338,39883.963,42131.984,44537.451,47111.373,49866.708,52816.694,55975.9,59359.903,62985.675,66871.237,71036.796,75503.078,80293.387,85432.495,90946.956,96866.025,103220.89,110045.12,117375.51,125251.47,133715.58,142813.92,152596.66,163117.54]},{"combo":{"aiLevelFraction":0.6,"aiDampeningBelow":0.8113},"dMeanE":-0.028486821,"coef":[[-0.25148993,0.44910604,0.052914059,0.035276039],[-0.25729679,0.44562193,0.050441889,0.033627926],[-0.26306424,0.44216145,0.048088664,0.032059109],[-0.26879307,0.43872416,0.045848336,0.030565558],[-0.2744819,0.43531086,0.043715974,0.029143983],[-0.2801318,0.43192092,0.041685986,0.027790657],[-0.28574224,0.42855465,0.039753638,0.026502425],[-0.29131329,0.42521203,0.03791422,0.025276147],[-0.29684474,0.42189315,0.036163332,0.024108888],[-0.30233671,0.41859797,0.034496702,0.022997801],[-0.30778888,0.41532667,0.032910388,0.021940259],[-0.31320193,0.41207884,0.03140035,0.020933567],[-0.31857518,0.40885489,0.029963134,0.019975423],[-0.32390909,0.40565455,0.028595139,0.019063426],[-0.32920363,0.40247782,0.027293063,0.018195376],[-0.33445866,0.39932481,0.0260538,0.0173692],[-0.33967453,0.39619528,0.024874262,0.016582841],[-0.34485126,0.39308925,0.023751602,0.015834401],[-0.34998877,0.39000674,0.022683113,0.015122075],[-0.35508739,0.38694756,0.021666144,0.014444096],[-0.36014721,0.38391167,0.020698217,0.013798812],[-0.3651683,0.38089902,0.019776975,0.01318465],[-0.3701508,0.37790952,0.018900156,0.012600104],[-0.37509502,0.37494299,0.018065584,0.012043722],[-0.38000102,0.37199939,0.017271225,0.01151415]],"cb":[37641.717,39734.116,41972.357,44367.452,46930.367,49674.014,52611.58,55757.581,59127.533,62738.342,66607.959,70756.51,75204.637,79975.55,85093.913,90586.172,96481.453,102810.8,109607.66,116908.62,124752.93,133182.96,142244.58,151987.7,162465.79]},{"combo":{"aiLevelFraction":0.6,"aiDampeningBelow":0.7636},"dMeanE":-0.034804822,"coef":[[-0.27806655,0.43316007,0.052449584,0.034966389],[-0.28396744,0.42961954,0.049974719,0.03331648],[-0.28981386,0.42611168,0.047620667,0.031747111],[-0.29560736,0.42263558,0.045381162,0.030254108],[-0.30134731,0.41919161,0.043251074,0.028834049],[-0.30703547,0.41577872,0.041224629,0.027483086],[-0.31267199,0.4123968,0.039296932,0.026197955],[-0.31825757,0.40904546,0.037463123,0.024975415],[-0.32379266,0.4057244,0.035718666,0.023812444],[-0.32927794,0.40243323,0.034059168,0.022706112],[-0.33471367,0.3991718,0.032480577,0.021653718],[-0.3401011,0.39593934,0.030978755,0.020652503],[-0.34544006,0.39273597,0.029550157,0.019700105],[-0.35073151,0.3895611,0.028191103,0.018794068],[-0.35597592,0.38641445,0.026898219,0.017932146],[-0.36117359,0.38329585,0.025668335,0.017112223],[-0.36632534,0.3802048,0.024498306,0.016332204],[-0.37143158,0.37714105,0.023385234,0.015590156],[-0.37649268,0.37410439,0.022326368,0.014884245],[-0.38150932,0.37109441,0.021319016,0.014212677],[-0.38648197,0.36811082,0.020360668,0.013573778],[-0.39141105,0.36515337,0.019448933,0.012965955],[-0.39629705,0.36222177,0.018581525,0.012387684],[-0.40114058,0.35931565,0.017756244,0.011837496],[-0.40594203,0.35643478,0.016971038,0.011314026]],"cb":[37687.771,39780.265,42018.231,44412.623,46974.342,49716.225,52651.377,55794.222,59160.174,62766.026,66629.601,70770.885,75210.364,79971.071,85077.482,90555.825,96434.99,102745.76,109521.28,116797.84,124614.32,133012.68,142038.37,151740.83,162172.97]},{"combo":{"aiLevelFraction":0.8,"aiDampeningBelow":0.8385},"dMeanE":-0.020960476,"coef":[[-0.17922287,0.6566217,0.36767572,0.091918931],[-0.1836528,0.65307776,0.36088513,0.090221282],[-0.18807974,0.64953621,0.35420445,0.088551112],[-0.19250424,0.64599661,0.34763263,0.086908158],[-0.19692513,0.64245989,0.341171,0.085292749],[-0.2013431,0.63892552,0.33481803,0.083704508],[-0.20575753,0.63539398,0.32857399,0.082143498],[-0.21016825,0.6318654,0.32243838,0.080609596],[-0.21457484,0.62834013,0.31641093,0.079102733],[-0.21897709,0.62481833,0.310491,0.077622751],[-0.2233744,0.62130048,0.30467835,0.076169587],[-0.22776699,0.61778641,0.29897158,0.074742894],[-0.23215389,0.61427689,0.29337073,0.073342683],[-0.23653509,0.61077193,0.28787459,0.071968647],[-0.24091013,0.60727189,0.28248237,0.070620592],[-0.24527843,0.60377726,0.2771934,0.06929835],[-0.24963983,0.60028814,0.27200642,0.068001606],[-0.25399383,0.59680494,0.26692052,0.06673013],[-0.25833989,0.59332809,0.26193477,0.065483693],[-0.26267776,0.58985779,0.25704787,0.064261969],[-0.26700699,0.58639441,0.25225871,0.063064677],[-0.2713271,0.58293832,0.24756613,0.061891533],[-0.27563766,0.57948987,0.24296891,0.060742227],[-0.27993841,0.57604928,0.23846562,0.059616405],[-0.28422882,0.57261695,0.23405507,0.058513766]],"cb":[37746.782,39843.874,42086.915,44486.909,47054.815,49803.537,52746.25,55897.457,59272.661,62888.752,66763.658,70917.487,75370.855,80146.941,85270.38,90767.58,96667.628,103001.53,109802.65,117107.57,124955.44,133388.56,142452.74,152197.79,162677.09]},{"combo":{"aiLevelFraction":0.8,"aiDampeningBelow":0.8113},"dMeanE":-0.025996152,"coef":[[-0.20403917,0.63676866,0.36078174,0.090195435],[-0.20867191,0.63306247,0.35400653,0.088501633],[-0.21328883,0.62936894,0.34734678,0.086836694],[-0.21789097,0.62568722,0.34080102,0.085200255],[-0.22247762,0.6220179,0.33437019,0.083592547],[-0.22704993,0.61836005,0.32805242,0.082013105],[-0.23160772,0.61471382,0.32184762,0.080461905],[-0.23615125,0.611079,0.31575498,0.078938745],[-0.24068051,0.60745559,0.3097739,0.077443476],[-0.24519569,0.60384345,0.30390347,0.075975867],[-0.24969658,0.60024273,0.29814315,0.074535787],[-0.25418379,0.59665296,0.2924913,0.073122824],[-0.25865674,0.59307461,0.2869477,0.071736924],[-0.26311574,0.58950741,0.2815109,0.070377724],[-0.26756071,0.58595143,0.27617989,0.069044973],[-0.27199141,0.58240687,0.2709538,0.067738451],[-0.27640801,0.57887359,0.26583117,0.066457791],[-0.28081034,0.57535173,0.26081087,0.065202719],[-0.28519816,0.57184147,0.25589184,0.06397296],[-0.28957155,0.56834276,0.25107258,0.062768145],[-0.29393034,0.56485573,0.24635183,0.061587957],[-0.29827435,0.56138052,0.24172829,0.060432072],[-0.30260344,0.55791725,0.23720058,0.059300146],[-0.30691759,0.55446592,0.23276717,0.058191793],[-0.31121657,0.55102674,0.22842673,0.057106682]],"cb":[37552.835,39631.961,41855.363,44233.89,46778.336,49501.412,52416.093,55536.662,58878.38,62457.871,66292.778,70402.889,74808.479,79532.353,84598.733,90033.583,95865.497,102124.94,108844.73,116060.76,123811.52,132138.55,141086.83,150705.26,161046.24]},{"combo":{"aiLevelFraction":0.8,"aiDampeningBelow":0.7636},"dMeanE":-0.032828565,"coef":[[-0.24813462,0.6014923,0.34844679,0.087111697],[-0.25340299,0.59727761,0.34154911,0.085387278],[-0.25863409,0.59309273,0.33477862,0.083694655],[-0.26382937,0.58893651,0.32813344,0.08203336],[-0.2689883,0.58480936,0.32161413,0.080403533],[-0.27411249,0.58071001,0.31521842,0.078804606],[-0.27920205,0.57663836,0.30894584,0.077236459],[-0.28425755,0.57259396,0.30279518,0.075698795],[-0.28927932,0.56857655,0.29676549,0.074191373],[-0.29426788,0.5645857,0.29085548,0.072713869],[-0.29922333,0.56062133,0.28506423,0.071266059],[-0.30414668,0.55668266,0.27938976,0.06984744],[-0.30903759,0.55276993,0.27383149,0.068457873],[-0.31389677,0.54888258,0.26838762,0.067096906],[-0.31872447,0.54502043,0.26305681,0.065764203],[-0.32352073,0.54118341,0.25783783,0.064459458],[-0.3282861,0.53737112,0.25272891,0.063182226],[-0.33302074,0.53358341,0.2477286,0.06193215],[-0.33772472,0.52982022,0.24283551,0.060708878],[-0.34239846,0.52608123,0.23804785,0.059511963],[-0.34704212,0.5223663,0.23336406,0.058341014],[-0.35165585,0.51867532,0.22878254,0.057195635],[-0.35623982,0.51500814,0.22430164,0.05607541],[-0.36079436,0.51136451,0.21991954,0.054979885],[-0.36531954,0.50774436,0.21563465,0.053908663]],"cb":[37525.083,39604.463,41828.372,44207.691,46753.25,49477.801,52394.364,55517.267,58861.825,62444.717,66283.651,70398.481,74809.557,79539.761,84613.407,90056.55,95897.889,102168,108899.82,116129.37,123895.3,132239.28,141206.45,150845.92,161210.26]},{"combo":{"aiLevelFraction":0.85,"aiDampeningBelow":0.8385},"dMeanE":-0.020972683,"coef":[[-0.16835424,0.70689889,0.49718818,0.087739091],[-0.17227838,0.70356338,0.49067842,0.08659031],[-0.17619459,0.70023459,0.48424137,0.085454359],[-0.18010386,0.69691172,0.47787675,0.084331192],[-0.18400566,0.69359519,0.4715866,0.083221165],[-0.18790105,0.69028411,0.46537023,0.082124158],[-0.19178997,0.68697852,0.45922865,0.08104035],[-0.19567273,0.68367818,0.45316219,0.079969799],[-0.1995494,0.68038301,0.44717139,0.078912598],[-0.20342023,0.6770928,0.44125642,0.077868781],[-0.20728513,0.67380764,0.43541788,0.07683845],[-0.21114468,0.67052702,0.42965521,0.075821507],[-0.21499846,0.66725131,0.42396928,0.074818109],[-0.21884683,0.6639802,0.41835972,0.073828186],[-0.22268976,0.6607137,0.41282658,0.07285175],[-0.22652711,0.65745196,0.40737005,0.071888832],[-0.23035908,0.65419478,0.40198968,0.070939355],[-0.23418558,0.65094226,0.3966854,0.070003306],[-0.23800644,0.64769452,0.39145713,0.06908067],[-0.24182178,0.64445149,0.38630438,0.068171362],[-0.24563147,0.64121325,0.38122686,0.067275328],[-0.24943539,0.63797992,0.37622422,0.06639251],[-0.25323344,0.63475158,0.37129605,0.065522832],[-0.25702563,0.63152822,0.3664417,0.064666183],[-0.26081175,0.62831001,0.36166076,0.063822488]],"cb":[37506.384,39584.002,41806.015,44183.297,46726.673,49448.89,52362.966,55483.225,58824.981,62404.913,66240.73,70352.29,74759.949,79486.598,84556.562,89995.913,95833.369,102099.54,108827.37,116052.95,123814.94,132155.1,141118.62,150754.69,161115.95]},{"combo":{"aiLevelFraction":0.85,"aiDampeningBelow":0.8113},"dMeanE":-0.024888205,"coef":[[-0.19601916,0.68338371,0.486196,0.085799294],[-0.20045711,0.67961146,0.47956765,0.084629585],[-0.20487973,0.67585223,0.47301751,0.083473679],[-0.20928814,0.67210508,0.46654505,0.082331479],[-0.21368174,0.66837052,0.46015208,0.081203308],[-0.21806176,0.6646475,0.45383766,0.080088999],[-0.22242812,0.6609361,0.44760263,0.078988699],[-0.22678115,0.65723602,0.44144708,0.077902427],[-0.23112095,0.65354719,0.43537139,0.076830245],[-0.23544778,0.64986939,0.42937555,0.075772155],[-0.23976152,0.64620271,0.42345998,0.074728231],[-0.24406283,0.64254659,0.41762395,0.073698344],[-0.24835122,0.63890146,0.41186822,0.072682627],[-0.25262707,0.63526699,0.40619224,0.071680983],[-0.25689035,0.6316432,0.40059594,0.070693401],[-0.2611409,0.62803024,0.39507937,0.069719889],[-0.26537891,0.62442792,0.38964199,0.06876035],[-0.26960429,0.62083635,0.38428358,0.06781475],[-0.27381685,0.61725568,0.37900398,0.066883055],[-0.27801669,0.61368581,0.37380258,0.065965161],[-0.28220368,0.61012687,0.36867899,0.065060998],[-0.28637769,0.60657897,0.36363279,0.064170492],[-0.29053859,0.6030422,0.35866345,0.06329355],[-0.2946864,0.59951656,0.35377027,0.062430047],[-0.2988209,0.59600224,0.34895274,0.061579896]],"cb":[37732.191,39826.534,42066.547,44463.211,47027.465,49772.184,52710.518,55856.941,59226.925,62837.324,66706.033,70853.119,75299.157,80067.283,85182.083,90669.913,96559.805,102882.7,109671.92,116963.95,124797.88,133215.94,142263.84,151991.31,162451.63]},{"combo":{"aiLevelFraction":0.85,"aiDampeningBelow":0.7636},"dMeanE":-0.032691914,"coef":[[-0.24766956,0.63948087,0.46431179,0.081937374],[-0.25290305,0.6350324,0.45748202,0.080732121],[-0.25809899,0.63061586,0.45074638,0.079543478],[-0.26325897,0.62622988,0.4441037,0.078371241],[-0.26838262,0.62187477,0.43755525,0.077215633],[-0.27347169,0.61754906,0.43109951,0.076076383],[-0.27852642,0.61325254,0.42473672,0.074953539],[-0.28354754,0.60898459,0.41846647,0.073847024],[-0.28853552,0.60474481,0.41228855,0.072756803],[-0.293491,0.60053265,0.40620244,0.071682783],[-0.29841422,0.59634791,0.40020803,0.070624947],[-0.3033063,0.59218965,0.39430409,0.069583075],[-0.30816704,0.58805802,0.38849087,0.068557213],[-0.31299726,0.58395233,0.38276734,0.067547178],[-0.3177973,0.57987229,0.37713295,0.066552873],[-0.32256735,0.57581775,0.37158729,0.065574228],[-0.32730803,0.57178818,0.36612936,0.064611064],[-0.33201959,0.56778335,0.36075852,0.063663268],[-0.3367022,0.56380313,0.35547417,0.062730735],[-0.34135637,0.55984708,0.35027529,0.061813286],[-0.34598233,0.55591502,0.34516109,0.06091078],[-0.35058029,0.55200675,0.34013076,0.060023075],[-0.35515051,0.54812207,0.33518341,0.059150014],[-0.35969336,0.54426064,0.33031797,0.058291406],[-0.36420898,0.54042237,0.32553358,0.057447102]],"cb":[37604.237,39690.181,41921.115,44307.956,46861.572,49594.761,52520.587,55653.433,59008.667,62603.034,66454.308,70582.42,75007.802,79753.428,84843.711,90304.818,96165.567,102456.68,109211.21,116465.39,124258,132630.95,141629.58,151303.24,161704.78]},{"combo":{"aiLevelFraction":0.875,"aiDampeningBelow":0.8385},"dMeanE":-0.020929526,"coef":[[-0.16834428,0.72769876,0.56096022,0.080137174],[-0.17228735,0.72424856,0.55475549,0.079250784],[-0.17622334,0.72080457,0.54860569,0.078372241],[-0.18015314,0.717366,0.54251075,0.077501536],[-0.18407615,0.71393337,0.53647283,0.076638976],[-0.18799337,0.71050581,0.53049151,0.075784501],[-0.19190464,0.70708344,0.52456799,0.074938284],[-0.19581021,0.70366607,0.51870284,0.074100405],[-0.19971008,0.70025368,0.51289683,0.073270976],[-0.2036044,0.69684615,0.50715041,0.072450059],[-0.20749302,0.69344361,0.50146443,0.071637776],[-0.21137645,0.6900456,0.49583863,0.07083409],[-0.21525419,0.68665259,0.49027415,0.070039165],[-0.21912652,0.6832643,0.48477092,0.069252989],[-0.22299335,0.67988082,0.4793293,0.068475615],[-0.22685447,0.67650233,0.47394978,0.067707111],[-0.23071003,0.67312873,0.46863223,0.066947461],[-0.23455986,0.66976013,0.46337689,0.066196699],[-0.23840374,0.66639673,0.45818401,0.065454859],[-0.24224172,0.6630385,0.45305342,0.064721918],[-0.24607363,0.65968557,0.44798516,0.06399788],[-0.2498993,0.65633811,0.44297921,0.063282744],[-0.25371858,0.65299624,0.43803547,0.062576496],[-0.25753143,0.64966,0.43315365,0.061879093],[-0.2613376,0.6463296,0.42833365,0.061190521]],"cb":[37492.788,39573.981,41800.258,44182.58,46731.868,49460.978,52383.043,55512.522,58864.872,62456.937,66306.602,70433.925,74859.479,79606.399,84699.278,90164.483,96031.061,102329.98,109094.59,116361.42,124169.62,132561.47,141582.78,151283.36,161716.61]},{"combo":{"aiLevelFraction":0.875,"aiDampeningBelow":0.8113},"dMeanE":-0.024598205,"coef":[[-0.19122456,0.70767851,0.55000708,0.07857244],[-0.19551732,0.70392234,0.54371785,0.077673979],[-0.19979383,0.7001804,0.53749025,0.076784322],[-0.20405517,0.69645173,0.53132391,0.075903416],[-0.20830082,0.69273679,0.52522074,0.075031534],[-0.21253198,0.68903452,0.51918001,0.074168573],[-0.21674863,0.68534495,0.51320271,0.073314672],[-0.22095113,0.68166776,0.50728912,0.072469875],[-0.22513963,0.67800283,0.5014398,0.071634257],[-0.22931442,0.67434988,0.49565495,0.07080785],[-0.23347547,0.67070896,0.48993519,0.069990741],[-0.23762347,0.66707946,0.48428004,0.069182862],[-0.241758,0.66346175,0.47869044,0.068384348],[-0.2458795,0.65985543,0.4731661,0.067595157],[-0.24998803,0.65626047,0.46770718,0.066815312],[-0.25408349,0.65267695,0.46231399,0.066044856],[-0.25816615,0.64910461,0.45698622,0.065283745],[-0.26223601,0.64554349,0.45172392,0.064531988],[-0.26629295,0.64199367,0.44652717,0.063789595],[-0.27033716,0.63845499,0.44139564,0.063056519],[-0.2743686,0.63492747,0.43632919,0.062332742],[-0.27838722,0.63141118,0.43132769,0.061618241],[-0.28239301,0.62790612,0.42639087,0.060912981],[-0.28638604,0.62441221,0.42151829,0.060216899],[-0.2903662,0.62092957,0.41670974,0.059529963]],"cb":[37561.784,39644.594,41872.238,44255.631,46805.639,49535.057,52456.949,55585.695,58936.667,62526.609,66373.297,70496.667,74917.156,79657.745,84742.856,90198.665,96054.008,102339.61,109088.57,116337.12,124124.07,132491.37,141484.38,151152.51,161548.63]},{"combo":{"aiLevelFraction":0.875,"aiDampeningBelow":0.7636},"dMeanE":-0.033290283,"coef":[[-0.24629166,0.65949479,0.52036035,0.074337193],[-0.25131853,0.65509629,0.51384005,0.073405722],[-0.2563023,0.65073549,0.50740183,0.072485975],[-0.26124484,0.64641076,0.50104445,0.071577779],[-0.26614615,0.64212212,0.49476905,0.070681292],[-0.2710082,0.63786782,0.48857406,0.069796294],[-0.27583158,0.63364737,0.48245968,0.068922811],[-0.2806173,0.62945987,0.47642544,0.068060777],[-0.2853661,0.62530466,0.47047113,0.067210162],[-0.29007893,0.62118093,0.46459624,0.066370892],[-0.29475632,0.61708822,0.45880067,0.065542953],[-0.29939962,0.61302533,0.45308324,0.064726177],[-0.30400894,0.60899218,0.44744423,0.063920604],[-0.30858534,0.60498783,0.44188269,0.063126098],[-0.31312943,0.60101175,0.43639816,0.062342594],[-0.31764164,0.59706357,0.43099031,0.061570044],[-0.32212283,0.59314252,0.42565825,0.060808322],[-0.32657351,0.58924818,0.42040148,0.060057354],[-0.33099407,0.58538019,0.41521951,0.059317073],[-0.33538523,0.58153792,0.41011147,0.058587353],[-0.33974746,0.57772098,0.40507673,0.057868105],[-0.34408116,0.57392898,0.40011464,0.057159235],[-0.34838682,0.57016154,0.39522448,0.05646064],[-0.35266498,0.56641815,0.39040535,0.055772192],[-0.35691597,0.56269853,0.38565658,0.055093798]],"cb":[37687.086,39775.448,42008.706,44397.751,46953.418,49688.47,52615.931,55750.138,59106.408,62701.427,66552.903,70680.694,75105.146,79849.142,84936.988,90394.732,96251.064,102536.55,109284.09,116529.72,124312.03,132672.68,141656.77,151313.35,161694.96]}]};</script>
+<script>
 (function () {
   "use strict";
   var D = window.ACL;
@@ -868,7 +746,7 @@ function clientJs() {
     var gx = +document.getElementById("tbl-gx").value;
     var q = +document.getElementById("tbl-rho").value;
     var levels = document.getElementById("tbl-levels").checked;
-    var h = ['<table class="data-table"><thead><tr><th>g_n \\\\ d_n</th>'];
+    var h = ['<table class="data-table"><thead><tr><th>g_n \\ d_n</th>'];
     DN.forEach(function (dn) { h.push('<th>' + dn + (dn === SH.d_n ? ' *' : '') + '</th>'); });
     h.push('</tr></thead><tbody>');
     if (levels) {
@@ -981,7 +859,7 @@ function clientJs() {
         if (act === "save") {
           var a = document.createElement("a");
           a.href = cv.toDataURL("image/png");
-          a.download = D.config.replace(/\\.json$/, "") + "-" + btn.getAttribute("data-fig") + ".png";
+          a.download = D.config.replace(/\.json$/, "") + "-" + btn.getAttribute("data-fig") + ".png";
           a.click(); flag(true); return;
         }
         if (!navigator.clipboard || !window.ClipboardItem) { flag(false); return; }
@@ -1067,288 +945,5 @@ function clientJs() {
     });
   }
 })();
-`;
-}
-
-/* --------------------------------------- index --------------------------------------- */
-// One index across every config swept, written by --index.
-//
-// LIVE, in the same sense the per-config pages are: it carries each run's coefficients and
-// recomputes on the reader's controls, rather than tabulating numbers frozen at build time.
-// The alternative — an index of static summary rows — answers "what did the sweep find at
-// the published parameters", which is one point of a space the reader is here to move
-// around in. Same identity, same four coefficients per (cell, rho); the arithmetic is
-// cheap enough that doing it for five configs at once is still nothing.
-//
-// The five ACL configs differ only in aiDampeningAbove, so that is what the index is
-// organised by: one line per config on a shared pair of axes, at whatever leverage
-// parameters the reader sets. That comparison is the reason for an index at all — it is
-// the one figure no per-config page can draw.
-function writeIndex(ctx) {
-  const { root, runs } = ctx;
-
-  // What separates the configs. Read from each summary's own fixed parameters rather than
-  // hardcoded: if the family is ever regenerated with different dampening levels, a
-  // hardcoded mapping would keep printing the old ones.
-  const SYMBOL = {
-    aiDampeningAbove: "γ_above", aiDampeningBelow: "γ_below",
-    aiLevelFraction: "λ", frontierBreadth: "b",
-  };
-  const varying = [];
-  if (runs.length > 1) {
-    const keys = new Set();
-    runs.forEach((r) => Object.keys(r.distinguishing || {}).forEach((k) => keys.add(k)));
-    keys.forEach((k) => {
-      const vals = new Set(runs.map((r) => JSON.stringify((r.distinguishing || {})[k])));
-      if (vals.size > 1) varying.push(k);
-    });
-  }
-
-  const r0 = runs[0].rhoRange[0], r1 = runs[0].rhoRange[1];
-  // Comparable only where the grids and the rho ladders match. Stated rather than silently
-  // interpolated onto a common ladder — two sweeps run with different --rho are two
-  // different measurements, and an index that hid that would be inviting a wrong reading.
-  const same = runs.every((r) =>
-    r.rhos.length === runs[0].rhos.length && r.rhos.every((v, i) => v === runs[0].rhos[i])
-    && JSON.stringify(r.grid) === JSON.stringify(runs[0].grid));
-
-  const DATA = {
-    rhos: runs[0].rhos, rhoRange: [r0, r1], grid: runs[0].grid,
-    shipped: runs[0].shipped, marks: runs[0].marks || [], comparable: same,
-    varying,
-    runs: runs.map((r) => ({
-      dir: r.dir, config: r.config, tick: r.tick, replicates: r.replicates,
-      cells: r.cellCount, distinguishing: r.distinguishing || {},
-      verification: r.verification && r.verification.state,
-      cellCoef: r.cellCoef, cb: r.cb,
-    })),
-  };
-
-  const label = (r) => {
-    const bits = varying.map((k) => (SYMBOL[k] || k) + " " + r.distinguishing[k]);
-    return bits.length ? bits.join(", ") : r.dir;
-  };
-
-  const rows = runs.map((r) => `<tr><td><a href="${esc(r.dir)}/acl_leverage.html">${esc(r.dir)}</a></td>`
-    + `<td>${esc(label(r))}</td><td>${r.cellCount}</td><td>${r.replicates}</td><td>${r.tick}</td>`
-    + `<td>${r.verification === "pass" ? "passed" : r.verification === "fail" ? "FAILED" : "not run"}</td></tr>`).join("\n");
-
-  const body = `
-<div class="panel">
-  <div class="head">
-    <h1>Where AI is a net gain in capability</h1>
-    <span class="sub">${runs.length} experiment${runs.length === 1 ? "" : "s"} &middot; &rho; ${r0}&ndash;${r1}</span>
-  </div>
-  <p>Each of these runs asks the same question of a different population: with AI helping weaker performers
-  inside its frontier and hurting those who cannot check it outside, does the system end up with more
-  capability than it had without AI? The three leverage parameters are controls here, not settings &mdash;
-  move them and every line redraws, because capability is linear in all three and this page carries the
-  coefficients rather than a table of answers.</p>
-  ${varying.length ? `<p>What separates the runs: <b>${esc(varying.map((k) => SYMBOL[k] || k).join(", "))}</b>.
-  Everything else about them is identical, including the seeds.</p>` : ""}
-</div>
-
-<div class="panel">
-  <div class="head"><h2>All ${runs.length}, compared</h2>
-    <span class="sub">capability change vs no-AI, across &rho;</span></div>
-  <div class="controls">
-    <label>Novice Gain <input type="range" id="gn-slider" min="0" max="${runs[0].grid.g_n.length - 1}" value="0"> <b id="gn-val"></b></label>
-    <label>Expert Gain <input type="range" id="gx-slider" min="0" max="${runs[0].grid.g_x.length - 1}" value="0"> <b id="gx-val"></b></label>
-    <label>Novice Deficit <input type="range" id="dn-slider" min="0" max="${runs[0].grid.d_n.length - 1}" value="0"> <b id="dn-val"></b></label>
-    <button class="copy-btn" id="reset-published" type="button">Published values</button>
-  </div>
-  ${same ? figureBlock("index", 380,
-    `One line per experiment: the median capability change against that experiment's own no-AI arm, as &rho;
-     runs from ${r0} to ${r1} on a log axis. Above the zero rule AI left the system with more capability than
-     it had without; below it, less. Where a line crosses is where the answer depends on an assumption nobody
-     has measured. The sliders set the three leverage parameters for every line at once.`)
-    : `<p>These runs were swept on different &rho; ladders or different parameter grids, so they are not
-       comparable line for line. Open them individually below.</p>`}
-  ${same ? '<div class="legend" id="index-legend"></div>' : ""}
-</div>
-
-<div class="panel">
-  <div class="head"><h2>The runs</h2></div>
-  <table class="data-table">
-    <thead><tr><th>experiment</th><th>what differs</th><th>cells</th><th>replicates</th><th>tick</th><th>checked against the &rho; report</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <p class="figcap">Each links to its own page, where the same numbers are drawn as a surface over the two
-  gain and loss parameters. Verification compares this sweep against the published &rho; report at the
-  published leverage values; it needs a matching replicate count to be exact.</p>
-</div>`;
-
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ACL leverage &times; &rho; &mdash; all experiments</title>
-<style>${css()}</style></head><body><main>${body}</main>
-<script>window.ACL_INDEX = ${JSON.stringify(DATA)};<\/script>
-<script>${indexJs()}<\/script>
-</body></html>`;
-  fs.writeFileSync(path.join(root, "index.html"), html);
-}
-
-/* ---------------------------------- index client JS ---------------------------------- */
-function indexJs() {
-  return `
-(function () {
-  "use strict";
-  var D = window.ACL_INDEX;
-  if (!D.comparable) return;
-  var RH = D.rhos, G = D.grid, SH = D.shipped;
-  var ST = { gn: G.g_n.indexOf(SH.g_n), gx: G.g_x.indexOf(SH.g_x), dn: G.d_n.indexOf(SH.d_n) };
-  if (ST.gn < 0) ST.gn = 0;
-  if (ST.gx < 0) ST.gx = 0;
-  if (ST.dn < 0) ST.dn = 0;
-
-  // The same identity the per-config pages use, over each run's own cells.
-  function medianChange(run, q, gn, gx, dn) {
-    var out = [], i;
-    for (i = 0; i < run.cellCoef.length; i++) {
-      var k = run.cellCoef[i][q];
-      out.push(100 * (k[0] + gx * k[1] + (gn - gx) * k[2] - dn * k[3]));
-    }
-    out.sort(function (a, b) { return a - b; });
-    var n = out.length;
-    return n % 2 ? out[(n - 1) / 2] : (out[n / 2 - 1] + out[n / 2]) / 2;
-  }
-
-  // Categorical hues in fixed order, never cycled: the run a colour belongs to must not
-  // change when the reader moves a slider, so the index into this list is the run's
-  // position and nothing else. Five runs, five slots.
-  var SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-  var SERIES_DK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
-  function isDark() {
-    var t = document.documentElement.getAttribute("data-theme");
-    if (t === "dark") return true;
-    if (t === "light") return false;
-    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  }
-  function hue(i) { return (isDark() ? SERIES_DK : SERIES)[i % SERIES.length]; }
-  function tok(name, fallback) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
-  }
-
-  var HIT = null;
-  function draw() {
-    var cv = document.getElementById("fig-index");
-    if (!cv) return;
-    var dpr = window.devicePixelRatio || 1;
-    var W = cv.clientWidth || 700, H = parseFloat(cv.style.height) || 380;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    var ctx = cv.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var ink = tok("--ink", "#14181a"), muted = tok("--ink-muted", "#5c6360"),
-        faint = tok("--ink-faint", "#8b918d"), rule = tok("--rule", "#d7dad6"),
-        surface = tok("--surface-1", "#fcfcfb");
-    ctx.clearRect(0, 0, W, H); ctx.fillStyle = surface; ctx.fillRect(0, 0, W, H);
-
-    var gn = G.g_n[ST.gn], gx = G.g_x[ST.gx], dn = G.d_n[ST.dn];
-    var lines = D.runs.map(function (run) {
-      return RH.map(function (_, q) { return medianChange(run, q, gn, gx, dn); });
-    });
-    var lo = 0, hi = 0;
-    lines.forEach(function (s) { s.forEach(function (v) { if (v < lo) lo = v; if (v > hi) hi = v; }); });
-    // Zero is always in range: the rule at zero is the comparison, and an axis that
-    // cropped it would hide whether a line had crossed.
-    var pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad;
-
-    var L = 58, R = 130, T = 18, B = 42;
-    var x = function (q) { return L + (W - L - R) * (Math.log(RH[q]) - Math.log(RH[0]))
-      / (Math.log(RH[RH.length - 1]) - Math.log(RH[0])); };
-    var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
-
-    // Grid and axes, recessive.
-    ctx.strokeStyle = rule; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, H - B); ctx.lineTo(W - R, H - B); ctx.stroke();
-    ctx.font = "10.5px ui-monospace, monospace"; ctx.fillStyle = faint; ctx.textAlign = "right";
-    for (var t = 0; t <= 1.0001; t += 0.25) {
-      var v = lo + (hi - lo) * t, yy = y(v);
-      ctx.fillText((v > 0 ? "+" : "") + v.toFixed(1) + "%", L - 8, yy + 3.5);
-      ctx.strokeStyle = rule; ctx.globalAlpha = 0.5;
-      ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.textAlign = "center";
-    [RH[0], RH[Math.floor(RH.length / 2)], RH[RH.length - 1]].forEach(function (r, i) {
-      var q = i === 0 ? 0 : i === 1 ? Math.floor(RH.length / 2) : RH.length - 1;
-      ctx.fillText(Math.round(r), x(q), H - B + 16);
-    });
-    ctx.fillStyle = muted; ctx.font = "600 11px ui-sans-serif, sans-serif";
-    ctx.fillText("rho  (log)", (L + W - R) / 2, H - 8);
-    ctx.save(); ctx.translate(14, (T + H - B) / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center"; ctx.fillText("% vs no-AI", 0, 0); ctx.restore();
-
-    // The zero rule: heavier than the grid, because crossing it is the whole question.
-    if (lo < 0 && hi > 0) {
-      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
-      ctx.beginPath(); ctx.moveTo(L, y(0)); ctx.lineTo(W - R, y(0)); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // 2px lines, and each one direct-labelled at its right end rather than left to a
-    // legend box: five series is within the range where naming them in place beats making
-    // the reader match colours.
-    lines.forEach(function (s, i) {
-      ctx.strokeStyle = hue(i); ctx.lineWidth = 2; ctx.beginPath();
-      s.forEach(function (v, q) { if (q) ctx.lineTo(x(q), y(v)); else ctx.moveTo(x(q), y(v)); });
-      ctx.stroke();
-      var last = s[s.length - 1];
-      ctx.beginPath(); ctx.arc(x(s.length - 1), y(last), 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = hue(i); ctx.fill();
-      ctx.strokeStyle = surface; ctx.lineWidth = 2; ctx.stroke();
-      ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = ink;
-      ctx.fillText(D.runs[i].dir, W - R + 8, y(last) + 3.5);
-      ctx.font = "10px ui-sans-serif, sans-serif"; ctx.fillStyle = muted;
-      var bits = Object.keys(D.runs[i].distinguishing).map(function (k) { return D.runs[i].distinguishing[k]; });
-      if (bits.length) ctx.fillText(bits.join(", "), W - R + 8, y(last) + 15);
-    });
-
-    ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = faint;
-    ctx.fillText("Novice Gain " + gn + "   Expert Gain " + gx + "   Novice Deficit " + dn, L, 12);
-    HIT = { x: x, y: y, lines: lines, L: L, R: R, W: W };
-  }
-
-  function paintReadouts() {
-    document.getElementById("gn-val").textContent = G.g_n[ST.gn];
-    document.getElementById("gx-val").textContent = G.g_x[ST.gx];
-    document.getElementById("dn-val").textContent = G.d_n[ST.dn];
-  }
-
-  function wire() {
-    [["gn-slider", "gn"], ["gx-slider", "gx"], ["dn-slider", "dn"]].forEach(function (pair) {
-      var el = document.getElementById(pair[0]);
-      el.value = ST[pair[1]];
-      el.addEventListener("input", function () { ST[pair[1]] = +el.value; paintReadouts(); draw(); });
-    });
-    document.getElementById("reset-published").addEventListener("click", function () {
-      ST.gn = Math.max(0, G.g_n.indexOf(SH.g_n));
-      ST.gx = Math.max(0, G.g_x.indexOf(SH.g_x));
-      ST.dn = Math.max(0, G.d_n.indexOf(SH.d_n));
-      document.getElementById("gn-slider").value = ST.gn;
-      document.getElementById("gx-slider").value = ST.gx;
-      document.getElementById("dn-slider").value = ST.dn;
-      paintReadouts(); draw();
-    });
-    var legend = document.getElementById("index-legend");
-    if (legend) {
-      legend.innerHTML = D.runs.map(function (r, i) {
-        return '<span class="it"><span class="sw" style="background:' + hue(i) + '"></span>'
-          + r.dir + '</span>';
-      }).join("") + '<span class="it">above the rule: more capability than without AI</span>';
-    }
-    paintReadouts(); draw();
-  }
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
-  else wire();
-  window.addEventListener("resize", draw);
-  if (window.matchMedia) {
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { wire(); });
-  }
-})();
-`;
-}
-
-module.exports = { writePage, writeIndex };
+</script>
+</body></html>
