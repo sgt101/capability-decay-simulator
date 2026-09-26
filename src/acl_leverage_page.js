@@ -144,18 +144,13 @@ function figureBlock(id, h, caption) {
 
 /* --------------------------------------- page ---------------------------------------- */
 function writePage(ctx) {
-  const { out, snap, summary, cells, RHOS, GN, GX, DN, MARKS } = ctx;
+  const { out, snap, summary, cells, RHOS, GN, GX, DN, MARKS, ANCHOR_E } = ctx;
   const sh = snap.shipped;
   const r0 = summary.rhoRange[0], r1 = summary.rhoRange[1];
 
   // Rounded before embedding: the coefficients carry far more digits than they mean, and
   // the page's arithmetic is a comparison against zero, not a published figure.
   const round = (v) => +v.toPrecision(8);
-  // Where w is quoted. 0.8 is inside the expert band and clear of the ceiling: at E = 1,
-  // w IS rho, so a readout anchored there would be the Greek letter with a multiplication
-  // sign in front of it. Over the swept rho this maps to a range a reader can judge —
-  // "one of these is worth 8 of those" against "worth 32 of those".
-  const ANCHOR_E = 0.8;
   // w at one expertise, for stating what a change in rho actually does. NOT a single
   // "rho means xN" claim: w(E) = rho^((E-theta)/(1-theta)) puts rho under a FRACTIONAL
   // exponent for everyone below the ceiling, so rho equals the multiple at E = 1 and at no
@@ -178,8 +173,8 @@ function writePage(ctx) {
     axes: snap.axes, rhos: RHOS, rhoRange: [r0, r1],
     gn: GN, gx: GX, dn: DN, shipped: sh, shippedRho: snap.shippedRho, marks: MARKS,
     theta: snap.theta, breadth: snap.frontierBreadth, sharpness: snap.aclBlendSharpness,
-    // The expertise the w readout is quoted at. Well inside the population and well below
-    // the ceiling, where w(1) = rho would make the control rho by another name.
+    // The expertise the w readout is quoted at: the 99th percentile of this run's own
+    // no-AI arm, measured by the sweep rather than chosen here. See anchorExpertise().
     anchorE: ANCHOR_E,
     // One entry per cell: the axis values that define it, coef[rho][0..3], and the no-AI
     // arm's own capability per rho. The coefficients give the comparison, cb gives the
@@ -225,8 +220,8 @@ checked against the published &rho; report.</p></div>`;
   <p>Does AI leave the system with more capability than it had without? The answer turns on three numbers
   from one study of one profession &mdash; <b>Novice Gain</b> (<code>g<sub>n</sub></code>), <b>Expert Gain</b>
   (<code>g<sub>x</sub></code>) and <b>Novice Deficit</b> (<code>d<sub>n</sub></code>) &mdash; and on
-  <b>expert value</b> &mdash; what one person at E = ${ANCHOR_E} is worth in threshold experts, swept from
-  ${wMark(r0)} to ${wMark(r1)}, which is &rho; ${r0} to ${r1}. All four are controls below, not settings.</p>
+  <b>expert value</b> &mdash; what one person in the top 1% of the field is worth in threshold experts, swept
+  from ${wMark(r0)} to ${wMark(r1)} (&rho; ${r0} to ${r1}). All four are controls below, not settings.</p>
   <p class="facts">${summary.cells} cells &times; ${summary.replicates} replicates, expertise snapshotted at tick ${snap.tick} &middot;
   axes ${esc(snap.axes.join(" x "))} &middot; &theta; = ${snap.theta} &middot; frontier breadth ${snap.frontierBreadth} &middot;
   blend sharpness ${snap.aclBlendSharpness} &middot; ${summary.rhos.length} log-spaced values of &rho; from
@@ -242,12 +237,14 @@ checked against the published &rho; report.</p></div>`;
     levels the field rather than lifting it evenly.</li>
     <li><b>Novice Deficit</b> (<code>aclNoviceDeficit</code>) &mdash; output lost outside the frontier, by
     people who cannot tell the AI's work is wrong.</li>
-    <li><b>Expert value</b> &mdash; the control is <code>w</code> at E = ${ANCHOR_E}, and &rho; is derived
-    from it by <code>&rho; = w<sup>(1&minus;&theta;)/(E&minus;&theta;)</sup></code>. The two are one number
-    shown two ways, and both appear on every readout: &rho; is what the rest of the study and every CSV column
-    is keyed to. Note that <code>w</code> is <em>not</em> a single multiple for everyone &mdash; at
-    ${wMark(r1)} for E = ${ANCHOR_E}, a person at E = 0.9 is worth ${mult(0.9, r1)} and one at the ceiling
-    ${r1}. A stated assumption, never measured, which is why it is swept.</li>
+    <li><b>Expert value</b> &mdash; the control is <code>w</code> at E = ${ANCHOR_E.toFixed(3)}, the 99th
+    percentile of this run's own no-AI population, and &rho; follows from
+    <code>&rho; = w<sup>(1&minus;&theta;)/(E&minus;&theta;)</sup></code>. One number shown two ways; both are
+    on every readout, since &rho; is what the rest of the study and every CSV column is keyed to.
+    <code>w</code> is not a single multiple for everyone: at ${wMark(r1)} for the top 1%, a person at the
+    median counts ${mult(0.613, r1)} and the expert threshold counts 1. Note also that &rho; itself is never
+    realised &mdash; <code>w(1) = &rho;</code> describes an E = 1 nobody in this population reaches. A stated
+    assumption, never measured, which is why it is swept.</li>
   </ul>
   <p>None of the four touches a career &mdash; they are read off the population at the end of the run. That is
   why one run answers for three of the published configs at once, and why no simulation was needed to draw
@@ -265,7 +262,7 @@ checked against the published &rho; report.</p></div>`;
       <label><input type="radio" name="metric" value="level"> capability, both arms</label>
     </span>
     <label>Expert Gain <input type="range" id="gx-slider" min="0" max="${GX.length - 1}" value="${GX.indexOf(sh.g_x) < 0 ? 0 : GX.indexOf(sh.g_x)}"> <b id="gx-val">${sh.g_x}</b></label>
-    <label title="what one person at E = ${ANCHOR_E} is worth, in threshold experts. Sets rho: w(E) = rho^((E-theta)/(1-theta))">expert value
+    <label title="what one person in the top 1% of the field (E = ${ANCHOR_E.toFixed(3)}) is worth, in threshold experts. Sets rho: w(E) = rho^((E-theta)/(1-theta))">expert value
       <input type="range" id="rho-slider" min="0" max="${RHOS.length - 1}" value="${RHOS.length - 1}">
       <b id="rho-val">${wMark(RHOS[RHOS.length - 1])}&nbsp; (&rho; ${RHOS[RHOS.length - 1]})</b></label>
     <label><input type="checkbox" id="show-bracket"> bracket ${wMark(r0)} and ${wMark(r1)}</label>
@@ -280,7 +277,8 @@ checked against the published &rho; report.</p></div>`;
      the flat reference surface &mdash; the same comparison, read as two levels rather than one ratio. Across
      the floor: <b>Novice Gain</b>, the in-frontier gain to weaker performers, and <b>Novice Deficit</b>, the
      loss outside the frontier. <b>Expert Gain</b> and <b>expert value</b> are the two sliders &mdash; the
-     second sets how much a person at E = ${ANCHOR_E} is worth in threshold experts, which fixes &rho;.
+     second sets how much a person in the top 1% of the field (E = ${ANCHOR_E.toFixed(3)}) is worth in
+     threshold experts, which fixes &rho;.
      <b>Bracket</b> overlays the same surface at ${wMark(r0)} and ${wMark(r1)}, so the width of that gap is
      how much of the answer that one assumption is responsible for.`)}
   <div class="legend" id="cube-legend"></div>
@@ -446,11 +444,11 @@ function clientJs() {
   // The control is w, and rho is derived from it. Inverting w(E) = rho^((E-theta)/(1-theta))
   // gives rho = w^((1-theta)/(E-theta)), so a w and the E it is quoted at pin rho exactly.
   //
-  // WHICH E. Not the ceiling: w(1) = rho, so a slider anchored there would be rho wearing a
-  // multiplication sign, which is the label that misled once already. D.anchorE is a point
-  // inside the population the study is actually about, where "one of these is worth N of
-  // those" is a claim a reader can hold an opinion about. rho stays visible beside it,
-  // because rho is what the rest of the study and every CSV column is keyed to.
+  // WHICH E. The 99th percentile of the run's own no-AI arm, measured by the sweep — "one
+  // person in the top 1% of the field". Not the ceiling: w(1) = rho, so a slider anchored
+  // there would be rho wearing a multiplication sign, and it would describe an E = 1 this
+  // population never reaches. rho stays visible beside it, because rho is what the rest of
+  // the study and every CSV column is keyed to.
   function fmtRho(rho) { return rho >= 100 ? String(Math.round(rho)) : String(+rho.toFixed(1)); }
   function wAt(rho) { return Math.pow(rho, (D.anchorE - D.theta) / (1 - D.theta)); }
   function fmtW(rho) {
@@ -744,7 +742,7 @@ function clientJs() {
     ctx.textAlign = "left";
     ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = faint;
     ctx.fillText("Expert Gain " + G.gx + "   expert value " + fmtW(RH[ST.rhoIdx])
-      + " at E " + D.anchorE + "  (rho " + fmtRho(RH[ST.rhoIdx]) + ")", 10, 16);
+      + " (top 1%, rho " + fmtRho(RH[ST.rhoIdx]) + ")", 10, 16);
     if (!lin) ctx.fillText("no-AI " + fmtCap(G.ref), 10, 30);
 
     FIGS.cube.hit = { proj: proj, G: G, nu: nu, nv: nv, nz: nz };

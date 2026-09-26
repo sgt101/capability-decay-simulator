@@ -455,7 +455,7 @@ assert(summary.verification.state === "skipped",
     {
       const r = summary.rhos[3];
       const theta = snap.theta;
-      const anchor = 0.8;
+      const anchor = summary.anchorE;
       const wv = Math.pow(r, (anchor - theta) / (1 - theta));
       const wTxt = "\u00d7" + (wv >= 100 ? Math.round(wv) : wv >= 10 ? wv.toFixed(0) : wv.toFixed(1));
       assert(probe.rhoIdx === 3, `the expert-value slider moves rho by index (index ${probe.rhoIdx})`);
@@ -463,8 +463,27 @@ assert(summary.verification.state === "skipped",
         `the slider leads with w at E ${anchor} (showed "${probe.rhoLabel}", want it to start ${wTxt})`);
       assert(/\u03c1\s*\d/.test(probe.rhoLabel),
         `the slider still shows the rho behind it (showed "${probe.rhoLabel}")`);
-      assert(anchor < 1,
-        "w is quoted below the ceiling, where it is not simply rho renamed");
+      // The anchor is MEASURED from the run, not chosen: an earlier version hardcoded
+      // E = 0.8, which turned out to be this population's 90th percentile and a much
+      // weaker claim than rho makes. It must be a real point in the no-AI arm, and it
+      // must not be the ceiling, where w is simply rho renamed.
+      assert(anchor > 0 && anchor < 1, `the anchor is a real expertise (${anchor})`);
+      {
+        const bin2 = fs.readFileSync(path.join(SNAP, "expertise.f32"));
+        const EE = new Float32Array(bin2.buffer, bin2.byteOffset, snap.values);
+        const base = snap.runs.filter((x) => x.arm === "baseline");
+        const all = [];
+        base.forEach((x) => { for (let i = x.offset; i < x.offset + x.n; i++) all.push(EE[i]); });
+        all.sort((a, b) => a - b);
+        const want = all[Math.floor(0.99 * (all.length - 1))];
+        close(anchor, want, 1e-6,
+          "the anchor is the 99th percentile of the no-AI arm, recomputed from the raw expertise");
+        const above = all.filter((e) => e > anchor).length / all.length;
+        assert(above > 0.005 && above < 0.02,
+          `the anchor really is the top 1% (${(above * 100).toFixed(2)}% sit above it)`);
+        assert(anchor < all[all.length - 1],
+          "the anchor is below the best person simulated, so it describes someone who exists");
+      }
       // The inversion itself: rho = w^((1-theta)/(E-theta)) must return the rho it came
       // from, or the control and the arithmetic behind it have drifted apart.
       const back = Math.pow(wv, (1 - theta) / (anchor - theta));

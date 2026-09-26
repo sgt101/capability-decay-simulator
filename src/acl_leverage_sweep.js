@@ -198,6 +198,28 @@ function runSums(rec, rhos) {
   return { S0, S1, F: aiOn ? Math.pow(rec.aiLevel, BREADTH) : 0 };
 }
 
+// The expertise the expert-value multiple is quoted at: the 99th percentile of the no-AI
+// arm at the reported year — "one person in the top 1% of the field".
+//
+// MEASURED, not chosen. An earlier version quoted w at a hand-picked E = 0.8, which turned
+// out to be the 90th percentile of this population and a much weaker claim than rho is
+// actually making. Reading it out of the run means the multiple describes a person who
+// exists in it: at rho 800 this population's best person is worth ~328 threshold experts,
+// while w(1) = rho = 800 describes an E = 1 nobody in 68,000 reaches.
+//
+// The no-AI arm specifically: it is the reference every change on the page is measured
+// against, and it is the one arm the leverage parameters cannot move.
+function anchorExpertise() {
+  const base = snap.runs.filter((r) => r.arm === "baseline");
+  const all = [];
+  base.forEach((r) => {
+    for (let i = r.offset; i < r.offset + r.n; i++) all.push(ALL_E[i]);
+  });
+  if (!all.length) return null;
+  all.sort((a, b) => a - b);
+  return all[Math.floor(0.99 * (all.length - 1))];
+}
+
 const TREAT_ARM = snap.arms.includes("treatment") ? "treatment" : "single";
 const PAIRED = snap.arms.includes("baseline");
 if (!PAIRED) {
@@ -205,7 +227,9 @@ if (!PAIRED) {
     + " the no-AI arm, and an unpaired config has nothing to compare to.");
 }
 
+const ANCHOR_E = anchorExpertise();
 console.log(`[acl] ${snap.config}: ${snap.cells} cell(s) x ${snap.replicates} replicate(s), tick ${snap.tick}`);
+console.log(`[acl] expert value quoted at E = ${ANCHOR_E.toFixed(4)} (99th percentile of the no-AI arm)`);
 console.log(`[acl] rho ${rhoRange[0]}..${rhoRange[1]} in ${RHOS.length} log steps`);
 console.log(`[acl] grid g_n x g_x x d_n = ${GN.length} x ${GX.length} x ${DN.length} = ${GN.length * GX.length * DN.length} points`);
 console.log(`[acl] pinned on the grid: ${MARKS.map((m) => "(" + [m.g_n, m.g_x, m.d_n].join(", ") + ")" + (m.primary ? " <- this config" : "")).join(", ")}`);
@@ -388,7 +412,7 @@ const summary = {
   axes: snap.axes,
   rhoRange, rhos: RHOS, grid: { g_n: GN, g_x: GX, d_n: DN },
   frontierBreadth: BREADTH, aclBlendSharpness: SHARPNESS, theta: THETA,
-  shipped: sh, shippedRho: snap.shippedRho, marks: MARKS,
+  shipped: sh, shippedRho: snap.shippedRho, marks: MARKS, anchorE: ANCHOR_E,
   shippedMedianChange: shippedSeries,
   shippedCrossover: crossover(shippedSeries),
   points: GN.length * GX.length * DN.length,
@@ -400,7 +424,7 @@ const summary = {
 fs.writeFileSync(path.join(OUT, "acl_summary.json"), JSON.stringify(summary, null, 2));
 
 /* -------------------------------------- the page ------------------------------------- */
-page.writePage({ out: OUT, snap, summary, cells, RHOS, GN, GX, DN, MARKS });
+page.writePage({ out: OUT, snap, summary, cells, RHOS, GN, GX, DN, MARKS, ANCHOR_E });
 
 // The index is rewritten after every sweep as well as on demand: a page that silently
 // described four of five runs because the fifth was swept later is worse than no page.
