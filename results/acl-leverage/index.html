@@ -73,6 +73,13 @@ line-height:1.55;color:var(--ink-muted)}
 padding:.85rem 1rem;border-radius:4px}
 .key p{color:var(--ink-muted);max-width:none}
 .key b{color:var(--ink)}
+details.notes{padding:.7rem 1rem}
+details.notes summary{cursor:pointer;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
+color:var(--ink-faint);list-style-position:outside}
+details.notes summary:hover{color:var(--ink-muted)}
+details.notes[open] summary{margin-bottom:.7rem}
+details.notes ul{margin:0 0 .6rem;padding-left:1.1rem;color:var(--ink-muted);max-width:46rem}
+details.notes li{margin-bottom:.35rem}
 .verdict-ok{border-left-color:#0ca30c}
 .verdict-bad{border-left-color:#d03b3b}
 
@@ -92,13 +99,9 @@ font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
     <h1>Where AI is a net gain in capability</h1>
     <span class="sub">5 experiments &middot; &rho; 60&ndash;800</span>
   </div>
-  <p>AI helps weaker performers on work inside its frontier and hurts those who cannot check it outside.
-  Whether a whole system ends up ahead depends on three numbers from one study of one profession, and on
-  &rho;, an assumption about how steeply value rises with expertise that nobody has measured. Each panel
-  below is one experiment: blue where the system ends up with more capability than it had without AI, red
-  where it ends up with less. Open one for the full surface, the cell-by-cell reading and the numbers.</p>
-  <p>The experiments differ in <b>γ_above</b>
-  and nothing else &mdash; same cells, same seeds, same populations.</p>
+  <p>One panel per experiment: blue where the system ends up with more capability than it had without AI,
+  red where it ends up with less. Open one for the full surface and the numbers. The experiments differ in <b>γ_above</b> and nothing
+  else.</p>
 </div>
 
 <div class="panel">

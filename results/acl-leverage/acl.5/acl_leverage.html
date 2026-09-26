@@ -73,6 +73,13 @@ line-height:1.55;color:var(--ink-muted)}
 padding:.85rem 1rem;border-radius:4px}
 .key p{color:var(--ink-muted);max-width:none}
 .key b{color:var(--ink)}
+details.notes{padding:.7rem 1rem}
+details.notes summary{cursor:pointer;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
+color:var(--ink-faint);list-style-position:outside}
+details.notes summary:hover{color:var(--ink-muted)}
+details.notes[open] summary{margin-bottom:.7rem}
+details.notes ul{margin:0 0 .6rem;padding-left:1.1rem;color:var(--ink-muted);max-width:46rem}
+details.notes li{margin-bottom:.35rem}
 .verdict-ok{border-left-color:#0ca30c}
 .verdict-bad{border-left-color:#d03b3b}
 </style></head><body><main>
@@ -81,54 +88,37 @@ padding:.85rem 1rem;border-radius:4px}
     <h1>Where AI is a net gain in capability</h1>
     <span class="sub">acl.5.json &middot; tick 1440 &middot; generated 2026-09-26</span>
   </div>
-  <p>System capability is <code>C = &Sigma; w(E) &#8467;(E)</code>: each person's expertise converted into
-  threshold-expert equivalents by <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>, then
-  multiplied by what AI does to them, <code>&#8467;(E)</code>. Three numbers shape <code>&#8467;</code>:</p>
-  <ul>
-    <li><b>Novice Gain</b> (<code>g<sub>n</sub></code>, <code>aclNoviceGain</code>) &mdash; the output gain AI
-    gives weaker performers on work inside its frontier.</li>
-    <li><b>Expert Gain</b> (<code>g<sub>x</sub></code>, <code>aclExpertGain</code>) &mdash; the same, for
-    stronger performers. Smaller: AI levels the field rather than lifting it evenly.</li>
-    <li><b>Novice Deficit</b> (<code>d<sub>n</sub></code>, <code>aclNoviceDeficit</code>) &mdash; the output
-    lost outside the frontier, by people who cannot tell the AI's work is wrong.</li>
-  </ul>
-  <p>All three come from a single study of one profession on one model generation. This page asks which values
-  of them leave AI ahead of the no-AI arm, and whether that answer survives the other assumption in
-  <code>w</code>: <code>&rho;</code>, swept from 60 to 800.</p>
-  <p><code>&rho;</code> is <em>not</em> a multiplier applied to everyone. It sits under a fractional exponent,
-  so the same change in it moves people by very different amounts: going from &rho; 60 to 800 multiplies
-  what a person at the ceiling is worth by 13.3&times;, but someone at E = 0.8 by only
-  3.8&times; and someone at E = 0.65 by
-  1.5&times;. It sets the curvature of the expertise-to-value
-  conversion, not its scale. The figures use the parameter names; the symbols above are the paper's notation
-  for the same numbers.</p>
-  <p>The three numbers never touch a career &mdash; they are read off the population at the end of the run,
-  never fed back into it. That is what makes this page cheap, and it is also why one run answers for several
-  published configurations at once: the ACL family's fifteen configs differ only in these three parameters and
-  in <code>aiDampeningAbove</code>, which does change how people learn. So the fifteen are five simulations
-  read out at three parameter points. All three are marked on the figures below and pinned exactly onto the
-  grid; <b>acl.5.json</b> is the one this run was taken under, at
-  (0.43, 0.17, 0.19).</p>
+  <p>Does AI leave the system with more capability than it had without? The answer turns on three numbers
+  from one study of one profession &mdash; <b>Novice Gain</b> (<code>g<sub>n</sub></code>), <b>Expert Gain</b>
+  (<code>g<sub>x</sub></code>) and <b>Novice Deficit</b> (<code>d<sub>n</sub></code>) &mdash; and on
+  <code>&rho;</code>, swept here from 60 to 800. All four are controls below, not settings.</p>
   <p class="facts">18 cells &times; 32 replicates, expertise snapshotted at tick 1440 &middot;
   axes aiLevelFraction x aiDampeningBelow &middot; &theta; = 0.585 &middot; frontier breadth 1 &middot;
   blend sharpness 20 &middot; 25 log-spaced values of &rho; from
   60 to 800 &middot; no simulation was run to draw this</p>
 </div>
 
-<div class="key"><h3>How to read it</h3>
-<p><b>What &rho; does.</b> Capability counts people in threshold-expert equivalents through
-<code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>. Everyone at the expert threshold
-counts 1 at every &rho;; the person at the ceiling counts &rho;; everyone in between counts &rho; raised to a
-fraction. So &rho; sets <em>how steeply</em> value rises across the distribution, and it does not convert into
-a single multiple: at &rho; 800 a person at E = 0.8 is worth 32 threshold experts and one at
-E = 0.9 is worth 160, against 8.3 and 22 at &rho; 60. It is a
-stated assumption, never measured, and it is swept here for exactly that reason. Nothing about the simulated
-careers changes with it &mdash; only how their expertise is added up.</p>
-<p>Everything plotted is the median across the 18 AI-level &times; dampening cells of this
-experiment, each compared against its <em>own</em> no-AI arm. Both arms start from the same populations and the
-same seeds, so the difference between them is what AI did and nothing else. Two effects are in that difference
-and they pull opposite ways: the treatment arm has already lost expertise to AI-dampened learning before any
-leverage is applied, and the leverage then has to earn that back. A surface above zero means it did.</p></div>
+<details class="panel notes">
+  <summary>What the four numbers are</summary>
+  <ul>
+    <li><b>Novice Gain</b> (<code>aclNoviceGain</code>) &mdash; output AI adds for weaker performers, on work
+    inside its frontier.</li>
+    <li><b>Expert Gain</b> (<code>aclExpertGain</code>) &mdash; the same for stronger performers. Smaller: AI
+    levels the field rather than lifting it evenly.</li>
+    <li><b>Novice Deficit</b> (<code>aclNoviceDeficit</code>) &mdash; output lost outside the frontier, by
+    people who cannot tell the AI's work is wrong.</li>
+    <li><b>&rho;</b> &mdash; how steeply value rises with expertise, in
+    <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>. Not a multiplier on everyone: it
+    is raised to a fraction below the ceiling, so &rho; 60 &rarr; 800 moves a person at E = 0.8 by
+    3.8&times; and one at the ceiling by 13.3&times;.
+    A stated assumption, never measured, which is why it is swept.</li>
+  </ul>
+  <p>None of the four touches a career &mdash; they are read off the population at the end of the run. That is
+  why one run answers for three of the published configs at once, and why no simulation was needed to draw
+  this page. Plotted values are medians across this experiment's 18 cells, each against its own
+  no-AI arm, from the same seeds. The treatment arm has already lost expertise to AI-dampened learning before
+  any leverage applies; above zero means the leverage earned that back.</p>
+</details>
 
 <div class="panel">
   <div class="head"><h2>Capability, with AI and without</h2>
