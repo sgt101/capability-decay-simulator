@@ -1,0 +1,37 @@
+{
+  "config": "acl.2.json",
+  "axes": [
+    "aiLevelFraction",
+    "aiDampeningBelow"
+  ],
+  "cells": 18,
+  "replicates": 32,
+  "stride": 1,
+  "tick": 1440,
+  "rhos": [
+    66,
+    187,
+    263,
+    735,
+    1000
+  ],
+  "shippedRho": 1000,
+  "rankCorr": [
+    0.47368421052631576,
+    0.7543859649122807,
+    0.8555211558307534,
+    0.9834881320949432,
+    1
+  ],
+  "medianChange": [
+    0.050699823477531034,
+    -1.5355849329169624,
+    -1.7793911235981066,
+    -3.335665294116441,
+    -3.7237374379187633
+  ],
+  "medianCrossover": 68.23386717488167,
+  "cellsFlippingSign": 8,
+  "generated": "2026-09-25",
+  "report": "rho_report.html"
+}

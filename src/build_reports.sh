@@ -30,12 +30,19 @@ failed=0
 # "builder-script  label". Each builder already knows its own manifest, stem, output name
 # and metric set, and already fails helpfully when its results are absent -- so this loop
 # stays a list of names rather than a table of flags that would drift from the builders.
+#
+# The last entry is not a heatmap browser and does not read results/<stem>.N/: it builds
+# doc/valuation_trajectories.html from results/rho-trajectories/, written by
+# ./src/run_valuation_trajectories.sh. It is here so that "every report under doc/" stays
+# true of this script, and it ignores --simulator-href like any flag it does not take. Its
+# own runner is the way to rebuild the sweep behind it; this only rebuilds the page.
 BUILDERS="\
 src/build_report.js|AI parameter sweeps|--metrics all --out report.html
 src/build_acl_report.js|assisted-learning scenarios|
 src/build_structure_report.js|structure sweeps|
 src/build_recruitment_report.js|recruitment shock|
-src/build_entrant_report.js|entrant expertise|"
+src/build_entrant_report.js|entrant expertise|
+src/build_valuation_trajectory_report.js|valuation trajectories|"
 
 while IFS='|' read -r script label extra; do
   [ -z "$script" ] && continue

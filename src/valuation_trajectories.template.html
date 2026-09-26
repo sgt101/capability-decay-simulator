@@ -1,0 +1,838 @@
+<title>Valuation Trajectory Bands</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Tokens: the same set every other page in doc/ uses (see results_ACL.html), plus one
+     validated pair for the two valuation sources. Hue means SOURCE on this page and
+     nothing else — the capability variant and the learning penalty are carried by which
+     panel you are looking at, never by colour, which is what keeps nine panels legible
+     with only two hues in play.
+
+     The pair passed all six checks of the palette validator in BOTH modes: CVD separation
+     dE 8.7 light / 9.8 dark (target 8), chroma floor, lightness band, and 3:1 against the
+     chart surface. Do not re-step either value by eye. */
+  :root {
+    --bg: #eef0ee;
+    --panel: #ffffff;
+    --panel-2: #f4f5f3;
+    --ink: #14181a;
+    --ink-muted: #5c6360;
+    --ink-faint: #8b918d;
+    --rule: #d7dad6;
+    --accent: #a8502c;
+    --grid: #dfe2de;
+    --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
+    --pst: #0d8a6f;
+    --pst-fill: rgba(13, 138, 111, 0.15);
+    --barras: #a8502c;
+    --barras-fill: rgba(168, 80, 44, 0.15);
+    --shipped: #6b3fa0;
+    --zero: #5c6360;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101314;
+      --panel: #171b1d;
+      --panel-2: #1d2224;
+      --ink: #e8eae6;
+      --ink-muted: #93a09c;
+      --ink-faint: #656e6b;
+      --rule: #2b3234;
+      --accent: #dd8259;
+      --grid: #262d2f;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      --pst: #2fa88b;
+      --pst-fill: rgba(47, 168, 139, 0.20);
+      --barras: #d4784a;
+      --barras-fill: rgba(212, 120, 74, 0.20);
+      --shipped: #c79bff;
+      --zero: #93a09c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101314;
+    --panel: #171b1d;
+    --panel-2: #1d2224;
+    --ink: #e8eae6;
+    --ink-muted: #93a09c;
+    --ink-faint: #656e6b;
+    --rule: #2b3234;
+    --accent: #dd8259;
+    --grid: #262d2f;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --pst: #2fa88b;
+    --pst-fill: rgba(47, 168, 139, 0.20);
+    --barras: #d4784a;
+    --barras-fill: rgba(212, 120, 74, 0.20);
+    --shipped: #c79bff;
+    --zero: #93a09c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 0 56px; }
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg); border-bottom: 1px solid var(--rule);
+    padding-block: 14px 11px; margin-bottom: 22px;
+  }
+  .topbar-in { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .formula {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--ink-muted);
+  }
+  .spacer { flex: 1 1 auto; }
+  button {
+    font: inherit; font-size: 12.5px; color: var(--ink-muted);
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 5px;
+    padding: 4px 11px; cursor: pointer;
+  }
+  button:hover { color: var(--ink); border-color: var(--ink-faint); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .note {
+    background: var(--panel); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0; padding: 13px 16px; margin-bottom: 22px;
+    font-size: 13.5px; color: var(--ink-muted);
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+  .note p { margin: 0 0 8px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  h2 {
+    font-size: 15px; margin: 0 0 3px; letter-spacing: 0.02em;
+    text-transform: uppercase; font-family: system-ui, -apple-system, sans-serif;
+  }
+  .sub { font-size: 13px; color: var(--ink-muted); margin: 0 0 14px; max-width: 78ch; }
+  section { margin-bottom: 38px; }
+
+  .setbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 12px;
+    font-size: 12.5px; color: var(--ink-muted);
+  }
+  .setbar .lbl { font-family: system-ui, -apple-system, sans-serif; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+  .setbar button[aria-pressed="true"] {
+    color: var(--ink); border-color: var(--ink-faint); background: var(--panel-2); font-weight: 600;
+  }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+    font-size: 12.5px; color: var(--ink-muted); margin-bottom: 14px;
+  }
+  .legend span.k { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 13px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  .grid9 { display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .grid9 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 580px) { .grid9 { grid-template-columns: 1fr; } }
+  .cell {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 7px;
+    box-shadow: var(--shadow); padding: 9px 9px 5px;
+  }
+  .cell h3 {
+    font-family: system-ui, -apple-system, sans-serif; font-size: 11.5px; font-weight: 600;
+    margin: 0 0 1px;
+  }
+  .cell .ph { font-size: 10.5px; color: var(--ink-faint); margin: 0 0 5px; }
+  .cell svg { display: block; width: 100%; height: auto; max-width: 100%; }
+
+  .caption { font-size: 12.5px; color: var(--ink-muted); margin: 14px 0 0; max-width: 88ch; }
+  .caption b { color: var(--ink); font-weight: 600; }
+
+  .tabwrap { overflow-x: auto; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.data th, table.data td { padding: 5px 9px; border-bottom: 1px solid var(--rule); text-align: right; }
+  table.data th:first-child, table.data td:first-child,
+  table.data th:nth-child(2), table.data td:nth-child(2),
+  table.data th:nth-child(3), table.data td:nth-child(3) { text-align: left; }
+  table.data thead th {
+    font-family: system-ui, -apple-system, sans-serif; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint);
+    font-weight: 600; border-bottom: 1px solid var(--ink-faint); white-space: nowrap;
+  }
+  table.data td { font-variant-numeric: tabular-nums; }
+  table.data tbody tr:nth-child(even) { background: var(--panel-2); }
+
+  .texblock { margin-bottom: 20px; }
+  .texhead {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .texhead h3 {
+    font-family: system-ui, -apple-system, sans-serif; font-size: 12.5px; font-weight: 600; margin: 0;
+  }
+  .texhead code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+    color: var(--ink-faint);
+  }
+  pre.tex {
+    margin: 0; padding: 11px 13px; overflow-x: auto;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11px; line-height: 1.5; color: var(--ink);
+  }
+
+  .foot { font-size: 12px; color: var(--ink-faint); border-top: 1px solid var(--rule); padding-top: 14px; }
+  .foot code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+    background: var(--panel-2); padding: 1px 4px; border-radius: 3px;
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="topbar">
+  <div class="wrap topbar-in">
+    <h1>Valuation Trajectory Bands</h1>
+    <span class="formula">w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></span>
+    <span class="spacer"></span>
+    <button id="pngBtn" type="button">Download PNG</button>
+    <button id="tableBtn" type="button">Show table</button>
+    <button id="themeBtn" type="button">Theme</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="note">
+    <p><strong>Each band is a valuation range, not a confidence interval.</strong> Its edges are the
+    two stated value pools for one source &mdash; $400bn and $1.2Trn &mdash; so the band's width says
+    how much the trajectory depends on which valuation you accept, and carries no probability.
+    Replicate scatter is a different quantity and is reported as a standard error in the table and
+    the LaTeX summary rather than drawn as the same kind of interval.</p>
+    <p>Rows are the three measured Str&ouml;mberg learning penalties; columns are the three Dell'Acqua
+    capability scenarios. Within a panel each curve is the <strong>median over the six AI levels
+    &lambda;</strong>: &lambda; is a dial being scanned, whereas the penalties are three specific
+    empirical findings, so &lambda; is the one collapsed.</p>
+    <p>&rho; never enters the state update &mdash; it weights the output only &mdash; so every value
+    here comes from <em>one</em> pass of the simulator per configuration, not one per &rho;.</p>
+  </div>
+
+  <section>
+    <h2>Capability against its no-AI baseline, over three careers</h2>
+    <p class="sub">All panels share one vertical scale, so a panel that stays near zero and one that
+    falls away are directly comparable. Zero is the no-AI counterfactual at the same tick &mdash; a
+    paired comparison, never a measurement against t = 0.</p>
+    <div class="setbar" id="setbar"></div>
+    <div class="legend" id="legend"></div>
+    <div class="grid9" id="panels"></div>
+    <p class="caption" id="cap"></p>
+  </section>
+
+  <section id="tableSec" hidden>
+    <h2>Table view</h2>
+    <p class="sub" id="tableSub"></p>
+    <div class="tabwrap"><table class="data" id="dataTable"></table></div>
+  </section>
+
+  <section>
+    <h2>LaTeX tables</h2>
+    <p class="sub">The series behind the figure, ready to paste. Both are also written as
+    <code>.tex</code> files beside the run that produced them, so the paper can
+    <code>\input</code> them instead of carrying a copy.</p>
+    <div class="texblock">
+      <div class="texhead">
+        <h3>Band edges at the checkpoints</h3>
+        <code id="cellsPath"></code>
+        <button id="copyCells" type="button">Copy</button>
+      </div>
+      <pre class="tex" id="texCells"></pre>
+    </div>
+    <div class="texblock">
+      <div class="texhead">
+        <h3>Per-panel summary</h3>
+        <code id="summaryPath"></code>
+        <button id="copySummary" type="button">Copy</button>
+      </div>
+      <pre class="tex" id="texSummary"></pre>
+    </div>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+"use strict";
+
+/* Injected by src/build_valuation_trajectory_report.js. Every number on this page comes
+   from results/ at build time; nothing here is typed in. */
+var TRAJ = __TRAJ__;
+var TEX_CELLS = __TEX_CELLS__;
+var TEX_SUMMARY = __TEX_SUMMARY__;
+
+// Which gamma_above set is on screen. The sets arrive undampened-first, so index 0 is the
+// assumption the paper currently reports and any other index is the departure from it.
+var ACTIVE = 0;
+function activeSet() { return TRAJ.sets[ACTIVE]; }
+
+var TICKS_PER_YEAR = TRAJ.ticksPerYear;
+var SHIPPED = TRAJ.shipped;
+var VARIANT_ORDER = ["published", "weak", "wrong"];
+var VARIANT_LABEL = {
+  published: "Dell'Acqua as published",
+  weak: "Dell'Acqua is weak",
+  wrong: "Dell'Acqua is wrong/no-effect implemented"
+};
+var VARIANT_SHORT = { published: "as published", weak: "weak", wrong: "wrong/no-effect" };
+var Y_TITLE = "capability change (%)";
+var X_TITLE = "ticks (months)";
+// Shown from 0 even though the first RECORDED tick is later: the axis is the experiment's
+// timeline, not the sampling grid. Marks fall on career boundaries (480 ticks = 40 years).
+var X_DOMAIN = [0, 1440];
+var X_MARKS = [0, 480, 960, 1440];
+var SVG_FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+
+// Hue is assigned by source NAME, not by position, so reordering TRAJ.sources in the
+// builder cannot silently swap the colours out from under the legend.
+var HUE = { PST: { line: "pst", fill: "pst-fill" }, Barras: { line: "barras", fill: "barras-fill" } };
+var SOURCES = TRAJ.sources.map(function (s) {
+  var h = HUE[s.name] || { line: "ink-muted", fill: "grid" };
+  return { name: s.name, lo: s.lo.rho, hi: s.hi.rho, loPool: s.lo.pool, hiPool: s.hi.pool,
+           hue: h.line, fill: h.fill };
+});
+
+// Filled by drawPanels() in grid order, read by the PNG export, so the export never has to
+// re-derive the figure or reach into the DOM.
+var PANELS = [];
+
+function css(n) { return getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim(); }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function pct(v, d) { return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d === undefined ? 2 : d) + "%"; }
+
+function ticksFor(lo, hi, want) {
+  var raw = (hi - lo) / want, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+  var step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+  var out = [], t = Math.ceil(lo / step) * step;
+  for (; t <= hi + step * 1e-9; t += step) out.push(Math.abs(t) < step * 1e-9 ? 0 : t);
+  return out;
+}
+
+function cfgOf(variant, set) {
+  return (set || activeSet()).configs.filter(function (c) { return c.variant === variant; })[0] || null;
+}
+// Series are keyed by the rho and gamma as STRINGS — JSON object keys always are — so every
+// lookup goes through here rather than indexing with a number and getting undefined.
+function seriesOf(cfg, gb, rho, which) {
+  var g = (cfg[which || "series"] || {})[String(gb)];
+  return g ? g[String(rho)] || null : null;
+}
+function idxOf(cfg, t) {
+  var best = 0;
+  cfg.ticks.forEach(function (x, i) { if (Math.abs(x - t) < Math.abs(cfg.ticks[best] - t)) best = i; });
+  return best;
+}
+
+/* ------------------------------------------------------------- one shared y domain */
+// The panels exist to be compared; a per-panel scale would make "hovers near zero" and
+// "falls off a cliff" look identical.
+// Spans every set, not only the one on screen. If the scale moved when the selector moved,
+// the two gamma_above assumptions would look more alike than they are — the whole point of
+// the toggle is that the difference is visible without re-reading the axis.
+function domain() {
+  var lo = Infinity, hi = -Infinity;
+  var all = TRAJ.sets.reduce(function (a, s) { return a.concat(s.configs); }, []);
+  all.forEach(function (c) {
+    c.gbs.forEach(function (gb) {
+      c.rhos.forEach(function (rho) {
+        var s = seriesOf(c, gb, rho);
+        if (!s) return;
+        s.forEach(function (v) { if (v === null) return; if (v < lo) lo = v; if (v > hi) hi = v; });
+      });
+    });
+  });
+  var pad = (hi - lo) * 0.06;
+  return [lo - pad, hi + pad];
+}
+
+/* ------------------------------------------------------------------------ the panels */
+function drawPanels() {
+  var dom = domain(), yLo = dom[0], yHi = dom[1];
+  // Left margin carries the rotated axis title as well as the numbers.
+  var W = 330, H = 186, M = { l: 54, r: 10, t: 7, b: 34 };
+  var PW = W - M.l - M.r, PH = H - M.t - M.b;
+  var html = "";
+  var first = true;
+  PANELS.length = 0;
+
+  var present = VARIANT_ORDER.filter(function (v) { return cfgOf(v); });
+  var gbs = (cfgOf(present[0]) || activeSet().configs[0]).gbs;
+
+  // Row-major, so a 3-column grid lays out penalty by penalty and a narrow screen
+  // collapsing to one column still reads in that order.
+  gbs.forEach(function (gb, gi) {
+    present.forEach(function (variant) {
+      var c = cfgOf(variant);
+      var T = c.ticks;
+      var x = function (t) { return M.l + (t - X_DOMAIN[0]) / (X_DOMAIN[1] - X_DOMAIN[0]) * PW; };
+      var y = function (v) { return M.t + (yHi - v) / (yHi - yLo) * PH; };
+      // xmlns and font-family on the root are for the PNG export, which serialises this
+      // markup into an Image: a serialised SVG no longer inherits the document's font, and
+      // without the namespace it will not load at all.
+      var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H
+        + '" font-family="' + SVG_FONT + '" role="img" aria-label="'
+        + esc(VARIANT_LABEL[variant] + ", learning penalty " + TRAJ.stromberg.statedPercent[gi].toFixed(2)
+          + "%: capability change over time, " + SOURCES.map(function (q) { return q.name; }).join(" and ")
+          + " valuation bands") + '">';
+
+      ticksFor(yLo, yHi, 4).forEach(function (v) {
+        var yy = y(v);
+        s += '<line x1="' + M.l + '" y1="' + yy.toFixed(1) + '" x2="' + (M.l + PW) + '" y2="' + yy.toFixed(1)
+          + '" stroke="' + css("grid") + '" stroke-width="1" fill="none"/>';
+        s += '<text x="' + (M.l - 5) + '" y="' + (yy + 3.3).toFixed(1) + '" text-anchor="end" font-size="9"'
+          + ' fill="' + css("ink-faint") + '">' + v.toFixed(0) + "%</text>";
+      });
+      s += '<text transform="translate(11,' + (M.t + PH / 2).toFixed(1) + ') rotate(-90)"'
+        + ' text-anchor="middle" font-size="9.5" fill="' + css("ink-muted") + '">' + esc(Y_TITLE) + "</text>";
+
+      X_MARKS.forEach(function (t) {
+        s += '<text x="' + x(t).toFixed(1) + '" y="' + (M.t + PH + 12) + '" text-anchor="middle" font-size="9"'
+          + ' fill="' + css("ink-faint") + '">' + t + "</text>";
+      });
+      s += '<text x="' + (M.l + PW / 2).toFixed(1) + '" y="' + (M.t + PH + 25) + '" text-anchor="middle"'
+        + ' font-size="9.5" fill="' + css("ink-muted") + '">' + esc(X_TITLE) + "</text>";
+
+      // shipped rho, under the bands as a reference
+      var sh = seriesOf(c, gb, SHIPPED);
+      if (sh) {
+        s += '<polyline points="' + sh.map(function (v, i) {
+          return v === null ? null : x(T[i]).toFixed(1) + "," + y(v).toFixed(1);
+        }).filter(Boolean).join(" ") + '" fill="none" stroke="' + css("shipped")
+          + '" stroke-width="1.1" stroke-dasharray="2 2.5" opacity="0.85"/>';
+      }
+
+      // The bands: translucent fill plus a solid edge in the same hue. The two ranges
+      // overlap wherever the valuations do, and the edges are what keep each band's extent
+      // readable through the blend.
+      SOURCES.forEach(function (src) {
+        var a = seriesOf(c, gb, src.lo), b = seriesOf(c, gb, src.hi);
+        if (!a || !b) return;
+        var top = [], bot = [];
+        T.forEach(function (t, i) {
+          if (a[i] === null || b[i] === null) return;
+          top.push(x(t).toFixed(1) + "," + y(Math.max(a[i], b[i])).toFixed(1));
+          bot.push(x(t).toFixed(1) + "," + y(Math.min(a[i], b[i])).toFixed(1));
+        });
+        if (!top.length) return;
+        // min-to-max at each tick rather than low-rho-to-high-rho. The ordering is in fact
+        // monotone in rho wherever it has been measured, so this reproduces it; it is kept
+        // as a guard so a config that does invert draws a pinch rather than a negative
+        // height. The caption reports which case the data is actually in.
+        s += '<polygon points="' + top.concat(bot.slice().reverse()).join(" ") + '" fill="'
+          + css(src.fill) + '" stroke="none"/>';
+        s += '<polyline points="' + top.join(" ") + '" fill="none" stroke="' + css(src.hue)
+          + '" stroke-width="1.4" stroke-linejoin="round"/>';
+        s += '<polyline points="' + bot.join(" ") + '" fill="none" stroke="' + css(src.hue)
+          + '" stroke-width="1.4" stroke-linejoin="round"/>';
+      });
+
+      // zero rule last, so it reads over the fills
+      if (yLo < 0 && yHi > 0) {
+        var y0 = y(0);
+        s += '<line x1="' + M.l + '" y1="' + y0.toFixed(1) + '" x2="' + (M.l + PW) + '" y2="' + y0.toFixed(1)
+          + '" stroke="' + css("zero") + '" stroke-width="1.3" fill="none"/>';
+      }
+
+      // Direct labels in the first panel only: with two series and nine panels, repeating
+      // them everywhere is clutter and the legend covers the rest.
+      if (first) {
+        SOURCES.forEach(function (src) {
+          var a = seriesOf(c, gb, src.lo), b = seriesOf(c, gb, src.hi);
+          if (!a || !b) return;
+          var i = T.length - 1;
+          s += '<text x="' + (M.l + PW - 3) + '" y="' + (y((a[i] + b[i]) / 2) + 3).toFixed(1)
+            + '" text-anchor="end" font-size="9.5" font-weight="600" fill="' + css(src.hue) + '">'
+            + esc(src.name) + "</text>";
+        });
+        first = false;
+      }
+      s += "</svg>";
+
+      var head = VARIANT_LABEL[variant] || variant;
+      var sub = "learning penalty " + TRAJ.stromberg.statedPercent[gi].toFixed(2)
+        + "% · γ_below " + gb;
+      PANELS.push({ svg: s, head: head, sub: sub, w: W, h: H });
+
+      html += '<div class="cell"><h3>' + esc(head) + "</h3>"
+        + '<p class="ph">learning penalty ' + TRAJ.stromberg.statedPercent[gi].toFixed(2)
+        + "% &nbsp;·&nbsp; &#947;<sub>below</sub> " + gb + "</p>" + s + "</div>";
+    });
+  });
+  document.getElementById("panels").innerHTML = html;
+
+  // The rho swatch is dashed because the line is dashed: a solid swatch for a dashed line
+  // is a legend disagreeing with its own chart.
+  var leg = SOURCES.map(function (src) {
+    return '<span class="k"><i style="background:var(--' + src.fill + ');border:1.4px solid var(--'
+      + src.hue + ')"></i>' + esc(src.name) + " &mdash; &rho; " + src.lo + " to " + src.hi + "</span>";
+  }).join("");
+  leg += '<span class="k"><i style="background:repeating-linear-gradient(90deg,var(--shipped) 0 3px,'
+    + 'transparent 3px 6px);border-radius:0;height:2px"></i>&rho; = ' + SHIPPED + "</span>";
+  document.getElementById("legend").innerHTML = leg;
+
+  drawCaption();
+}
+
+// Returned in ticks, to match the axis.
+function crossTick(c, gb, rho) {
+  var s = seriesOf(c, gb, rho);
+  if (!s) return null;
+  for (var i = 0; i < s.length; i++) {
+    if (s[i] === null || s[i] >= 0) continue;
+    var stays = true;
+    for (var j = i; j < s.length; j++) if (s[j] !== null && s[j] >= 0) { stays = false; break; }
+    if (stays) return c.ticks[i];
+  }
+  return null;
+}
+
+function drawCaption() {
+  var present = VARIANT_ORDER.filter(function (v) { return cfgOf(v); });
+  var pub = cfgOf("published") || cfgOf(present[0]);
+  if (!pub) { document.getElementById("cap").textContent = ""; return; }
+  var last = pub.ticks.length - 1;
+  var gb0 = pub.gbs[0];
+  var a = SOURCES[0], b = SOURCES[1];
+
+  var txt = "";
+  if (TRAJ.sets.length > 1) {
+    txt += "<b>γ_above = " + activeSet().aiDampeningAbove + "</b>"
+      + (activeSet().aiDampeningAbove === 1
+          ? " (the AI does not touch the learning of anyone above its level). "
+          : " (the same learning penalty applied above the AI as below). ");
+  }
+  txt += "Top-left panel, the mildest penalty";
+  txt += pub.variant === "published" ? " under Dell'Acqua as published" : "";
+  txt += ": the cheapest and dearest valuations end the horizon at "
+    + pct(seriesOf(pub, gb0, Math.min(a.lo, b ? b.lo : a.lo))[last]) + " and "
+    + pct(seriesOf(pub, gb0, Math.max(a.hi, b ? b.hi : a.hi))[last]) + ". ";
+
+  var cHi = crossTick(pub, gb0, Math.max(a.hi, b ? b.hi : a.hi));
+  var cLo = crossTick(pub, gb0, Math.min(a.lo, b ? b.lo : a.lo));
+  if (cHi !== null && cLo === null) {
+    txt += "<b>They do not even agree on direction</b> &mdash; the dearer valuation turns negative "
+      + "for good at tick " + cHi + " (year " + Math.round(cHi / TICKS_PER_YEAR)
+      + "), while the cheaper one never does. ";
+  } else if (cHi !== null && cLo !== null) {
+    txt += "Both turn negative for good, " + Math.abs(cLo - cHi) + " ticks apart (tick " + cHi
+      + " against tick " + cLo + "). ";
+  } else {
+    txt += "Neither turns negative for good within the horizon. ";
+  }
+
+  // Widths, and the replicate noise they have to clear to mean anything. Both computed,
+  // so the sentence cannot outlive the numbers.
+  var widths = [], ses = [], inverted = 0, total = 0;
+  activeSet().configs.forEach(function (c) {
+    c.gbs.forEach(function (gb) {
+      SOURCES.forEach(function (src) {
+        var lo = seriesOf(c, gb, src.lo), hi = seriesOf(c, gb, src.hi);
+        if (!lo || !hi) return;
+        total++;
+        widths.push(Math.abs(lo[last] - hi[last]));
+        if (hi[last] > lo[last]) inverted++;
+        var sp = seriesOf(c, gb, src.hi, "spread");
+        if (sp && sp[last] !== null) ses.push(sp[last]);
+      });
+    });
+  });
+  widths.sort(function (p, q) { return p - q; });
+  ses.sort(function (p, q) { return p - q; });
+  var span = domain();
+  var medW = widths[Math.floor(widths.length / 2)];
+  txt += "Across all " + total + " bands the end-of-horizon width runs " + widths[0].toFixed(1)
+    + " to " + widths[widths.length - 1].toFixed(1) + " percentage points, median " + medW.toFixed(1)
+    + " &mdash; about " + Math.round(medW / (span[1] - span[0]) * 100) + "% of the plotted height, "
+    + "which is why they read as narrow ribbons rather than wide envelopes";
+  if (ses.length) {
+    txt += ", against a median paired replicate standard error of "
+      + ses[Math.floor(ses.length / 2)].toFixed(2) + " pp";
+  }
+  txt += ". ";
+  txt += inverted === 0
+    ? "The dearer pool is the pessimistic edge in every band, which is what the mechanism predicts: "
+      + "a larger value pool implies a steeper expertise premium, so the top-tail expertise AI costs "
+      + "counts for more. "
+    : "In " + inverted + " of " + total + " bands the dearer pool is the <em>better</em> edge, so the "
+      + "band direction is not fixed. ";
+  txt += "<b>The spike at tick " + pub.ticks[0] + " is the mechanism, not burn-in</b>: AI raises "
+    + "capability immediately, before any expertise decay has accumulated, and the trajectory is that "
+    + "gain eroding. Nothing is recorded before tick " + pub.ticks[0] + ", so the axis starts at 0 but "
+    + "the curves do not.";
+  document.getElementById("cap").innerHTML = txt;
+}
+
+/* -------------------------------------------------------------------- set selector */
+function setLabel(s) {
+  if (s.aiDampeningAbove === 1) return "1.0 — no penalty above the AI";
+  var stated = (s.aiDampeningAbove - 1) * 100;
+  var central = TRAJ.stromberg.statedPercent.slice().sort(function (a, b) { return b - a; })[1];
+  var isCentral = Math.abs(s.aiDampeningAbove - TRAJ.stromberg.asGammaBelow[
+    TRAJ.stromberg.statedPercent.indexOf(central)]) < 1e-9;
+  return s.aiDampeningAbove + " — " + stated.toFixed(2) + "%"
+    + (isCentral ? " (central Strömberg, as γ_below)" : "");
+}
+
+function drawSetbar() {
+  if (TRAJ.sets.length < 2) { document.getElementById("setbar").innerHTML = ""; return; }
+  var h = '<span class="lbl">&#947;<sub>above</sub></span>';
+  TRAJ.sets.forEach(function (s, i) {
+    h += '<button type="button" id="setBtn' + i + '" aria-pressed="' + (i === ACTIVE)
+      + '">' + esc(setLabel(s)) + "</button>";
+  });
+  document.getElementById("setbar").innerHTML = h;
+  TRAJ.sets.forEach(function (s, i) {
+    var b = document.getElementById("setBtn" + i);
+    if (b) b.addEventListener("click", function () { ACTIVE = i; redraw(); });
+  });
+}
+
+/* ------------------------------------------------------------------------ table view */
+function drawTable() {
+  var present = VARIANT_ORDER.filter(function (v) { return cfgOf(v); });
+  if (!present.length) return;
+  var ref = cfgOf(present[0]);
+  var want = TRAJ.checkpoints.map(function (t) { return { t: ref.ticks[idxOf(ref, t)], i: idxOf(ref, t) }; });
+  document.getElementById("tableSub").innerHTML =
+    "Band edges at " + want.length + " checkpoints, in percent. Ticks "
+    + want.slice(1).map(function (w) { return w.t; }).join(", ")
+    + " are the career boundaries. SE is the median paired replicate standard error at the "
+    + "last checkpoint.";
+
+  // Every set, not just the active one: the table is the data record behind the figure, and
+  // a reader comparing the two gamma_above assumptions should not have to toggle to do it.
+  var head = "<thead><tr><th>&#947;<sub>above</sub></th><th>Scenario</th><th>Penalty</th><th>Source</th>"
+    + want.map(function (w) { return "<th>t " + w.t + "</th>"; }).join("") + "<th>SE</th></tr></thead>";
+  var body = "";
+  TRAJ.sets.forEach(function (set) {
+  present.forEach(function (variant) {
+    var c = cfgOf(variant, set);
+    if (!c) return;
+    c.gbs.forEach(function (gb, gi) {
+      SOURCES.forEach(function (src) {
+        var lo = seriesOf(c, gb, src.lo), hi = seriesOf(c, gb, src.hi);
+        if (!lo || !hi) return;
+        var sp = seriesOf(c, gb, src.hi, "spread");
+        body += "<tr><td>" + set.aiDampeningAbove + "</td><td>"
+          + esc(VARIANT_SHORT[variant] || variant) + "</td><td>"
+          + TRAJ.stromberg.statedPercent[gi].toFixed(2) + "%</td><td>" + esc(src.name) + "</td>"
+          + want.map(function (w) {
+              return "<td>" + pct(Math.min(lo[w.i], hi[w.i]), 1) + " to "
+                + pct(Math.max(lo[w.i], hi[w.i]), 1) + "</td>";
+            }).join("")
+          + "<td>" + (sp && sp[want[want.length - 1].i] !== null
+              ? sp[want[want.length - 1].i].toFixed(2) : "&mdash;") + "</td></tr>";
+      });
+    });
+  });
+  });
+  document.getElementById("dataTable").innerHTML = head + "<tbody>" + body + "</tbody>";
+}
+
+/* ------------------------------------------------------------------------ LaTeX blocks */
+function drawTex() {
+  document.getElementById("texCells").textContent = TEX_CELLS;
+  document.getElementById("texSummary").textContent = TEX_SUMMARY;
+  var dir = TRAJ.source;
+  document.getElementById("cellsPath").textContent = dir + "/valuation_trajectory_cells.tex";
+  document.getElementById("summaryPath").textContent = dir + "/valuation_trajectory_summary.tex";
+}
+
+function flash(btn, msg) {
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  btn.textContent = msg;
+  setTimeout(function () { btn.textContent = btn.dataset.label; }, 2400);
+}
+
+// Clipboard is absent on file:// in most browsers — not a secure context — so the failure
+// is reported rather than swallowed, and the <pre> is always selectable as the fallback.
+function copyText(text, btn) {
+  if (!(navigator.clipboard && navigator.clipboard.writeText)) { flash(btn, "Select it"); return; }
+  navigator.clipboard.writeText(text).then(
+    function () { flash(btn, "Copied"); },
+    function () { flash(btn, "Select it"); });
+}
+
+/* ------------------------------------------------------------------------ PNG export */
+// Rasterised from the SAME markup the page shows rather than re-drawn through a second
+// code path, so the figure in a paper cannot drift from the figure on screen. Headings and
+// the legend are drawn onto the canvas because they are page DOM, not SVG.
+var EXPORT_SCALE = 3;
+var EXPORT_COLS = 3;
+function pngName() {
+  return "valuation-trajectory-bands-gabove-" + activeSet().aiDampeningAbove + ".png";
+}
+
+function figureCanvas() {
+  if (!PANELS.length) return Promise.reject({ code: "bad_request" });
+  var pw = PANELS[0].w, ph = PANELS[0].h;
+  var gap = 14, pad = 18, headH = 30, legendH = 30;
+  var rows = Math.ceil(PANELS.length / EXPORT_COLS);
+  var cols = Math.min(EXPORT_COLS, PANELS.length);
+  var cssW = pad * 2 + cols * pw + (cols - 1) * gap;
+  var cssH = pad * 2 + legendH + rows * (headH + ph) + (rows - 1) * gap;
+
+  var canvas = document.createElement("canvas");
+  canvas.width = Math.round(cssW * EXPORT_SCALE);
+  canvas.height = Math.round(cssH * EXPORT_SCALE);
+  var ctx = canvas.getContext("2d");
+  ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, 0, 0);
+  ctx.fillStyle = css("bg") || "#ffffff";
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  // Every panel is loaded before any is drawn: painting as each arrives would place them
+  // in completion order, not grid order.
+  var loads = PANELS.map(function (p) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject({ code: "transform_error" }); };
+      // encodeURIComponent, not btoa: the markup carries non-Latin-1 characters and btoa
+      // throws on those.
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.svg);
+    });
+  });
+
+  return Promise.all(loads).then(function (imgs) {
+    imgs.forEach(function (img, i) {
+      var col = i % EXPORT_COLS, row = Math.floor(i / EXPORT_COLS);
+      var x = pad + col * (pw + gap);
+      var yTop = pad + row * (headH + ph + gap);
+      var p = PANELS[i];
+      ctx.fillStyle = css("panel");
+      ctx.fillRect(x, yTop, pw, headH + ph);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = css("ink");
+      ctx.font = "600 11.5px " + SVG_FONT;
+      ctx.fillText(p.head, x + 8, yTop + 14);
+      ctx.fillStyle = css("ink-faint");
+      ctx.font = "10.5px " + SVG_FONT;
+      ctx.fillText(p.sub, x + 8, yTop + 26);
+      ctx.drawImage(img, x, yTop + headH, pw, ph);
+    });
+
+    // Legend, so the PNG stands alone once it is out of the page.
+    var ly = cssH - pad - 8, lx = pad;
+    ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    ctx.font = "11px " + SVG_FONT;
+    SOURCES.forEach(function (src) {
+      ctx.fillStyle = css(src.fill); ctx.fillRect(lx, ly - 5, 16, 10);
+      ctx.strokeStyle = css(src.hue); ctx.lineWidth = 1.4;
+      ctx.strokeRect(lx + 0.5, ly - 4.5, 15, 9);
+      ctx.fillStyle = css("ink-muted");
+      var label = src.name + " — ρ " + src.lo + " to " + src.hi;
+      ctx.fillText(label, lx + 22, ly);
+      lx += 22 + ctx.measureText(label).width + 20;
+    });
+    ctx.strokeStyle = css("shipped"); ctx.lineWidth = 1.6;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 16, ly); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = css("ink-muted");
+    ctx.fillText("ρ = " + SHIPPED, lx + 22, ly);
+    return canvas;
+  });
+}
+
+// TWO DELIVERY ROUTES, because this page has two homes. Served from a host that withholds
+// download permission from the frame, the file has to be handed over through the platform's
+// downloads capability; opened from disk or served from the project site there is no
+// platform and an ordinary object-URL link is the only thing that works.
+function offerPng(blob, btn) {
+  var probe;
+  try {
+    probe = (window.claude && typeof window.claude.use === "function")
+      ? window.claude.use("downloads") : null;
+  } catch (e) { probe = null; }
+
+  return Promise.resolve(probe).then(function (downloads) {
+    if (downloads && typeof downloads.save === "function") {
+      return downloads.save({ filename: pngName(), data: blob }).then(function (r) {
+        flash(btn, r && r.status === "delivered" ? "Delivered" : "Saved");
+      });
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = pngName();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked next turn of the loop: revoking synchronously can beat the download starting.
+    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+    flash(btn, "Saved");
+  });
+}
+
+function downloadMessage(err) {
+  switch (err && err.code) {
+    case "declined": return "Declined";
+    case "rate_limited": return "Try again";
+    case "too_large": return "Too large";
+    case "rejected_extension":
+    case "extension_not_enabled": return "PNG unavailable";
+    case "bad_request":
+    case "transform_error": return "Failed";
+    default: return "Unavailable";
+  }
+}
+
+function savePng(btn) {
+  // Guarded at every stage: rasterising can fail, and toBlob can throw SecurityError if a
+  // browser treats an SVG-derived canvas as tainted. A throw inside a fulfillment handler
+  // is NOT caught by the rejection handler of the same .then, so the blob step gets its own
+  // promise and one trailing .catch collects everything.
+  figureCanvas()
+    .then(function (canvas) {
+      return new Promise(function (resolve, reject) {
+        try {
+          canvas.toBlob(function (blob) {
+            if (blob) resolve(blob); else reject({ code: "bad_request" });
+          }, "image/png");
+        } catch (e) { reject({ code: "bad_request" }); }
+      });
+    })
+    .then(function (blob) { return offerPng(blob, btn); })
+    .catch(function (err) { flash(btn, downloadMessage(err)); });
+}
+
+/* ------------------------------------------------------------------------------ boot */
+function redraw() { drawSetbar(); drawPanels(); drawTable(); }
+
+document.getElementById("themeBtn").addEventListener("click", function () {
+  var r = document.documentElement, now = r.getAttribute("data-theme");
+  var dark = now ? now === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.setAttribute("data-theme", dark ? "light" : "dark");
+  redraw();                                   // SVG reads the tokens at build time, not live
+});
+document.getElementById("pngBtn").addEventListener("click", function () { savePng(this); });
+var tb = document.getElementById("tableBtn");
+tb.addEventListener("click", function () {
+  var sec = document.getElementById("tableSec");
+  sec.hidden = !sec.hidden;
+  tb.textContent = sec.hidden ? "Show table" : "Hide table";
+});
+document.getElementById("copyCells").addEventListener("click", function () { copyText(TEX_CELLS, this); });
+document.getElementById("copySummary").addEventListener("click", function () { copyText(TEX_SUMMARY, this); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+  if (!document.documentElement.getAttribute("data-theme")) redraw();
+});
+
+var c0 = TRAJ.sets[0].configs[0];
+document.getElementById("foot").innerHTML =
+  "Generated " + TRAJ.generated + " by <code>src/build_valuation_trajectory_report.js</code> from "
+  + "<code>" + esc(TRAJ.source) + "</code> &mdash; "
+  + TRAJ.sets[0].configs.map(function (c) { return "<code>acl." + c.n + "</code>"; }).join(", ")
+  + ", the Dell'Acqua capability variants at &#947;<sub>above</sub> "
+  + TRAJ.sets.map(function (s) { return s.aiDampeningAbove; }).join(" and ") + ". "
+  + c0.ticks.length + " recorded ticks to " + c0.ticks[c0.ticks.length - 1] + " ("
+  + (c0.ticks[c0.ticks.length - 1] / 480) + " careers), " + c0.replicates + " replicates, each curve "
+  + "the median over &lambda; " + c0.lambdas.join(", ") + ". &rho; = " + SHIPPED + " is the shipped "
+  + "<code>CAPABILITY_RATIO</code>, carried as the published reference. Rebuild with "
+  + "<code>./src/run_valuation_trajectories.sh --skip-sweep</code> after a change to the template; "
+  + "re-run the sweep itself when the experiment set changes.";
+
+drawTex();
+redraw();
+</script>

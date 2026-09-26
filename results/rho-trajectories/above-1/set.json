@@ -1,0 +1,7 @@
+{
+  "key": "above-1",
+  "manifest": "data/experiments.acl.manifest.json",
+  "configDir": "data/experiments-acl",
+  "aiDampeningAbove": 1,
+  "gammaAbove": 0
+}

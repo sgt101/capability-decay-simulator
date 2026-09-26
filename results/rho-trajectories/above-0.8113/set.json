@@ -1,0 +1,7 @@
+{
+  "key": "above-0.8113",
+  "manifest": "data/experiments.acl-gabove.manifest.json",
+  "configDir": "data/experiments-acl-gabove",
+  "aiDampeningAbove": 0.8113,
+  "gammaAbove": -0.1887
+}

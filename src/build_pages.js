@@ -86,6 +86,40 @@ const REPORTS = [
   },
 ];
 
+// Hand-written, self-contained pages committed to doc/. A different shape again from
+// REPORTS above, and separate from it for two concrete reasons rather than tidiness: the
+// REPORTS loop reads a "simulatorHref" out of each file's embedded DATA blob and exits if
+// it is absent, and manifestFacts() needs a manifest in data/ — a written page has
+// neither. They are also NOT optional the way the reports are: they do not come from
+// results/, so a missing one means this list no longer matches the repository, which is a
+// real error and not an absent build artifact.
+const DOC_PAGES = [
+  {
+    src: path.join(paths.DOC, "capability_weight.html"), dest: "capability_weight.html",
+    title: "Capability weight",
+    blurb: "The function underneath every capability number on the pages above: w(E) = "
+      + "\u03C1^((E\u2212\u03B8)/(1\u2212\u03B8)), which converts one person's expertise into "
+      + "threshold-expert equivalents. Shows what somebody at the top of the distribution is "
+      + "worth across every setting of the two constants, against the share of the population "
+      + "sitting below the threshold at each one. Neither constant is measured against anything "
+      + "external, and this is what they are worth at the top.",
+  },
+  {
+    // GENERATED, unlike the page above, but committed for the same reason the reports are:
+    // it is built from results/rho-trajectories/, which is not in the repository, so CI
+    // cannot rebuild it and the only way the site can serve it is for the built file to be
+    // committed. Rebuild with ./src/run_valuation_trajectories.sh.
+    src: path.join(paths.DOC, "valuation_trajectories.html"), dest: "valuation_trajectories.html",
+    title: "Valuation trajectories",
+    blurb: "What the capability numbers do over three careers if ρ is taken from a published "
+      + "valuation of fund-manager skill rather than assumed. PST and Barras each price a $400bn and "
+      + "a $1.2Trn pool, and each pair is drawn as a band, so the width is how much of the trajectory "
+      + "rests on which valuation you accept. Nine panels: the three Dell'Acqua capability scenarios "
+      + "against the three measured Strömberg learning penalties, with the LaTeX tables of the "
+      + "series behind them.",
+  },
+];
+
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, "data"), { recursive: true });
 
@@ -176,6 +210,28 @@ publishedReports.forEach((r) => {
     }
   }
 });
+// Copied with no rewrite at all: these reach out of doc/ for nothing — no <script src>,
+// no ../data/, no link to the simulator — which is the property that lets them be
+// published as-is. Asserted, because a page that grew a relative reference would 404
+// silently on the site while opening perfectly off disk.
+const publishedDocPages = DOC_PAGES.map((d) => {
+  if (!fs.existsSync(d.src)) {
+    console.error(`[build_pages] missing ${path.relative(paths.ROOT, d.src)} — it is committed to the`
+      + ` repository, not generated, so this is a stale entry in DOC_PAGES rather than an absent artifact`);
+    process.exit(1);
+  }
+  const body = fs.readFileSync(d.src, "utf8");
+  const reaching = [...body.matchAll(/(?:src|href)="(\.\.\/[^"]+)"/g)].map((m) => m[1]);
+  if (reaching.length) {
+    console.error(`[build_pages] ${path.relative(paths.ROOT, d.src)} references ${reaching.join(", ")},`
+      + ` which reaches outside doc/ and will 404 once published flat. Either inline it or give this`
+      + ` page a rewrite of its own, as simulator.html has.`);
+    process.exit(1);
+  }
+  fs.copyFileSync(d.src, path.join(OUT, d.dest));
+  return Object.assign({}, d, { body });
+});
+
 REPORTS.filter((r) => !fs.existsSync(r.src)).forEach((r) => {
   console.error(`[build_pages] note: ${path.relative(paths.ROOT, r.src)} not present — publishing without it`
     + ` (rebuild with ./src/build_reports.sh, which needs results/)`);
@@ -267,6 +323,88 @@ publishedReports.forEach((r) => {
       .concat((fs.statSync(r.src).size / 1048576).toFixed(0) + " MB page"),
   });
 });
+// Facts read out of the page itself rather than typed here, for the same reason
+// manifestFacts() reads the manifests: a ladder length or a shipped value written down in
+// this file drifts the moment the page changes, and nothing would catch it.
+function weightFacts(body, src) {
+  const arr = (name) => {
+    const m = new RegExp("var " + name + " = \\[([^\\]]*)\\]").exec(body);
+    if (!m) {
+      console.error(`[build_pages] ${path.relative(paths.ROOT, src)} no longer declares ${name} —`
+        + ` update weightFacts() alongside the page`);
+      process.exit(1);
+    }
+    return m[1].split(",").map((v) => Number(v.trim()));
+  };
+  const rhos = arr("RHOS"), thetas = arr("THETAS");
+  const anchor = /\{ id: "p99",\s+E: ([0-9.]+)/.exec(body);
+  return [
+    rhos.length + " values of \u03C1 (" + rhos[0] + "\u2013" + rhos[rhos.length - 1] + ")",
+    thetas.length + " values of \u03B8 (" + thetas[0] + "\u2013" + thetas[thetas.length - 1] + ")",
+    "shipped \u03C1 = 1000, \u03B8 = 0.585",
+    anchor ? "top 1% anchor E = " + anchor[1] : null,
+  ].filter(Boolean);
+}
+// Same idea as weightFacts(), for the generated trajectory report. Read out of the payload
+// the builder injected rather than out of the markup: that payload IS the figure's data, so
+// facts taken from it cannot describe a different run than the one on the page.
+function trajectoryFacts(body, src) {
+  const where = path.relative(paths.ROOT, src);
+  const m = /^var TRAJ = (\{.*\});$/m.exec(body);
+  if (!m) {
+    console.error(`[build_pages] ${where} has no single-line "var TRAJ = {...};" payload \u2014`
+      + ` update trajectoryFacts() alongside valuation_trajectories.template.html`);
+    process.exit(1);
+  }
+  let d;
+  try { d = JSON.parse(m[1]); } catch (e) {
+    console.error(`[build_pages] ${where}: the TRAJ payload is not parseable JSON (${e.message})`);
+    process.exit(1);
+  }
+  if (!d.sets || !d.sets.length || !d.sets[0].configs || !d.sets[0].configs.length) {
+    console.error(`[build_pages] ${where}: the TRAJ payload carries no sets with configs`);
+    process.exit(1);
+  }
+  const s0 = d.sets[0];
+  const c0 = s0.configs[0];
+  const rhos = [...new Set(d.sources.reduce((a, s) => a.concat([s.lo.rho, s.hi.rho]), []))]
+    .sort((a, b) => a - b);
+  const horizon = c0.ticks[c0.ticks.length - 1];
+  const panels = s0.configs.length * c0.gbs.length;
+  return [
+    panels + " panels (" + s0.configs.length + " capability scenarios \u00D7 "
+      + c0.gbs.length + " learning penalties)",
+    "\u03C1 " + rhos.join(", ") + " against shipped \u03C1 = " + d.shipped,
+    // The gamma_above set list is the point of the page, so it is a fact rather than prose:
+    // one value means the penalty applies only below the AI, two means the page carries the
+    // contrast.
+    d.sets.length + " \u00D7 \u03B3_above ("
+      + d.sets.map((s) => s.aiDampeningAbove).join(", ") + ")",
+    c0.replicates + " replicates, " + c0.ticks.length + " recorded ticks to t = " + horizon,
+  ];
+}
+
+// Each page brings its own facts reader: the two pages share no structure, and one function
+// probing for the other's declarations would exit the build rather than degrade.
+const DOC_FACTS = {
+  "capability_weight.html": weightFacts,
+  "valuation_trajectories.html": trajectoryFacts,
+};
+
+// Order here is the reading order on the landing page. capability_weight says what w IS;
+// valuation_trajectories says what it does over time once \u03C1 comes from a published
+// valuation; the capability-ratio section below asks whether the conclusions survive
+// changing \u03C1 at all.
+publishedDocPages.forEach((d) => {
+  const facts = DOC_FACTS[d.dest];
+  if (!facts) {
+    console.error(`[build_pages] DOC_PAGES lists ${d.dest} but DOC_FACTS has no reader for it \u2014`
+      + ` add one, or the landing entry would ship with no facts`);
+    process.exit(1);
+  }
+  entries.push({ href: d.dest, title: d.title, blurb: d.blurb, facts: facts(d.body, d.src) });
+});
+
 if (rhoExperiments) {
   // Facts pulled from the first summary found rather than hardcoded — same reasoning as
   // manifestFacts() above: a rho list or config count typed here would drift the moment
@@ -333,5 +471,6 @@ ASSETS.forEach(([, d]) => console.log(`  ${d}`));
 publishedReports.forEach((r) =>
   console.log(`  ${r.dest}  (${r.title}, ${(fs.statSync(r.src).size / 1048576).toFixed(0)} MB)`));
 publishedNotes.forEach((f) => console.log(`  ${f}  (notes page)`));
+publishedDocPages.forEach((d) => console.log(`  ${d.dest}  (${d.title}, written)`));
 if (rhoExperiments) console.log(`  rho/  (capability-ratio sensitivity, ${rhoExperiments} experiment(s), ${rhoFiles.length} files)`);
 console.log(`\npreview locally:  npx serve site    (or: cd site && python3 -m http.server)`);

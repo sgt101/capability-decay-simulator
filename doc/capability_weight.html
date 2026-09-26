@@ -1,0 +1,807 @@
+<title>Capability Weight Grid</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Tokens: the same set every other page in doc/ uses (see results_ACL.html), plus
+     two ramps this page needs and the others don't — a single-hue sequential ramp for
+     the heatmap and a 4-step ordinal ramp for the line series. Both are anchored on the
+     project's existing teal (--diverge-pos-mid #2f7d6c, --diverge-pos-end #0f4a3d) and
+     both were run through the palette validator: monotone lightness, single hue, and
+     for the ordinal ramp adjacent ΔL ≥ 0.06 with the light end clearing 2:1 on its
+     own surface in both modes. */
+  :root {
+    --bg: #eef0ee;
+    --panel: #ffffff;
+    --panel-2: #f4f5f3;
+    --ink: #14181a;
+    --ink-muted: #5c6360;
+    --ink-faint: #8b918d;
+    --rule: #d7dad6;
+    --accent: #a8502c;
+    --accent-soft: #f3e2da;
+    --accent2: #35636b;
+    --accent2-soft: #dfe9ea;
+    --shadow: 0 1px 2px rgba(20, 24, 26, 0.07);
+    --ref-line: #6b3fa0;
+    --wm-line: #e69f00;
+    --grid: #dfe2de;
+    --band-fill: rgba(92, 99, 96, 0.07);
+    /* sequential, light→dark; lightest step means "no premium" and is allowed to
+       recede toward the surface */
+    --seq-1: #e6f2ee; --seq-2: #bfe0d6; --seq-3: #9fd3c4; --seq-4: #72bfab;
+    --seq-5: #4ea590; --seq-6: #2f7d6c; --seq-7: #14574a;
+    /* ordinal, low ρ → high ρ */
+    --ord-1: #72bfab; --ord-2: #4ea590; --ord-3: #2f7d6c; --ord-4: #14574a;
+    /* two arms: identity, not magnitude */
+    --arm-base: #0d8a6f; --arm-ai: #a8502c;
+    --on-dark: #eaf6f2;
+    --on-light: #14181a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101314;
+      --panel: #171b1d;
+      --panel-2: #1d2224;
+      --ink: #e8eae6;
+      --ink-muted: #93a09c;
+      --ink-faint: #656e6b;
+      --rule: #2b3234;
+      --accent: #dd8259;
+      --accent-soft: #35271f;
+      --accent2: #7fb0b7;
+      --accent2-soft: #1c2b2d;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      --ref-line: #c79bff;
+      --wm-line: #f2ac3d;
+      --grid: #262d2f;
+      --band-fill: rgba(147, 160, 156, 0.09);
+      --seq-1: #1e2f2c; --seq-2: #234a41; --seq-3: #2f7d6c; --seq-4: #45a08c;
+      --seq-5: #5fc9ac; --seq-6: #83dfc4; --seq-7: #a8f0d6;
+      --ord-1: #14574a; --ord-2: #2f7d6c; --ord-3: #5fc9ac; --ord-4: #a8f0d6;
+      --arm-base: #2fa88b; --arm-ai: #d4784a;
+      --on-dark: #0b1512;
+      --on-light: #e8eae6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101314;
+    --panel: #171b1d;
+    --panel-2: #1d2224;
+    --ink: #e8eae6;
+    --ink-muted: #93a09c;
+    --ink-faint: #656e6b;
+    --rule: #2b3234;
+    --accent: #dd8259;
+    --accent-soft: #35271f;
+    --accent2: #7fb0b7;
+    --accent2-soft: #1c2b2d;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --ref-line: #c79bff;
+    --wm-line: #f2ac3d;
+    --grid: #262d2f;
+    --band-fill: rgba(147, 160, 156, 0.09);
+    --seq-1: #1e2f2c; --seq-2: #234a41; --seq-3: #2f7d6c; --seq-4: #45a08c;
+    --seq-5: #5fc9ac; --seq-6: #83dfc4; --seq-7: #a8f0d6;
+    --ord-1: #14574a; --ord-2: #2f7d6c; --ord-3: #5fc9ac; --ord-4: #a8f0d6;
+    --arm-base: #2fa88b; --arm-ai: #d4784a;
+    --on-dark: #0b1512;
+    --on-light: #e8eae6;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding-block: 0 2.5rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    margin: 0;
+    font-family: ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  .topbar {
+    display: flex; align-items: baseline; gap: 0.5rem 1.1rem; flex-wrap: wrap;
+    padding: 0.85rem 1rem; background: var(--panel);
+    border-bottom: 1px solid var(--rule);
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  }
+  .topbar h1 { font-size: 1.15rem; letter-spacing: -0.01em; }
+  .topbar .formula {
+    font-size: 0.82rem; color: var(--ink-muted);
+    font-family: ui-monospace, monospace;
+  }
+  .spacer { flex: 1 1 auto; }
+  .btn {
+    font: inherit; font-size: 0.78rem; padding: 0.35rem 0.65rem;
+    border-radius: 4px; border: 1px solid var(--rule);
+    background: var(--panel-2); color: var(--ink); cursor: pointer;
+  }
+  .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  :is(button, select, input, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .wrap { padding-inline: 1rem; max-width: 74rem; margin: 0 auto; }
+
+  /* What the numbers ARE. Above the figures rather than beside them: a reader who
+     misses this misreads every cell on the page. */
+  .set-note { padding: 0.8rem 1rem; border-left: 3px solid var(--accent); margin-top: 1.25rem; background: var(--panel); box-shadow: var(--shadow); }
+  .set-note h2 { font-size: 0.85rem; margin: 0 0 0.45rem; }
+  .set-note p { margin: 0 0 0.5rem; font-size: 0.83rem; line-height: 1.6; color: var(--ink-muted); max-width: 62rem; }
+  .set-note p:last-child { margin-bottom: 0; }
+  .set-note b { color: var(--ink); font-weight: 600; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 0.75rem 1.4rem; align-items: center;
+    padding: 0.75rem 1rem; margin-top: 1.25rem;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  }
+  .field { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--ink-muted); }
+  .field label { white-space: nowrap; }
+  select {
+    font: inherit; font-size: 0.8rem; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 0.3rem 0.45rem;
+  }
+  .field input[type="range"] { width: 150px; accent-color: var(--accent2); }
+  .field .val { font-family: ui-monospace, monospace; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* Three figures the page leads with — these ARE the answer, so they get the big type. */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.75rem; margin-top: 0.85rem; }
+  .tile { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 0.9rem; }
+  .tile .k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); }
+  .tile .v {
+    font-family: ui-serif, Charter, Georgia, serif; font-size: 2rem; line-height: 1.1;
+    margin-top: 0.3rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  .tile .s { font-size: 0.74rem; color: var(--ink-muted); margin-top: 0.3rem; line-height: 1.45; font-family: ui-monospace, monospace; }
+  .tile.lead { border-left: 3px solid var(--accent); }
+
+  figure { margin: 1.6rem 0 0; }
+  figcaption { font-size: 0.78rem; color: var(--ink-muted); line-height: 1.55; margin-top: 0.5rem; max-width: 62rem; }
+  .fig-head { display: flex; align-items: baseline; gap: 0.6rem 1rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .fig-head h2 { font-size: 0.98rem; }
+  .fig-head .hint { font-size: 0.74rem; color: var(--ink-faint); }
+
+  .scroller { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; }
+  table.heat { border-collapse: separate; border-spacing: 2px; font-size: 0.72rem; margin: 0; }
+  table.heat th { font-weight: 500; color: var(--ink-muted); font-family: ui-monospace, monospace; font-size: 0.68rem; padding: 0.3rem 0.35rem; white-space: nowrap; }
+  table.heat thead th { text-align: center; }
+  table.heat thead th.corner { position: sticky; left: 0; background: var(--panel); z-index: 3; text-align: right; }
+  table.heat tbody th { position: sticky; left: 0; background: var(--panel); z-index: 2; text-align: right; padding-right: 0.5rem; }
+  table.heat td {
+    text-align: center; padding: 0.34rem 0.3rem; min-width: 2.9rem;
+    font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+    border-radius: 2px; white-space: nowrap; cursor: default;
+  }
+  /* Shipped constants. A ring, not a fill — the fill is already carrying the value. */
+  table.heat td.shipped { outline: 2px solid var(--accent); outline-offset: -2px; }
+  table.heat th.marked { color: var(--accent); }
+  table.heat th.outband { color: var(--ink-faint); }
+  table.heat tbody tr.shipped-row th { color: var(--accent); }
+
+  .legend-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.6rem 0.7rem 0.1rem; font-size: 0.72rem; color: var(--ink-muted); }
+  .ramp { display: flex; height: 10px; width: min(15rem, 45vw); border-radius: 2px; overflow: hidden; }
+  .ramp span { flex: 1; }
+  .ramp-ticks { display: flex; justify-content: space-between; width: min(15rem, 45vw); font-family: ui-monospace, monospace; font-size: 0.66rem; color: var(--ink-faint); }
+
+  .swatches { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.74rem; color: var(--ink-muted); }
+  .sw { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .sw i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .sw.dashed i { height: 0; border-top: 2px dashed currentColor; border-radius: 0; }
+
+  .chart-box { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.5rem; }
+  svg.chart { display: block; width: 100%; height: auto; max-width: 100%; }
+  svg.chart text { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  table.data { border-collapse: collapse; font-size: 0.76rem; width: 100%; }
+  table.data th, table.data td { padding: 0.35rem 0.6rem; text-align: right; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+  table.data th { color: var(--ink-muted); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  table.data td { font-family: ui-monospace, monospace; }
+  table.data tbody tr.shipped-row { background: var(--accent-soft); }
+
+  #tip {
+    position: fixed; pointer-events: none; z-index: 60; opacity: 0;
+    transition: opacity 0.1s linear; background: var(--panel); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 5px; box-shadow: var(--shadow);
+    padding: 0.4rem 0.55rem; font-size: 0.74rem; line-height: 1.5; max-width: 15rem;
+  }
+  #tip .tk { color: var(--ink-faint); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  #tip .tv { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
+</style>
+
+<div class="topbar">
+  <h1>Capability Weight Grid</h1>
+  <span class="formula">w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></span>
+  <span class="spacer"></span>
+  <button class="btn" id="themeBtn" type="button">Theme</button>
+</div>
+
+<div class="wrap">
+  <div class="set-note">
+    <h2>What these numbers are</h2>
+    <p><b>One person at the top of the distribution, counted in threshold-expert equivalents.</b>
+    <code>engine.js</code> converts expertise into capability with
+    <code>w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup></code>, anchored so that
+    <code>w(&theta;) = 1</code> and <code>w(1) = &rho;</code>. Every capability magnitude the
+    reports carry is a sum of these weights, so every one of them scales with &rho; and bends with &theta;.</p>
+    <p><b>Neither constant is measured against anything external.</b> &rho; = 1000 is a stated
+    assumption — "one person at the ceiling is worth a thousand who merely qualify". &theta; = 0.585
+    was picked as a robustness midpoint of the band [0.30, 0.86], under the <i>legacy</i>
+    calibration; <code>expert_threshold_sensitivity.js</code> and <code>doc/paper.md</code> both record
+    that the argument does not carry over to the world-model regime the reported experiments
+    actually run in. This grid is what that costs at the top of the distribution.</p>
+    <p><b>The expertise anchors are measured, not chosen.</b> Percentiles of live expertise at
+    t = 1440 from the <code>experiment.5</code> world-model configuration at its grid centre,
+    mean of seeds 1–3. Top 1% (AI off) is E = 0.9188.</p>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="anchor">Expertise anchor</label>
+      <select id="anchor"></select>
+    </div>
+    <div class="field">
+      <label for="eSlider">E</label>
+      <input type="range" id="eSlider" min="0.60" max="0.99" step="0.001" value="0.9188" />
+      <span class="val tabular" id="eVal">0.9188</span>
+    </div>
+    <span class="spacer"></span>
+    <div class="field">
+      <button class="btn" id="tableBtn" type="button" aria-pressed="false">Show series as table</button>
+      <button class="btn" id="cdfTableBtn" type="button" aria-pressed="false">Show population as table</button>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile lead">
+      <div class="k">At the shipped constants</div>
+      <div class="v" id="tShipped">—</div>
+      <div class="s" id="tShippedSub">—</div>
+    </div>
+    <div class="tile">
+      <div class="k">Exponent on &rho;</div>
+      <div class="v" id="tExp">—</div>
+      <div class="s" id="tExpSub">—</div>
+    </div>
+    <div class="tile">
+      <div class="k">Across the &theta; band, at &rho; = 1000</div>
+      <div class="v" id="tBand">—</div>
+      <div class="s" id="tBandSub">—</div>
+    </div>
+  </div>
+
+  <figure>
+    <div class="fig-head">
+      <h2>w across the &rho; &times; &theta; grid</h2>
+      <span class="hint">darker = larger multiple &middot; hover a cell for detail</span>
+    </div>
+    <div class="scroller">
+      <div class="legend-row">
+        <span>w, log scale</span>
+        <div>
+          <div class="ramp" id="ramp"></div>
+          <div class="ramp-ticks" id="rampTicks"></div>
+        </div>
+        <span class="sw" style="color: var(--accent)"><i style="height:10px;width:10px;border:2px solid var(--accent);background:none;border-radius:2px"></i> shipped &rho;=1000, &theta;=0.585</span>
+        <span style="color: var(--ink-faint)">grey &theta; labels sit outside the documented band [0.30, 0.86]</span>
+      </div>
+      <table class="heat" id="heat"></table>
+    </div>
+    <figcaption id="heatCap">—</figcaption>
+  </figure>
+
+  <figure>
+    <div class="fig-head">
+      <h2>How fast the premium falls as &theta; rises</h2>
+      <div class="swatches" id="lineLegend"></div>
+    </div>
+    <div class="chart-box" id="chartBox">
+      <svg class="chart" id="chart" viewBox="0 0 780 390" role="img" aria-labelledby="chartTitle"><title id="chartTitle">w against theta, one line per capability ratio</title></svg>
+    </div>
+    <div class="scroller" id="tableBox" hidden><table class="data" id="dataTable"></table></div>
+    <figcaption id="lineCap">—</figcaption>
+  </figure>
+
+  <figure>
+    <div class="fig-head">
+      <h2>How much of the population sits below &theta;</h2>
+      <div class="swatches" id="cdfLegend"></div>
+      <span class="hint" id="cdfReadout"></span>
+    </div>
+    <div class="chart-box">
+      <svg class="chart" id="cdfChart" viewBox="0 0 780 330" role="img" aria-labelledby="cdfTitle"><title id="cdfTitle">Share of the population below theta, by arm</title></svg>
+    </div>
+    <div class="scroller" id="cdfTableBox" hidden><table class="data" id="cdfTable"></table></div>
+    <figcaption id="cdfCap">&mdash;</figcaption>
+  </figure>
+
+  <div class="set-note">
+    <h2>Reading it</h2>
+    <p><b>&theta; is the sharper lever, and it is the one with the weaker provenance.</b> &rho; sets the
+    ceiling of the scale and moves w smoothly — it is an exponent base, so doubling &rho; multiplies w
+    by a fixed factor. &theta; moves the <i>exponent</i>, and it collapses: as &theta; climbs toward the
+    anchor's own expertise the exponent tends to zero and the top of the distribution stops being
+    worth more than the bar it just cleared.</p>
+    <p><b>Where w drops below 1</b> the threshold has been set above the anchor itself — the person
+    counts as a fraction of a threshold expert because they no longer clear the bar. That is not a
+    small premium; it is a different statement, and it only appears for the lower anchors.</p>
+    <p><b>The capability sum is a thin tail.</b> At the shipped &theta;, 44% of people (AI off) or 50%
+    (AI on) sit below the bar and so contribute <i>less than one</i> equivalent each, while one person at
+    the top of the distribution contributes 260. Whatever <code>systemCapability</code> reports is
+    therefore set by the top few percent — exactly the part of the population &rho; and &theta; reprice
+    hardest.</p>
+    <p>&rho; ladder from <code>src/run_rho_sensitivity.sh</code> (powers of two to 2048, with the shipped
+    1000 inserted); the unit steps 3, 5, 6, 7 it also sweeps are there to resolve a crossover in the
+    <i>conclusions</i> and are left out here. &theta; ladder from <code>THRESHOLDS</code> in
+    <code>src/expert_threshold_sensitivity.js</code>.</p>
+  </div>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+  (function () {
+    "use strict";
+
+    var THETAS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.585, 0.6, 0.65, 0.7, 0.75, 0.8, 0.82, 0.84, 0.86, 0.88, 0.9];
+    var RHOS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1000, 2048];
+    var LINE_RHOS = [16, 128, 1000, 2048];
+    var BAND = [0.30, 0.86];
+    var SHIP_RHO = 1000, SHIP_THETA = 0.585, LEGACY_THETA = 0.70;
+
+    // Measured percentiles of live expertise, experiment.5 world-model config at grid
+    // centre, t=1440, mean of seeds 1-3. Not round numbers on purpose.
+    var ANCHORS = [
+      { id: "p99",   E: 0.9188, label: "Top 1% — baseline (AI off)" },
+      { id: "p99ai", E: 0.9091, label: "Top 1% — AI on" },
+      { id: "max",   E: 0.9474, label: "Single best person — baseline" },
+      { id: "p90",   E: 0.8130, label: "Top 10% — baseline" },
+      { id: "p50",   E: 0.6158, label: "Median — baseline" }
+    ];
+
+    // Empirical CDF of live expertise at t=1440, theta = 0.00 .. 1.00 in 0.01 steps,
+    // mean over seeds 1-3 of the same experiment.5 world-model config the anchors come
+    // from; 11,322 live agents per run. Cross-checked against shareExpert in
+    // results/experiment.5/results_summary.csv -- at theta=0.585 this gives 44.0 / 50.3
+    // against a 441-cell grid median of 44.4 / 50.1.
+    var CDF_STEP = 0.01;
+    var CDF = {
+      base: [0,0,0,0,0,0,0.00389,0.00854,0.0136,0.0189,0.02464,0.03024,0.0358,0.04231,0.04828,0.05464,0.06103,0.06677,0.07351,0.0794,0.08626,0.09286,0.09872,0.10552,0.11182,0.11756,0.12389,0.1304,0.13658,0.14255,0.14927,0.15645,0.16257,0.1697,0.17624,0.18268,0.1896,0.19717,0.20432,0.21254,0.22001,0.22808,0.23691,0.24684,0.25543,0.26556,0.27519,0.28584,0.29588,0.30687,0.31876,0.32998,0.34258,0.35468,0.36899,0.38383,0.39793,0.41438,0.43081,0.4486,0.46744,0.48787,0.50783,0.52879,0.54937,0.57201,0.59624,0.6193,0.64244,0.66696,0.68801,0.70995,0.73379,0.7567,0.77745,0.79771,0.81953,0.83743,0.8543,0.86913,0.88318,0.8964,0.90823,0.91898,0.93128,0.94212,0.95316,0.9617,0.96812,0.97442,0.9798,0.98496,0.99043,0.99473,0.99859,1,1,1,1,1,1],
+      ai: [0,0,0,0,0.00006,0.00006,0.00568,0.01178,0.01872,0.02514,0.03277,0.04063,0.04834,0.05659,0.06498,0.07245,0.08087,0.0885,0.09636,0.10357,0.11079,0.11832,0.12527,0.13296,0.14041,0.14847,0.15663,0.16425,0.17182,0.1795,0.18675,0.19487,0.2025,0.21015,0.2181,0.22643,0.23509,0.24345,0.25119,0.26035,0.26889,0.27775,0.28646,0.29574,0.3056,0.31576,0.32683,0.3379,0.34991,0.36145,0.37381,0.38627,0.40081,0.4145,0.42858,0.44412,0.45878,0.47612,0.4942,0.51083,0.52809,0.54666,0.56657,0.58547,0.6059,0.62627,0.64718,0.6682,0.68863,0.70986,0.73114,0.75049,0.7698,0.79058,0.80884,0.82641,0.84326,0.85909,0.87434,0.88898,0.90273,0.91462,0.92563,0.93541,0.94494,0.95398,0.96234,0.96844,0.97456,0.97977,0.98513,0.9904,0.9952,0.99862,0.99994,1,1,1,1,1,1]
+    };
+    var ARMS = [
+      { id: "base", label: "AI off (baseline)", token: "--arm-base" },
+      { id: "ai",   label: "AI on (treatment)", token: "--arm-ai" }
+    ];
+    // Linear interpolation between grid points -- reading the nearest index instead
+    // would round theta=0.585 up to 0.59 and overstate the share by a point.
+    function shareBelow(theta, arm) {
+      var a = CDF[arm], x = theta / CDF_STEP;
+      if (x <= 0) return a[0];
+      if (x >= a.length - 1) return a[a.length - 1];
+      var i = Math.floor(x), f = x - i;
+      return a[i] + (a[i + 1] - a[i]) * f;
+    }
+
+    var SEQ = ["--seq-1", "--seq-2", "--seq-3", "--seq-4", "--seq-5", "--seq-6", "--seq-7"];
+    var ORD = ["--ord-1", "--ord-2", "--ord-3", "--ord-4"];
+
+    var $ = function (id) { return document.getElementById(id); };
+    var cssVar = function (n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); };
+
+    function w(rho, theta, E) {
+      if (rho === 1) return 1;              // rho^anything === 1; no premium at all
+      return Math.pow(rho, (E - theta) / (1 - theta));
+    }
+
+    function fmtW(v) {
+      if (!isFinite(v)) return "—";
+      if (v >= 100) return String(Math.round(v));
+      if (v >= 10) return v.toFixed(1);
+      if (v >= 1) return v.toFixed(2);
+      return v.toFixed(3);
+    }
+    function fmtMult(v) {
+      if (v >= 100) return Math.round(v).toLocaleString() + "×";
+      if (v >= 10) return v.toFixed(1) + "×";
+      return v.toFixed(2) + "×";
+    }
+
+    function hexToRgb(h) {
+      h = h.replace("#", "");
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+    // Interpolate the validated stops. One hue, monotone lightness, so plain sRGB
+    // interpolation between neighbouring stops stays on the ramp.
+    function rampColor(t) {
+      var stops = SEQ.map(function (n) { return hexToRgb(cssVar(n)); });
+      t = Math.max(0, Math.min(1, t));
+      var x = t * (stops.length - 1), i = Math.min(stops.length - 2, Math.floor(x)), f = x - i;
+      var a = stops[i], b = stops[i + 1];
+      return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * f) + "," +
+                      Math.round(a[1] + (b[1] - a[1]) * f) + "," +
+                      Math.round(a[2] + (b[2] - a[2]) * f) + ")";
+    }
+
+    /* ---------------------------------- tooltip ---------------------------------- */
+    var tip = $("tip");
+    function showTip(evt, html) {
+      tip.innerHTML = html;
+      tip.style.opacity = "1";
+      var r = tip.getBoundingClientRect();
+      var x = evt.clientX + 14, y = evt.clientY + 14;
+      if (x + r.width > window.innerWidth - 8) x = evt.clientX - r.width - 14;
+      if (y + r.height > window.innerHeight - 8) y = evt.clientY - r.height - 14;
+      tip.style.left = Math.max(8, x) + "px";
+      tip.style.top = Math.max(8, y) + "px";
+    }
+    function hideTip() { tip.style.opacity = "0"; }
+
+    /* ---------------------------------- heatmap ---------------------------------- */
+    function renderHeat(E) {
+      var vals = [], i, j;
+      for (i = 0; i < RHOS.length; i++) for (j = 0; j < THETAS.length; j++) vals.push(w(RHOS[i], THETAS[j], E));
+      var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      var lLo = Math.log10(Math.max(lo, 1e-4)), lHi = Math.log10(hi);
+      if (lHi - lLo < 0.2) { lHi = lLo + 0.2; }
+
+      var html = "<thead><tr><th class='corner'>&rho; &darr; &nbsp; &theta; &rarr;</th>";
+      THETAS.forEach(function (th) {
+        var cls = th === SHIP_THETA ? "marked" : (th < BAND[0] || th > BAND[1] ? "outband" : "");
+        html += "<th class='" + cls + "' scope='col'>" + th.toFixed(3).replace(/0+$/, "").replace(/\.$/, ".0") + "</th>";
+      });
+      html += "</tr></thead><tbody>";
+
+      RHOS.forEach(function (rho) {
+        html += "<tr" + (rho === SHIP_RHO ? " class='shipped-row'" : "") + "><th scope='row'>" +
+                rho.toLocaleString() + "</th>";
+        THETAS.forEach(function (th) {
+          var v = w(rho, th, E);
+          var t = (Math.log10(Math.max(v, 1e-4)) - lLo) / (lHi - lLo);
+          var ink = t > 0.55 ? "var(--on-dark)" : "var(--on-light)";
+          var ship = (rho === SHIP_RHO && th === SHIP_THETA) ? " shipped" : "";
+          html += "<td class='cell" + ship + "' style='background:" + rampColor(t) + ";color:" + ink + "'" +
+                  " data-rho='" + rho + "' data-theta='" + th + "'>" + fmtW(v) + "</td>";
+        });
+        html += "</tr>";
+      });
+      $("heat").innerHTML = html + "</tbody>";
+
+      // scale legend
+      var ramp = "", steps = 40, k;
+      for (k = 0; k < steps; k++) ramp += "<span style='background:" + rampColor(k / (steps - 1)) + "'></span>";
+      $("ramp").innerHTML = ramp;
+      $("rampTicks").innerHTML = "<span>" + fmtW(Math.pow(10, lLo)) + "</span><span>" +
+        fmtW(Math.pow(10, (lLo + lHi) / 2)) + "</span><span>" + fmtW(Math.pow(10, lHi)) + "</span>";
+
+      Array.prototype.forEach.call($("heat").querySelectorAll("td.cell"), function (td) {
+        td.addEventListener("mousemove", function (evt) {
+          var rho = +td.dataset.rho, th = +td.dataset.theta, v = w(rho, th, E);
+          var ex = (E - th) / (1 - th);
+          var extra = v < 1
+            ? "<div class='tk' style='margin-top:.3rem'>&theta; is above this anchor &mdash; counts as a fraction of one threshold expert</div>"
+            : "";
+          showTip(evt,
+            "<div class='tk'>&rho; = " + rho.toLocaleString() + " &middot; &theta; = " + th + "</div>" +
+            "<div class='tv' style='font-size:1rem'>w = " + fmtMult(v) + "</div>" +
+            "<div class='tv tk'>exponent " + ex.toFixed(4) + "</div>" + extra);
+        });
+        td.addEventListener("mouseleave", hideTip);
+      });
+    }
+
+    /* -------------------------------- line chart -------------------------------- */
+    var W = 780, H = 390, M = { t: 16, r: 22, b: 46, l: 60 };
+    var PW = W - M.l - M.r, PH = H - M.t - M.b;
+
+    function renderLines(E) {
+      var xMin = THETAS[0], xMax = THETAS[THETAS.length - 1];
+      var all = [];
+      LINE_RHOS.forEach(function (r) { THETAS.forEach(function (th) { all.push(w(r, th, E)); }); });
+      // Fit the range to the data with a little headroom, rather than rounding out to
+      // whole decades -- a 10,000x gridline on a chart whose maximum is 1,031x would
+      // label a value the chart never reaches.
+      var lLoRaw = Math.log10(Math.max(Math.min.apply(null, all), 1e-3));
+      var lHiRaw = Math.log10(Math.max.apply(null, all));
+      if (lHiRaw - lLoRaw < 0.3) { lHiRaw = lLoRaw + 0.3; }
+      var pad = (lHiRaw - lLoRaw) * 0.06;
+      var lLo = lLoRaw - pad, lHi = lHiRaw + pad;
+
+      var X = function (th) { return M.l + (th - xMin) / (xMax - xMin) * PW; };
+      var Y = function (v) { return M.t + PH - (Math.log10(Math.max(v, 1e-3)) - lLo) / (lHi - lLo) * PH; };
+
+      var s = [];
+      // usable band, behind everything
+      s.push("<rect x='" + X(BAND[0]).toFixed(1) + "' y='" + M.t + "' width='" + (X(BAND[1]) - X(BAND[0])).toFixed(1) +
+             "' height='" + PH + "' fill='var(--band-fill)'></rect>");
+      s.push("<text x='" + ((X(BAND[0]) + X(BAND[1])) / 2).toFixed(1) + "' y='" + (M.t + PH - 7) +
+             "' fill='var(--ink-faint)' font-size='10' text-anchor='middle'>documented band for θ</text>");
+
+      // y gridlines at each decade
+      var d;
+      for (d = Math.ceil(lLo); d <= Math.floor(lHi); d++) {
+        var y = Y(Math.pow(10, d));
+        s.push("<line x1='" + M.l + "' y1='" + y.toFixed(1) + "' x2='" + (M.l + PW) + "' y2='" + y.toFixed(1) +
+               "' stroke='var(--grid)' stroke-width='1'></line>");
+        s.push("<text x='" + (M.l - 8) + "' y='" + (y + 3.5).toFixed(1) +
+               "' fill='var(--ink-faint)' font-size='10' text-anchor='end'>" +
+               Math.pow(10, d).toLocaleString() + "×</text>");
+      }
+      // w = 1 is the meaningful floor: "worth exactly one threshold expert"
+      if (lLo < 0) {
+        s.push("<line x1='" + M.l + "' y1='" + Y(1).toFixed(1) + "' x2='" + (M.l + PW) + "' y2='" + Y(1).toFixed(1) +
+               "' stroke='var(--ink-faint)' stroke-width='1'></line>");
+      }
+      // x axis
+      s.push("<line x1='" + M.l + "' y1='" + (M.t + PH) + "' x2='" + (M.l + PW) + "' y2='" + (M.t + PH) +
+             "' stroke='var(--rule)' stroke-width='1'></line>");
+      [0.1, 0.3, 0.5, 0.585, 0.7, 0.8, 0.9].forEach(function (th) {
+        s.push("<text x='" + X(th).toFixed(1) + "' y='" + (M.t + PH + 16) + "' fill='var(--ink-faint)' font-size='10' text-anchor='middle'>" + th + "</text>");
+      });
+      s.push("<text x='" + (M.l + PW / 2).toFixed(1) + "' y='" + (H - 8) +
+             "' fill='var(--ink-muted)' font-size='11' text-anchor='middle'>θ &mdash; expert threshold</text>");
+      s.push("<text transform='translate(14," + (M.t + PH / 2).toFixed(1) + ") rotate(-90)' fill='var(--ink-muted)' font-size='11' text-anchor='middle'>w &mdash; threshold-expert equivalents</text>");
+
+      // reference verticals
+      [[SHIP_THETA, "shipped 0.585", "var(--ref-line)", "none"], [LEGACY_THETA, "legacy 0.70", "var(--wm-line)", "4 3"]].forEach(function (r) {
+        s.push("<line x1='" + X(r[0]).toFixed(1) + "' y1='" + M.t + "' x2='" + X(r[0]).toFixed(1) + "' y2='" + (M.t + PH) +
+               "' stroke='" + r[2] + "' stroke-width='1.5'" + (r[3] === "none" ? "" : " stroke-dasharray='" + r[3] + "'") + "></line>");
+      });
+
+      // one line per rho, low rho lightest
+      LINE_RHOS.forEach(function (rho, k) {
+        var col = "var(" + ORD[k] + ")";
+        var pts = THETAS.map(function (th) { return X(th).toFixed(1) + "," + Y(w(rho, th, E)).toFixed(1); }).join(" ");
+        s.push("<polyline points='" + pts + "' fill='none' stroke='" + col + "' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'></polyline>");
+        // direct label at the left end, where the lines are furthest apart
+        var y0 = Y(w(rho, THETAS[0], E));
+        s.push("<text x='" + (X(THETAS[0]) + 5).toFixed(1) + "' y='" + (y0 - 7).toFixed(1) +
+               "' fill='var(--ink)' font-size='10.5'>ρ = " + rho.toLocaleString() + "</text>");
+        // endpoint emphasis
+        s.push("<circle cx='" + X(THETAS[0]).toFixed(1) + "' cy='" + y0.toFixed(1) +
+               "' r='3.5' fill='" + col + "' stroke='var(--panel)' stroke-width='2'></circle>");
+      });
+
+      // the anchor's own crossing at the shipped theta
+      var vShip = w(SHIP_RHO, SHIP_THETA, E);
+      s.push("<circle cx='" + X(SHIP_THETA).toFixed(1) + "' cy='" + Y(vShip).toFixed(1) +
+             "' r='4.5' fill='none' stroke='var(--accent)' stroke-width='2'></circle>");
+
+      s.push("<rect id='hitArea' x='" + M.l + "' y='" + M.t + "' width='" + PW + "' height='" + PH + "' fill='transparent'></rect>");
+      s.push("<line id='cross' x1='0' y1='" + M.t + "' x2='0' y2='" + (M.t + PH) + "' stroke='var(--ink-faint)' stroke-width='1' opacity='0'></line>");
+
+      var svg = $("chart");
+      svg.innerHTML = "<title id='chartTitle'>w against θ, one line per capability ratio ρ</title>" + s.join("");
+
+      // crosshair + tooltip on the nearest theta
+      var hit = svg.querySelector("#hitArea"), cross = svg.querySelector("#cross");
+      hit.addEventListener("mousemove", function (evt) {
+        var box = svg.getBoundingClientRect();
+        var th = xMin + ((evt.clientX - box.left) / box.width * W - M.l) / PW * (xMax - xMin);
+        var near = THETAS.reduce(function (a, b) { return Math.abs(b - th) < Math.abs(a - th) ? b : a; });
+        cross.setAttribute("x1", X(near).toFixed(1));
+        cross.setAttribute("x2", X(near).toFixed(1));
+        cross.setAttribute("opacity", "1");
+        var rows = LINE_RHOS.map(function (rho, k) {
+          return "<div class='tv'><span style='display:inline-block;width:10px;height:3px;border-radius:2px;background:var(" +
+                 ORD[k] + ");vertical-align:middle;margin-right:5px'></span>ρ " + rho.toLocaleString() +
+                 " &nbsp; <b>" + fmtMult(w(rho, near, E)) + "</b></div>";
+        }).join("");
+        showTip(evt, "<div class='tk'>θ = " + near + " &middot; exponent " + ((E - near) / (1 - near)).toFixed(3) + "</div>" + rows);
+      });
+      hit.addEventListener("mouseleave", function () { cross.setAttribute("opacity", "0"); hideTip(); });
+
+      // legend (always present for >= 2 series) — ordinal, low to high
+      $("lineLegend").innerHTML = LINE_RHOS.map(function (rho, k) {
+        return "<span class='sw'><i style='background:var(" + ORD[k] + ")'></i>ρ = " + rho.toLocaleString() + "</span>";
+      }).join("") +
+        "<span class='sw' style='color:var(--ref-line)'><i style='background:var(--ref-line)'></i>shipped θ = 0.585</span>" +
+        "<span class='sw dashed' style='color:var(--wm-line)'><i></i>legacy θ = 0.70</span>";
+
+      // table view of the same series
+      var head = "<thead><tr><th>θ</th><th>exponent</th>" +
+        LINE_RHOS.map(function (r) { return "<th>w at ρ=" + r.toLocaleString() + "</th>"; }).join("") + "</tr></thead>";
+      var body = "<tbody>" + THETAS.map(function (th) {
+        return "<tr" + (th === SHIP_THETA ? " class='shipped-row'" : "") + "><td>" + th + "</td><td>" +
+          ((E - th) / (1 - th)).toFixed(4) + "</td>" +
+          LINE_RHOS.map(function (r) { return "<td>" + fmtW(w(r, th, E)) + "</td>"; }).join("") + "</tr>";
+      }).join("") + "</tbody>";
+      $("dataTable").innerHTML = head + body;
+    }
+
+    /* ------------------------------ population CDF ------------------------------ */
+    // Same viewBox width, margins and X() as the chart above, so the two theta axes line
+    // up when the pair is read as a stack.
+    var H2 = 330, PH2 = H2 - M.t - M.b;
+
+    function renderCdf(E) {
+      var xMin = THETAS[0], xMax = THETAS[THETAS.length - 1];
+      var X = function (th) { return M.l + (th - xMin) / (xMax - xMin) * PW; };
+      var Y = function (share) { return M.t + PH2 - share * PH2; };
+
+      var s = [];
+      s.push("<rect x='" + X(BAND[0]).toFixed(1) + "' y='" + M.t + "' width='" + (X(BAND[1]) - X(BAND[0])).toFixed(1) +
+             "' height='" + PH2 + "' fill='var(--band-fill)'></rect>");
+
+      [0, 0.25, 0.5, 0.75, 1].forEach(function (q) {
+        var y = Y(q);
+        // half the population is the line the treatment arm crosses at the shipped theta,
+        // so it gets a readable stroke while the rest stay recessive
+        var strong = q === 0.5;
+        s.push("<line x1='" + M.l + "' y1='" + y.toFixed(1) + "' x2='" + (M.l + PW) + "' y2='" + y.toFixed(1) +
+               "' stroke='" + (strong ? "var(--ink-faint)" : "var(--grid)") + "' stroke-width='1'></line>");
+        s.push("<text x='" + (M.l - 8) + "' y='" + (y + 3.5).toFixed(1) +
+               "' fill='var(--ink-faint)' font-size='10' text-anchor='end'>" + Math.round(q * 100) + "%</text>");
+      });
+
+      s.push("<line x1='" + M.l + "' y1='" + (M.t + PH2) + "' x2='" + (M.l + PW) + "' y2='" + (M.t + PH2) +
+             "' stroke='var(--rule)' stroke-width='1'></line>");
+      [0.1, 0.3, 0.5, 0.585, 0.7, 0.8, 0.9].forEach(function (th) {
+        s.push("<text x='" + X(th).toFixed(1) + "' y='" + (M.t + PH2 + 16) +
+               "' fill='var(--ink-faint)' font-size='10' text-anchor='middle'>" + th + "</text>");
+      });
+      s.push("<text x='" + (M.l + PW / 2).toFixed(1) + "' y='" + (H2 - 8) +
+             "' fill='var(--ink-muted)' font-size='11' text-anchor='middle'>θ — expert threshold</text>");
+      s.push("<text transform='translate(14," + (M.t + PH2 / 2).toFixed(1) +
+             ") rotate(-90)' fill='var(--ink-muted)' font-size='11' text-anchor='middle'>share of population below θ</text>");
+
+      [[SHIP_THETA, "var(--ref-line)", "none"], [LEGACY_THETA, "var(--wm-line)", "4 3"]].forEach(function (r) {
+        s.push("<line x1='" + X(r[0]).toFixed(1) + "' y1='" + M.t + "' x2='" + X(r[0]).toFixed(1) + "' y2='" + (M.t + PH2) +
+               "' stroke='" + r[1] + "' stroke-width='1.5'" + (r[2] === "none" ? "" : " stroke-dasharray='" + r[2] + "'") + "></line>");
+      });
+
+      // Where the current anchor sits in the population. A percentile IS a y value on
+      // these axes, so it can be drawn rather than only stated.
+      var pctl = shareBelow(E, "base");
+      s.push("<line x1='" + M.l + "' y1='" + Y(pctl).toFixed(1) + "' x2='" + (M.l + PW) + "' y2='" + Y(pctl).toFixed(1) +
+             "' stroke='var(--accent)' stroke-width='1.5' stroke-dasharray='2 3'></line>");
+      s.push("<text x='" + (M.l + PW - 2) + "' y='" + (Y(pctl) + (pctl > 0.85 ? 14 : -6)).toFixed(1) +
+             "' fill='var(--accent)' font-size='10' text-anchor='end'>anchor E = " + E.toFixed(4) +
+             " sits at the " + (pctl * 100).toFixed(1) + "th percentile</text>");
+
+      ARMS.forEach(function (arm) {
+        var col = "var(" + arm.token + ")";
+        var pts = [], th;
+        for (th = xMin; th <= xMax + 1e-9; th += 0.01) pts.push(X(th).toFixed(1) + "," + Y(shareBelow(th, arm.id)).toFixed(1));
+        s.push("<polyline points='" + pts.join(" ") + "' fill='none' stroke='" + col +
+               "' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'></polyline>");
+        // marked and labelled at the shipped theta -- the number the panel exists to give
+        var v = shareBelow(SHIP_THETA, arm.id);
+        s.push("<circle cx='" + X(SHIP_THETA).toFixed(1) + "' cy='" + Y(v).toFixed(1) +
+               "' r='4' fill='" + col + "' stroke='var(--panel)' stroke-width='2'></circle>");
+        s.push("<text x='" + (X(SHIP_THETA) + 9).toFixed(1) + "' y='" + (Y(v) + (arm.id === "ai" ? -8 : 15)).toFixed(1) +
+               "' fill='var(--ink)' font-size='10.5'>" + (v * 100).toFixed(0) + "% — " + arm.label + "</text>");
+      });
+
+      s.push("<rect id='hit2' x='" + M.l + "' y='" + M.t + "' width='" + PW + "' height='" + PH2 + "' fill='transparent'></rect>");
+      s.push("<line id='cross2' x1='0' y1='" + M.t + "' x2='0' y2='" + (M.t + PH2) +
+             "' stroke='var(--ink-faint)' stroke-width='1' opacity='0'></line>");
+
+      var svg = $("cdfChart");
+      svg.innerHTML = "<title id='cdfTitle'>Share of the population below θ, by arm</title>" + s.join("");
+
+      var hit = svg.querySelector("#hit2"), cross = svg.querySelector("#cross2");
+      hit.addEventListener("mousemove", function (evt) {
+        var box = svg.getBoundingClientRect();
+        var th = xMin + ((evt.clientX - box.left) / box.width * W - M.l) / PW * (xMax - xMin);
+        th = Math.max(xMin, Math.min(xMax, Math.round(th * 200) / 200));
+        cross.setAttribute("x1", X(th).toFixed(1));
+        cross.setAttribute("x2", X(th).toFixed(1));
+        cross.setAttribute("opacity", "1");
+        var rows = ARMS.map(function (arm) {
+          return "<div class='tv'><span style='display:inline-block;width:10px;height:3px;border-radius:2px;background:var(" +
+                 arm.token + ");vertical-align:middle;margin-right:5px'></span>" + arm.label +
+                 " &nbsp; <b>" + (shareBelow(th, arm.id) * 100).toFixed(1) + "%</b></div>";
+        }).join("");
+        showTip(evt, "<div class='tk'>below θ = " + th.toFixed(3) + "</div>" + rows +
+          "<div class='tk' style='margin-top:.3rem'>each of these counts as w &lt; 1 at that θ</div>");
+      });
+      hit.addEventListener("mouseleave", function () { cross.setAttribute("opacity", "0"); hideTip(); });
+
+      $("cdfLegend").innerHTML = ARMS.map(function (arm) {
+        return "<span class='sw'><i style='background:var(" + arm.token + ")'></i>" + arm.label + "</span>";
+      }).join("");
+      $("cdfReadout").innerHTML = "at the shipped θ = 0.585: " +
+        (shareBelow(SHIP_THETA, "base") * 100).toFixed(1) + "% / " +
+        (shareBelow(SHIP_THETA, "ai") * 100).toFixed(1) + "% below the bar";
+
+      var head = "<thead><tr><th>θ</th><th>below, AI off</th><th>below, AI on</th><th>AI penalty</th></tr></thead>";
+      var body = "<tbody>" + THETAS.map(function (th) {
+        var b = shareBelow(th, "base"), a = shareBelow(th, "ai");
+        return "<tr" + (th === SHIP_THETA ? " class='shipped-row'" : "") + "><td>" + th + "</td><td>" +
+          (b * 100).toFixed(1) + "%</td><td>" + (a * 100).toFixed(1) + "%</td><td>+" +
+          ((a - b) * 100).toFixed(1) + " pp</td></tr>";
+      }).join("") + "</tbody>";
+      $("cdfTable").innerHTML = head + body;
+
+      $("cdfCap").innerHTML = "Empirical CDF of live expertise at t = 1440, 11,322 agents, mean of seeds 1–3 of the " +
+        "same <code>experiment.5</code> configuration the anchors come from. <b>AI moves about 6 points of the " +
+        "population across the expert bar</b>, and the treatment arm crosses half the population at θ = 0.5835 " +
+        "— within 0.002 of the shipped constant. Everyone to the left of a given θ counts as w &lt; 1 at that θ.";
+    }
+
+    /* ---------------------------------- tiles ---------------------------------- */
+    function renderTiles(E) {
+      var vShip = w(SHIP_RHO, SHIP_THETA, E);
+      var ex = (E - SHIP_THETA) / (1 - SHIP_THETA);
+      var vLo = w(SHIP_RHO, BAND[1], E), vHi = w(SHIP_RHO, BAND[0], E);
+      var vLegacy = w(SHIP_RHO, LEGACY_THETA, E);
+
+      $("tShipped").textContent = fmtMult(vShip);
+      $("tShippedSub").innerHTML = "ρ = 1,000 &middot; θ = 0.585 &middot; E = " + E.toFixed(4) +
+        "<br>threshold-expert equivalents, one person";
+      $("tExp").textContent = ex.toFixed(3);
+      $("tExpSub").innerHTML = "w = ρ<sup>" + ex.toFixed(3) + "</sup><br>at θ = 0.70 (legacy) it is " +
+        ((E - LEGACY_THETA) / (1 - LEGACY_THETA)).toFixed(3) + ", giving " + fmtMult(vLegacy);
+      $("tBand").textContent = fmtMult(vLo) + " – " + fmtMult(vHi);
+      $("tBandSub").innerHTML = "θ = 0.86 → 0.30, a " + (vHi / vLo).toFixed(1) +
+        "× swing<br>from a constant with no external measurement";
+
+      $("heatCap").innerHTML = "One person at E = <b>" + E.toFixed(4) + "</b>, in threshold-expert equivalents, " +
+        "for every ρ in the sensitivity ladder against every θ in <code>THRESHOLDS</code>. " +
+        "Colour is log w on a single hue; the printed value in each cell is the number itself, so the grid " +
+        "reads as a table when colour does not survive.";
+      $("lineCap").innerHTML = "The same weights as curves. ρ scales w by a fixed factor — the lines keep " +
+        "their spacing — while θ moves the exponent and pulls every line down to 1× as it approaches " +
+        "E = " + E.toFixed(4) + ". Log y axis.";
+    }
+
+    /* --------------------------------- controls --------------------------------- */
+    var sel = $("anchor"), slider = $("eSlider");
+    sel.innerHTML = ANCHORS.map(function (a) {
+      return "<option value='" + a.E + "'>" + a.label + " — E = " + a.E.toFixed(4) + "</option>";
+    }).join("") + "<option value='custom'>Custom — use the slider</option>";
+
+    function draw(E) {
+      $("eVal").textContent = E.toFixed(4);
+      renderTiles(E);
+      renderHeat(E);
+      renderLines(E);
+      renderCdf(E);
+    }
+
+    sel.addEventListener("change", function () {
+      if (sel.value === "custom") { slider.focus(); return; }
+      var E = +sel.value;
+      slider.value = E;
+      draw(E);
+    });
+    slider.addEventListener("input", function () {
+      var E = +slider.value;
+      var match = ANCHORS.filter(function (a) { return Math.abs(a.E - E) < 0.0005; })[0];
+      sel.value = match ? String(match.E) : "custom";
+      draw(E);
+    });
+
+    $("tableBtn").addEventListener("click", function () {
+      var on = $("tableBox").hidden;
+      $("tableBox").hidden = !on;
+      this.setAttribute("aria-pressed", on ? "true" : "false");
+      this.textContent = on ? "Hide series table" : "Show series as table";
+    });
+
+    $("cdfTableBtn").addEventListener("click", function () {
+      var on = $("cdfTableBox").hidden;
+      $("cdfTableBox").hidden = !on;
+      this.setAttribute("aria-pressed", on ? "true" : "false");
+      this.textContent = on ? "Hide population table" : "Show population as table";
+    });
+
+    $("themeBtn").addEventListener("click", function () {
+      var r = document.documentElement;
+      var dark = r.getAttribute("data-theme") === "dark" ||
+                 (!r.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      r.setAttribute("data-theme", dark ? "light" : "dark");
+      draw(+slider.value);   // ramp colours are read from the tokens, so redraw
+    });
+
+    draw(ANCHORS[0].E);
+  })();
+</script>

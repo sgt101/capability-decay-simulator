@@ -1,0 +1,471 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Capability ratio sensitivity — acl.1</title>
+<style>
+:root{--bg:#eef0ee;--panel:#fff;--panel-2:#f4f5f3;--ink:#14181a;--ink-muted:#5c6360;--ink-faint:#8b918d;
+--rule:#d7dad6;--accent:#a8502c;--accent2:#35636b;--ref-line:#6b3fa0;--warn:#a8502c;
+--shadow:0 1px 2px rgba(20,24,26,.07)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101314;--panel:#171b1d;--panel-2:#1d2224;
+--ink:#e8eae6;--ink-muted:#93a09c;--ink-faint:#656e6b;--rule:#2b3234;--accent:#dd8259;--accent2:#7fb0b7;
+--ref-line:#c79bff;--warn:#dd8259;--shadow:0 1px 3px rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--bg:#101314;--panel:#171b1d;--panel-2:#1d2224;
+--ink:#e8eae6;--ink-muted:#93a09c;--ink-faint:#656e6b;--rule:#2b3234;--accent:#dd8259;--accent2:#7fb0b7;
+--ref-line:#c79bff;--warn:#dd8259;--shadow:0 1px 3px rgba(0,0,0,.5)}
+*{box-sizing:border-box}
+body{margin:0;padding:2.2rem 1.25rem 4rem;background:var(--bg);color:var(--ink);
+font:14.5px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:62rem;margin:0 auto;display:flex;flex-direction:column;gap:1.1rem}
+h1{font-size:1.25rem;margin:0}
+h2{font-size:1.05rem;margin:0}
+h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin:0 0 .5rem}
+p{margin:0 0 .6rem;color:var(--ink-muted);max-width:46rem}
+p:last-child{margin-bottom:0}
+a{color:var(--accent2)}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);padding:1rem}
+.head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem}
+.head .sub{font-size:.78rem;color:var(--ink-muted)}
+.facts{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--ink-faint)}
+table.data-table{border-collapse:collapse;width:100%;font-size:.82rem}
+table.data-table th,table.data-table td{border:1px solid var(--rule);padding:.35rem .55rem;text-align:right;
+font-family:ui-monospace,monospace;white-space:nowrap}
+table.data-table th:first-child,table.data-table td:first-child{text-align:left}
+table.data-table th{background:var(--panel-2);font-weight:600}
+table.data-table td.neg{color:var(--warn)}
+table.data-table tbody tr.ref td{background:var(--panel-2)}
+.table-scroll{overflow:auto;max-height:480px}
+.fig-toolbar{display:flex;gap:.4rem;align-items:center;justify-content:flex-end;margin:.35rem 0 0}
+.copy-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .6rem;font:inherit;font-size:.72rem;
+color:var(--ink-muted);background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;cursor:pointer}
+.copy-btn:hover{color:var(--ink);border-color:var(--ink-faint)}
+.copy-btn:active{transform:translateY(1px)}
+.copy-btn.is-done{color:#2e7d4f;border-color:#2e7d4f}
+.copy-btn.is-fail{color:#c0392b;border-color:#c0392b}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .copy-btn.is-done{color:#7fd4a2;border-color:#7fd4a2}
+:root:not([data-theme="light"]) .copy-btn.is-fail{color:#f08a80;border-color:#f08a80}}
+.copy-btn svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8}
+.canvas-wrap{position:relative;overflow-x:auto}
+.canvas-wrap canvas{width:100%;min-width:460px;display:block;cursor:default}
+.figcap{margin:.7rem 0 0;padding-top:.6rem;border-top:1px solid var(--rule);font-size:.74rem;
+line-height:1.55;color:var(--ink-muted)}
+.key{background:var(--panel-2);border:1px solid var(--rule);border-left:3px solid var(--accent2);
+padding:.85rem 1rem;border-radius:4px}
+.key p{color:var(--ink-muted);max-width:none}
+.key b{color:var(--ink)}
+</style></head><body><main>
+<div class="panel">
+  <div class="head"><h1>Capability ratio sensitivity &mdash; acl.1</h1></div>
+  <p>How much of the capability result is the assumed constant &rho;? The capability weight is
+  w(E) = &rho;<sup>(E&minus;&theta;)/(1&minus;&theta;)</sup> with &theta; = 0.585, so &rho; asserts
+  that one person at the ceiling is worth &rho; people at the expert threshold. Neither constant is
+  measured against anything external: &theta; was chosen as a robustness midpoint, and that argument
+  was made under the legacy calibration rather than the world-model regime these experiments run in.
+  &rho; has never had an argument of either kind &mdash; it is a stated assumption that appears in
+  engine.js and nowhere else. It affects reported output only, never the update, so one set of runs
+  yields every &rho; here.</p>
+  <p class="facts">config: acl.1.json &middot; axes: aiLevelFraction x aiDampeningBelow
+  &middot; 18 cells (stride 1) &middot; 32 replicates &middot; t = 1440
+  &middot; 21 values of &rho; &middot; <a href="../index.html">all experiments</a></p>
+</div>
+
+<div class="panel">
+  <div class="canvas-wrap"><canvas id="fig-rankcorr" style="height:250px"></canvas></div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-fig="rankcorr" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy PNG</span></button>
+    <button class="copy-btn" data-fig="rankcorr" data-act="save" type="button" title="Save this figure as a PNG file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg><span>Download PNG</span></button>
+  </div>
+  <p class="figcap">Rank correlation of per-cell capability change against the shipped &rho;. 1.0 means the ordering of cells is identical; the dashed line marks &rho; = 1000, where the correlation is 1 by construction.</p>
+</div>
+
+<div class="panel">
+  <div class="canvas-wrap"><canvas id="fig-median" style="height:250px"></canvas></div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-fig="median" data-act="copy" type="button" title="Copy this figure to the clipboard as a PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy PNG</span></button>
+    <button class="copy-btn" data-fig="median" data-act="save" type="button" title="Save this figure as a PNG file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg><span>Download PNG</span></button>
+  </div>
+  <p class="figcap">Median capability change, per cent. The solid rule is zero: where the curve crosses it, AI stops reading as a gain and starts reading as a loss.</p>
+</div>
+
+<div class="panel">
+  <div class="head"><h2>Summary</h2><span class="sub">one row per &rho;</span></div>
+  <div class="table-scroll"><table class="data-table"><thead>
+<tr><th>&rho;</th><th>slope d ln w/dE</th><th>rank corr. vs shipped</th><th>median capability change (%)</th></tr>
+</thead><tbody>
+<tr><td>1</td><td>0.00</td><td>-0.8596</td><td class="">21.48</td></tr>
+<tr><td>2</td><td>1.67</td><td>-0.7317</td><td class="">16.14</td></tr>
+<tr><td>3</td><td>2.65</td><td>-0.7007</td><td class="">13.47</td></tr>
+<tr><td>4</td><td>3.34</td><td>-0.6636</td><td class="">11.79</td></tr>
+<tr><td>5</td><td>3.88</td><td>-0.6636</td><td class="">10.59</td></tr>
+<tr><td>6</td><td>4.32</td><td>-0.5893</td><td class="">9.68</td></tr>
+<tr><td>7</td><td>4.69</td><td>-0.5521</td><td class="">8.94</td></tr>
+<tr><td>8</td><td>5.01</td><td>-0.5273</td><td class="">8.34</td></tr>
+<tr><td>16</td><td>6.68</td><td>-0.4180</td><td class="">5.98</td></tr>
+<tr><td>32</td><td>8.35</td><td>0.0423</td><td class="">5.09</td></tr>
+<tr><td>64</td><td>10.02</td><td>0.4427</td><td class="">5.11</td></tr>
+<tr><td>66</td><td>10.10</td><td>0.4551</td><td class="">5.12</td></tr>
+<tr><td>128</td><td>11.69</td><td>0.7771</td><td class="">4.22</td></tr>
+<tr><td>187</td><td>12.61</td><td>0.8596</td><td class="">3.71</td></tr>
+<tr><td>256</td><td>13.36</td><td>0.9216</td><td class="">3.34</td></tr>
+<tr><td>263</td><td>13.43</td><td>0.9216</td><td class="">3.31</td></tr>
+<tr><td>512</td><td>15.03</td><td>0.9897</td><td class="">2.38</td></tr>
+<tr><td>735</td><td>15.90</td><td>0.9917</td><td class="">2.00</td></tr>
+<tr class="ref"><td>1000 *</td><td>16.65</td><td>1.0000</td><td class="">1.76</td></tr>
+<tr><td>1024</td><td>16.70</td><td>1.0000</td><td class="">1.71</td></tr>
+<tr><td>2048</td><td>18.37</td><td>0.9979</td><td class="">0.31</td></tr>
+</tbody></table></div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-tex="summary" type="button" title="Copy this table as a LaTeX tabular (booktabs)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy as LaTeX</span></button>
+  </div>
+  <p class="figcap">* the shipped CAPABILITY_RATIO, and the reference the correlations are measured against.</p>
+</div>
+
+<div class="panel">
+  <div class="head"><h2>Reading this</h2></div>
+  <div class="key">
+    <p>Two different questions, and they have different answers.</p>
+    <p style="margin-top:.6rem"><b>Does &rho; reorder the cells?</b> That is the rank correlation.
+    Where it is 1.000 every comparative claim &mdash; &ldquo;this condition is worse than that
+    one&rdquo; &mdash; is independent of the assumption. Where it is not, the reported ordering
+    holds only at the &rho; that produced it.</p>
+    <p style="margin-top:.6rem"><b>Does &rho; set the sign?</b> That is the crossover column. A
+    natural guess is that &rho; only rescales, because capability change would then be
+    exp(k&middot;&Delta;E) &minus; 1 with k = ln&rho;/(1&minus;&theta;). That holds only when a
+    condition shifts the whole expertise distribution uniformly. In general
+    C = &sum;<sub>i</sub> w(E<sub>i</sub>)&#8467;(E<sub>i</sub>) is a sum over the population and
+    &rho; decides <em>which part of it dominates</em>: at low &rho; the weight is nearly flat and C
+    behaves like a headcount, so the AI leverage term &#8467; drives the result; at high &rho;
+    almost all of C sits in the top tail, and the result is whatever happened to the best few per
+    cent. A cell whose crossover falls inside the swept range reports a capability <em>gain</em>
+    below it and a <em>loss</em> above it.</p>
+    <p style="margin-top:.6rem"><b>Here: 9 of 18 cells change sign</b> within
+    &rho; = 1&ndash;2048, and the median cell does not cross.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="head"><h2>Per cell</h2><span class="sub">capability change (%) at each &rho;</span></div>
+  <div class="table-scroll"><table class="data-table"><thead>
+<tr><th>aiLevelFraction</th><th>aiDampeningBelow</th><th>&Delta;meanE</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>16</th><th>32</th><th>64</th><th>66</th><th>128</th><th>187</th><th>256</th><th>263</th><th>512</th><th>735</th><th>1000</th><th>1024</th><th>2048</th><th>crossover &rho;</th></tr>
+</thead><tbody>
+<tr><td>0.2</td><td>0.8385</td><td>-0.0001</td><td class="">2.41</td><td class="">3.22</td><td class="">3.78</td><td class="">4.19</td><td class="">4.52</td><td class="">4.80</td><td class="">5.03</td><td class="">5.23</td><td class="">6.30</td><td class="">7.41</td><td class="">8.55</td><td class="">8.60</td><td class="">9.73</td><td class="">10.39</td><td class="">10.95</td><td class="">11.00</td><td class="">12.21</td><td class="">12.87</td><td class="">13.45</td><td class="">13.49</td><td class="">14.81</td><td>—</td></tr>
+<tr><td>0.2</td><td>0.8113</td><td>-0.0019</td><td class="">2.39</td><td class="">2.93</td><td class="">3.34</td><td class="">3.66</td><td class="">3.90</td><td class="">4.10</td><td class="">4.27</td><td class="">4.42</td><td class="">5.17</td><td class="">5.89</td><td class="">6.60</td><td class="">6.63</td><td class="">7.31</td><td class="">7.69</td><td class="">8.02</td><td class="">8.05</td><td class="">8.74</td><td class="">9.13</td><td class="">9.46</td><td class="">9.48</td><td class="">10.24</td><td>—</td></tr>
+<tr><td>0.2</td><td>0.7636</td><td>-0.0055</td><td class="">2.34</td><td class="">2.42</td><td class="">2.66</td><td class="">2.88</td><td class="">3.08</td><td class="">3.25</td><td class="">3.39</td><td class="">3.52</td><td class="">4.23</td><td class="">4.96</td><td class="">5.72</td><td class="">5.75</td><td class="">6.49</td><td class="">6.91</td><td class="">7.27</td><td class="">7.30</td><td class="">8.05</td><td class="">8.47</td><td class="">8.82</td><td class="">8.84</td><td class="">9.64</td><td>—</td></tr>
+<tr><td>0.4</td><td>0.8385</td><td>-0.0106</td><td class="">6.54</td><td class="">5.23</td><td class="">4.82</td><td class="">4.66</td><td class="">4.59</td><td class="">4.56</td><td class="">4.55</td><td class="">4.56</td><td class="">4.73</td><td class="">5.04</td><td class="">5.44</td><td class="">5.46</td><td class="">5.88</td><td class="">6.13</td><td class="">6.34</td><td class="">6.36</td><td class="">6.83</td><td class="">7.09</td><td class="">7.31</td><td class="">7.33</td><td class="">7.83</td><td>—</td></tr>
+<tr><td>0.4</td><td>0.8113</td><td>-0.0127</td><td class="">6.54</td><td class="">4.91</td><td class="">4.37</td><td class="">4.11</td><td class="">3.98</td><td class="">3.90</td><td class="">3.85</td><td class="">3.82</td><td class="">3.79</td><td class="">3.90</td><td class="">4.07</td><td class="">4.08</td><td class="">4.28</td><td class="">4.40</td><td class="">4.51</td><td class="">4.52</td><td class="">4.76</td><td class="">4.89</td><td class="">5.01</td><td class="">5.02</td><td class="">5.30</td><td>—</td></tr>
+<tr><td>0.4</td><td>0.7636</td><td>-0.0183</td><td class="">6.53</td><td class="">4.10</td><td class="">3.22</td><td class="">2.79</td><td class="">2.53</td><td class="">2.37</td><td class="">2.26</td><td class="">2.19</td><td class="">1.97</td><td class="">1.95</td><td class="">2.04</td><td class="">2.04</td><td class="">2.17</td><td class="">2.26</td><td class="">2.34</td><td class="">2.34</td><td class="">2.51</td><td class="">2.61</td><td class="">2.69</td><td class="">2.70</td><td class="">2.89</td><td>—</td></tr>
+<tr><td>0.6</td><td>0.8385</td><td>-0.0162</td><td class="">14.38</td><td class="">10.77</td><td class="">9.18</td><td class="">8.26</td><td class="">7.66</td><td class="">7.23</td><td class="">6.90</td><td class="">6.64</td><td class="">5.65</td><td class="">5.07</td><td class="">4.79</td><td class="">4.78</td><td class="">4.69</td><td class="">4.70</td><td class="">4.73</td><td class="">4.74</td><td class="">4.86</td><td class="">4.95</td><td class="">5.04</td><td class="">5.04</td><td class="">5.27</td><td>—</td></tr>
+<tr><td>0.6</td><td>0.8113</td><td>-0.0187</td><td class="">14.42</td><td class="">10.40</td><td class="">8.63</td><td class="">7.61</td><td class="">6.94</td><td class="">6.45</td><td class="">6.08</td><td class="">5.79</td><td class="">4.65</td><td class="">3.96</td><td class="">3.56</td><td class="">3.55</td><td class="">3.36</td><td class="">3.31</td><td class="">3.29</td><td class="">3.29</td><td class="">3.30</td><td class="">3.33</td><td class="">3.37</td><td class="">3.37</td><td class="">3.48</td><td>—</td></tr>
+<tr><td>0.6</td><td>0.7636</td><td>-0.0254</td><td class="">14.52</td><td class="">9.33</td><td class="">6.99</td><td class="">5.62</td><td class="">4.69</td><td class="">4.02</td><td class="">3.50</td><td class="">3.09</td><td class="">1.41</td><td class="">0.30</td><td class="neg">-0.41</td><td class="neg">-0.44</td><td class="neg">-0.86</td><td class="neg">-1.02</td><td class="neg">-1.11</td><td class="neg">-1.12</td><td class="neg">-1.23</td><td class="neg">-1.25</td><td class="neg">-1.25</td><td class="neg">-1.25</td><td class="neg">-1.21</td><td>43</td></tr>
+<tr><td>0.8</td><td>0.8385</td><td>-0.0198</td><td class="">28.45</td><td class="">23.53</td><td class="">20.92</td><td class="">19.20</td><td class="">17.93</td><td class="">16.94</td><td class="">16.13</td><td class="">15.45</td><td class="">12.22</td><td class="">9.43</td><td class="">7.06</td><td class="">6.96</td><td class="">5.06</td><td class="">4.11</td><td class="">3.39</td><td class="">3.33</td><td class="">2.01</td><td class="">1.39</td><td class="">0.91</td><td class="">0.88</td><td class="neg">-0.04</td><td>1988</td></tr>
+<tr><td>0.8</td><td>0.8113</td><td>-0.0243</td><td class="">28.53</td><td class="">22.73</td><td class="">19.67</td><td class="">17.66</td><td class="">16.19</td><td class="">15.04</td><td class="">14.10</td><td class="">13.32</td><td class="">9.59</td><td class="">6.40</td><td class="">3.67</td><td class="">3.56</td><td class="">1.35</td><td class="">0.23</td><td class="neg">-0.61</td><td class="neg">-0.68</td><td class="neg">-2.27</td><td class="neg">-3.03</td><td class="neg">-3.62</td><td class="neg">-3.67</td><td class="neg">-4.85</td><td>204</td></tr>
+<tr><td>0.8</td><td>0.7636</td><td>-0.0312</td><td class="">28.66</td><td class="">21.51</td><td class="">17.77</td><td class="">15.31</td><td class="">13.52</td><td class="">12.12</td><td class="">10.99</td><td class="">10.04</td><td class="">5.54</td><td class="">1.72</td><td class="neg">-1.53</td><td class="neg">-1.66</td><td class="neg">-4.26</td><td class="neg">-5.57</td><td class="neg">-6.55</td><td class="neg">-6.63</td><td class="neg">-8.45</td><td class="neg">-9.32</td><td class="neg">-9.99</td><td class="neg">-10.04</td><td class="neg">-11.35</td><td>46</td></tr>
+<tr><td>0.85</td><td>0.8385</td><td>-0.0209</td><td class="">32.31</td><td class="">27.27</td><td class="">24.57</td><td class="">22.76</td><td class="">21.42</td><td class="">20.36</td><td class="">19.49</td><td class="">18.75</td><td class="">15.18</td><td class="">11.98</td><td class="">9.11</td><td class="">8.99</td><td class="">6.55</td><td class="">5.26</td><td class="">4.26</td><td class="">4.18</td><td class="">2.24</td><td class="">1.28</td><td class="">0.50</td><td class="">0.45</td><td class="neg">-1.15</td><td>1243</td></tr>
+<tr><td>0.85</td><td>0.8113</td><td>-0.0246</td><td class="">32.36</td><td class="">26.55</td><td class="">23.44</td><td class="">21.36</td><td class="">19.82</td><td class="">18.60</td><td class="">17.60</td><td class="">16.75</td><td class="">12.64</td><td class="">8.95</td><td class="">5.64</td><td class="">5.50</td><td class="">2.68</td><td class="">1.19</td><td class="">0.04</td><td class="neg">-0.06</td><td class="neg">-2.30</td><td class="neg">-3.42</td><td class="neg">-4.32</td><td class="neg">-4.38</td><td class="neg">-6.23</td><td>259</td></tr>
+<tr><td>0.85</td><td>0.7636</td><td>-0.0318</td><td class="">32.46</td><td class="">25.18</td><td class="">21.29</td><td class="">18.71</td><td class="">16.81</td><td class="">15.31</td><td class="">14.08</td><td class="">13.04</td><td class="">8.03</td><td class="">3.58</td><td class="neg">-0.39</td><td class="neg">-0.56</td><td class="neg">-3.93</td><td class="neg">-5.70</td><td class="neg">-7.08</td><td class="neg">-7.20</td><td class="neg">-9.89</td><td class="neg">-11.23</td><td class="neg">-12.32</td><td class="neg">-12.40</td><td class="neg">-14.65</td><td>60</td></tr>
+<tr><td>0.875</td><td>0.8385</td><td>-0.0199</td><td class="">34.16</td><td class="">29.42</td><td class="">26.87</td><td class="">25.17</td><td class="">23.90</td><td class="">22.90</td><td class="">22.07</td><td class="">21.37</td><td class="">17.93</td><td class="">14.79</td><td class="">11.90</td><td class="">11.78</td><td class="">9.25</td><td class="">7.89</td><td class="">6.81</td><td class="">6.72</td><td class="">4.58</td><td class="">3.50</td><td class="">2.61</td><td class="">2.54</td><td class="">0.67</td><td>—</td></tr>
+<tr><td>0.875</td><td>0.8113</td><td>-0.0245</td><td class="">34.22</td><td class="">28.49</td><td class="">25.41</td><td class="">23.34</td><td class="">21.80</td><td class="">20.59</td><td class="">19.59</td><td class="">18.74</td><td class="">14.58</td><td class="">10.79</td><td class="">7.32</td><td class="">7.18</td><td class="">4.15</td><td class="">2.54</td><td class="">1.26</td><td class="">1.15</td><td class="neg">-1.39</td><td class="neg">-2.68</td><td class="neg">-3.73</td><td class="neg">-3.81</td><td class="neg">-6.02</td><td>356</td></tr>
+<tr><td>0.875</td><td>0.7636</td><td>-0.0324</td><td class="">34.30</td><td class="">26.96</td><td class="">23.05</td><td class="">20.46</td><td class="">18.54</td><td class="">17.03</td><td class="">15.80</td><td class="">14.75</td><td class="">9.67</td><td class="">5.11</td><td class="">0.98</td><td class="">0.80</td><td class="neg">-2.77</td><td class="neg">-4.67</td><td class="neg">-6.16</td><td class="neg">-6.29</td><td class="neg">-9.25</td><td class="neg">-10.76</td><td class="neg">-11.98</td><td class="neg">-12.07</td><td class="neg">-14.64</td><td>77</td></tr>
+</tbody></table></div>
+  <div class="fig-toolbar">
+    <button class="copy-btn" data-tex="cells" type="button" title="Copy this table as a LaTeX tabular (booktabs)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy as LaTeX</span></button>
+  </div>
+  <p class="figcap">&Delta;meanE is the same cell&rsquo;s expertise change &mdash; the quantity that does not depend on &rho; at all. The last column is the &rho; at which that cell&rsquo;s capability change crosses zero.</p>
+</div>
+</main><script>
+(function () {
+  var FIGS = {"rankcorr":{"title":"Rank correlation against the shipped ρ — acl.1","subtitle":"Spearman correlation of per-cell capability change vs ρ = 1000. 1.0 means the ordering of cells is identical.","foot":"rho sensitivity · acl.1 · aiLevelFraction × aiDampeningBelow · 18 cells · 32 replicates · t = 1440","file":"rho-acl.1-rankcorr.png","rhos":[1,2,3,4,5,6,7,8,16,32,64,66,128,187,256,263,512,735,1000,1024,2048],"markRho":1000,"zeroLine":true,"y0":-1,"y1":1,"dp":1,"ylabel":"rank correlation vs ρ = 1000","xlabel":"ρ (log scale)","panels":[{"label":null,"values":[-0.8596491228070176,-0.7316821465428277,-0.7007223942208463,-0.6635706914344686,-0.6635706914344686,-0.5892672858617131,-0.5521155830753354,-0.5273477812177503,-0.4179566563467492,0.04231166150670795,0.44272445820433437,0.4551083591331269,0.7770897832817337,0.8596491228070176,0.9215686274509803,0.9215686274509803,0.9896800825593395,0.9917440660474717,1,1,0.9979360165118679]}]},"median":{"title":"Median capability change — acl.1","subtitle":"Median across cells of the change from the no-AI baseline, per cent, at each ρ.","foot":"rho sensitivity · acl.1 · aiLevelFraction × aiDampeningBelow · 18 cells · 32 replicates · t = 1440","file":"rho-acl.1-median.png","rhos":[1,2,3,4,5,6,7,8,16,32,64,66,128,187,256,263,512,735,1000,1024,2048],"markRho":1000,"zeroLine":true,"dp":1,"ylabel":"median capability change (%)","xlabel":"ρ (log scale)","panels":[{"label":null,"values":[21.48310952434116,16.136218402228906,13.472034312353195,11.787900270973214,10.589563548069128,9.67507068402065,8.944166173089881,8.340522158321457,5.9757695854997195,5.0898687000886245,5.111893584045486,5.117351881943861,4.216225133980543,3.705975659981627,3.336761922618333,3.306909102953976,2.377576778767021,2.000489155178295,1.7613321148720265,1.7103724191898084,0.3140771753951336]}]}};
+  var TEX = {"summary":"% Capability ratio sensitivity, acl.1: rank correlation and median capability change by $\\rho$.\n% Generated by src/rho_sensitivity.js\n% Requires: \\usepackage{booktabs}\n\\begin{table}[htbp]\n  \\centering\n  \\caption{Capability ratio sensitivity, acl.1: rank correlation and median capability change by $\\rho$.}\n  \\label{tab:rho-acl-1-summary}\n  \\begin{tabular}{r r r r}\n    \\toprule\n    $\\rho$ & $\\mathrm{d}\\ln w/\\mathrm{d}E$ & rank corr.\\ vs shipped & median capability change (\\%) \\\\\n    \\midrule\n    1 & 0.00 & -0.8596 & 21.48 \\\\\n    2 & 1.67 & -0.7317 & 16.14 \\\\\n    3 & 2.65 & -0.7007 & 13.47 \\\\\n    4 & 3.34 & -0.6636 & 11.79 \\\\\n    5 & 3.88 & -0.6636 & 10.59 \\\\\n    6 & 4.32 & -0.5893 & 9.68 \\\\\n    7 & 4.69 & -0.5521 & 8.94 \\\\\n    8 & 5.01 & -0.5273 & 8.34 \\\\\n    16 & 6.68 & -0.4180 & 5.98 \\\\\n    32 & 8.35 & 0.0423 & 5.09 \\\\\n    64 & 10.02 & 0.4427 & 5.11 \\\\\n    66 & 10.10 & 0.4551 & 5.12 \\\\\n    128 & 11.69 & 0.7771 & 4.22 \\\\\n    187 & 12.61 & 0.8596 & 3.71 \\\\\n    256 & 13.36 & 0.9216 & 3.34 \\\\\n    263 & 13.43 & 0.9216 & 3.31 \\\\\n    512 & 15.03 & 0.9897 & 2.38 \\\\\n    735 & 15.90 & 0.9917 & 2.00 \\\\\n    1000 * & 16.65 & 1.0000 & 1.76 \\\\\n    1024 & 16.70 & 1.0000 & 1.71 \\\\\n    2048 & 18.37 & 0.9979 & 0.31 \\\\\n    \\bottomrule\n  \\end{tabular}\n  \\par\\smallskip\\footnotesize * the shipped capability ratio, and the reference the correlations are measured against.\n\\end{table}\n","cells":"% Capability ratio sensitivity, acl.1: per-cell capability change (\\%) at each $\\rho$, with the $\\rho$ at which each cell crosses zero.\n% Generated by src/rho_sensitivity.js\n% Requires: \\usepackage{booktabs},graphicx\n\\begin{table}[htbp]\n  \\centering\n  \\caption{Capability ratio sensitivity, acl.1: per-cell capability change (\\%) at each $\\rho$, with the $\\rho$ at which each cell crosses zero.}\n  \\label{tab:rho-acl-1-cells}\n  \\resizebox{\\textwidth}{!}{%\n    \\begin{tabular}{r r r r r r r r r r r r r r r r r r r r r r r r r}\n      \\toprule\n      aiLevelFraction & aiDampeningBelow & $\\Delta\\overline{E}$ & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 16 & 32 & 64 & 66 & 128 & 187 & 256 & 263 & 512 & 735 & 1000 & 1024 & 2048 & crossover $\\rho$ \\\\\n      \\midrule\n      0.2 & 0.8385 & -0.0001 & 2.41 & 3.22 & 3.78 & 4.19 & 4.52 & 4.80 & 5.03 & 5.23 & 6.30 & 7.41 & 8.55 & 8.60 & 9.73 & 10.39 & 10.95 & 11.00 & 12.21 & 12.87 & 13.45 & 13.49 & 14.81 & n/a \\\\\n      0.2 & 0.8113 & -0.0019 & 2.39 & 2.93 & 3.34 & 3.66 & 3.90 & 4.10 & 4.27 & 4.42 & 5.17 & 5.89 & 6.60 & 6.63 & 7.31 & 7.69 & 8.02 & 8.05 & 8.74 & 9.13 & 9.46 & 9.48 & 10.24 & n/a \\\\\n      0.2 & 0.7636 & -0.0055 & 2.34 & 2.42 & 2.66 & 2.88 & 3.08 & 3.25 & 3.39 & 3.52 & 4.23 & 4.96 & 5.72 & 5.75 & 6.49 & 6.91 & 7.27 & 7.30 & 8.05 & 8.47 & 8.82 & 8.84 & 9.64 & n/a \\\\\n      0.4 & 0.8385 & -0.0106 & 6.54 & 5.23 & 4.82 & 4.66 & 4.59 & 4.56 & 4.55 & 4.56 & 4.73 & 5.04 & 5.44 & 5.46 & 5.88 & 6.13 & 6.34 & 6.36 & 6.83 & 7.09 & 7.31 & 7.33 & 7.83 & n/a \\\\\n      0.4 & 0.8113 & -0.0127 & 6.54 & 4.91 & 4.37 & 4.11 & 3.98 & 3.90 & 3.85 & 3.82 & 3.79 & 3.90 & 4.07 & 4.08 & 4.28 & 4.40 & 4.51 & 4.52 & 4.76 & 4.89 & 5.01 & 5.02 & 5.30 & n/a \\\\\n      0.4 & 0.7636 & -0.0183 & 6.53 & 4.10 & 3.22 & 2.79 & 2.53 & 2.37 & 2.26 & 2.19 & 1.97 & 1.95 & 2.04 & 2.04 & 2.17 & 2.26 & 2.34 & 2.34 & 2.51 & 2.61 & 2.69 & 2.70 & 2.89 & n/a \\\\\n      0.6 & 0.8385 & -0.0162 & 14.38 & 10.77 & 9.18 & 8.26 & 7.66 & 7.23 & 6.90 & 6.64 & 5.65 & 5.07 & 4.79 & 4.78 & 4.69 & 4.70 & 4.73 & 4.74 & 4.86 & 4.95 & 5.04 & 5.04 & 5.27 & n/a \\\\\n      0.6 & 0.8113 & -0.0187 & 14.42 & 10.40 & 8.63 & 7.61 & 6.94 & 6.45 & 6.08 & 5.79 & 4.65 & 3.96 & 3.56 & 3.55 & 3.36 & 3.31 & 3.29 & 3.29 & 3.30 & 3.33 & 3.37 & 3.37 & 3.48 & n/a \\\\\n      0.6 & 0.7636 & -0.0254 & 14.52 & 9.33 & 6.99 & 5.62 & 4.69 & 4.02 & 3.50 & 3.09 & 1.41 & 0.30 & -0.41 & -0.44 & -0.86 & -1.02 & -1.11 & -1.12 & -1.23 & -1.25 & -1.25 & -1.25 & -1.21 & 43 \\\\\n      0.8 & 0.8385 & -0.0198 & 28.45 & 23.53 & 20.92 & 19.20 & 17.93 & 16.94 & 16.13 & 15.45 & 12.22 & 9.43 & 7.06 & 6.96 & 5.06 & 4.11 & 3.39 & 3.33 & 2.01 & 1.39 & 0.91 & 0.88 & -0.04 & 1988 \\\\\n      0.8 & 0.8113 & -0.0243 & 28.53 & 22.73 & 19.67 & 17.66 & 16.19 & 15.04 & 14.10 & 13.32 & 9.59 & 6.40 & 3.67 & 3.56 & 1.35 & 0.23 & -0.61 & -0.68 & -2.27 & -3.03 & -3.62 & -3.67 & -4.85 & 204 \\\\\n      0.8 & 0.7636 & -0.0312 & 28.66 & 21.51 & 17.77 & 15.31 & 13.52 & 12.12 & 10.99 & 10.04 & 5.54 & 1.72 & -1.53 & -1.66 & -4.26 & -5.57 & -6.55 & -6.63 & -8.45 & -9.32 & -9.99 & -10.04 & -11.35 & 46 \\\\\n      0.85 & 0.8385 & -0.0209 & 32.31 & 27.27 & 24.57 & 22.76 & 21.42 & 20.36 & 19.49 & 18.75 & 15.18 & 11.98 & 9.11 & 8.99 & 6.55 & 5.26 & 4.26 & 4.18 & 2.24 & 1.28 & 0.50 & 0.45 & -1.15 & 1243 \\\\\n      0.85 & 0.8113 & -0.0246 & 32.36 & 26.55 & 23.44 & 21.36 & 19.82 & 18.60 & 17.60 & 16.75 & 12.64 & 8.95 & 5.64 & 5.50 & 2.68 & 1.19 & 0.04 & -0.06 & -2.30 & -3.42 & -4.32 & -4.38 & -6.23 & 259 \\\\\n      0.85 & 0.7636 & -0.0318 & 32.46 & 25.18 & 21.29 & 18.71 & 16.81 & 15.31 & 14.08 & 13.04 & 8.03 & 3.58 & -0.39 & -0.56 & -3.93 & -5.70 & -7.08 & -7.20 & -9.89 & -11.23 & -12.32 & -12.40 & -14.65 & 60 \\\\\n      0.875 & 0.8385 & -0.0199 & 34.16 & 29.42 & 26.87 & 25.17 & 23.90 & 22.90 & 22.07 & 21.37 & 17.93 & 14.79 & 11.90 & 11.78 & 9.25 & 7.89 & 6.81 & 6.72 & 4.58 & 3.50 & 2.61 & 2.54 & 0.67 & n/a \\\\\n      0.875 & 0.8113 & -0.0245 & 34.22 & 28.49 & 25.41 & 23.34 & 21.80 & 20.59 & 19.59 & 18.74 & 14.58 & 10.79 & 7.32 & 7.18 & 4.15 & 2.54 & 1.26 & 1.15 & -1.39 & -2.68 & -3.73 & -3.81 & -6.02 & 356 \\\\\n      0.875 & 0.7636 & -0.0324 & 34.30 & 26.96 & 23.05 & 20.46 & 18.54 & 17.03 & 15.80 & 14.75 & 9.67 & 5.11 & 0.98 & 0.80 & -2.77 & -4.67 & -6.16 & -6.29 & -9.25 & -10.76 & -11.98 & -12.07 & -14.64 & 77 \\\\\n      \\bottomrule\n    \\end{tabular}\n  }\n\\end{table}\n"};
+  var MONO = "10px ui-monospace, SF Mono, Menlo, Consolas, monospace";
+  var SANS = "10px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+
+  function cssVar(n) {
+    return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888888";
+  }
+  function finite(v) { return v !== null && v !== undefined && isFinite(v); }
+
+  // Shared across every panel of a figure, so facets are comparable by eye.
+  function domainOf(spec) {
+    var all = [];
+    spec.panels.forEach(function (p) {
+      p.values.forEach(function (v) { if (finite(v)) all.push(v); });
+    });
+    var lo = spec.y0 !== null && spec.y0 !== undefined ? spec.y0 : Math.min.apply(null, all);
+    var hi = spec.y1 !== null && spec.y1 !== undefined ? spec.y1 : Math.max.apply(null, all);
+    if (!finite(lo) || !finite(hi)) { lo = -1; hi = 1; }
+    if (lo === hi) { lo -= 1; hi += 1; }
+    var pad = (hi - lo) * 0.08;
+    return [lo - pad, hi + pad];
+  }
+
+  function drawPanel(ctx, box, spec, panel, dom, small) {
+    var rhos = spec.rhos;
+    var xs = rhos.map(function (r) { return Math.log(r); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var padL = small ? 40 : 56, padR = small ? 10 : 16;
+    // A two-line facet label needs room above the plot that a one-line one does not.
+    var padT = small ? (panel.sub ? 32 : 18) : 14, padB = small ? 30 : 38;
+    var pw = box.w - padL - padR, ph = box.h - padT - padB;
+    var PX = function (r) { return box.x + padL + ((Math.log(r) - x0) / (x1 - x0 || 1)) * pw; };
+    var PY = function (v) { return box.y + padT + (1 - (v - dom[0]) / (dom[1] - dom[0])) * ph; };
+    var dp = spec.dp === undefined ? 2 : spec.dp;
+
+    // horizontal gridlines + y labels, same weight and alpha as the trajectory panels.
+    // When the zero rule is drawn, the middle gridline IS zero rather than the arithmetic
+    // midpoint of the domain: otherwise the labelled line lands a percent or two off the
+    // solid one and, rounded, reads as its label -- an asymmetric domain like [-22, 25]
+    // put a "1" against the zero rule. Skipped when zero sits too near an end to label
+    // without colliding with the endpoint, where the rule is next to a labelled value
+    // anyway.
+    // Where the caller fixed the scale (y0/y1), label THOSE values rather than the padded
+    // extremes: a correlation axis running -1.2 to 1.2 names two values the statistic
+    // cannot take. The padding stays in the drawing domain, so the series still clears the
+    // panel edges -- only the labelled gridlines move inward.
+    var tLo = (spec.y0 === null || spec.y0 === undefined) ? dom[0] : spec.y0;
+    var tHi = (spec.y1 === null || spec.y1 === undefined) ? dom[1] : spec.y1;
+    var mid = (tLo + tHi) / 2;
+    var zeroInside = spec.zeroLine && dom[0] < 0 && dom[1] > 0;
+    var zeroFrac = (0 - dom[0]) / (dom[1] - dom[0]);
+    if (zeroInside && zeroFrac > 0.12 && zeroFrac < 0.88) mid = 0;
+    ctx.strokeStyle = cssVar("--rule"); ctx.lineWidth = 1;
+    ctx.font = MONO; ctx.fillStyle = cssVar("--ink-faint");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    [tLo, mid, tHi].forEach(function (v) {
+      var y = PY(v);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(box.x + padL, y); ctx.lineTo(box.x + padL + pw, y); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(v.toFixed(dp), box.x + padL - 6, y);
+    });
+
+    // x ticks: every rho when there is room, otherwise thin them out
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    var step = pw / rhos.length < 22 ? (pw / rhos.length < 12 ? 3 : 2) : 1;
+    rhos.forEach(function (r, i) {
+      if (i % step && i !== rhos.length - 1) return;
+      ctx.fillText(String(r), PX(r), box.y + padT + ph + 6);
+    });
+
+    // the zero rule, where zero is inside the range -- the sign change is the whole point,
+    // so it is drawn loud (solid, reserved reference colour) like the trajectory zero line
+    if (zeroInside) {
+      ctx.strokeStyle = cssVar("--ref-line"); ctx.lineWidth = 1.75;
+      ctx.beginPath(); ctx.moveTo(box.x + padL, PY(0)); ctx.lineTo(box.x + padL + pw, PY(0)); ctx.stroke();
+    }
+    // the shipped rho, dashed and faint -- a reference mark, not a datum
+    if (spec.markRho) {
+      ctx.save();
+      ctx.strokeStyle = cssVar("--ink-faint"); ctx.lineWidth = 1.25; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(PX(spec.markRho), box.y + padT); ctx.lineTo(PX(spec.markRho), box.y + padT + ph);
+      ctx.stroke();
+      ctx.restore();
+      if (!small) {
+        ctx.font = "9px ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+        ctx.fillStyle = cssVar("--ink-faint");
+        ctx.textAlign = "right"; ctx.textBaseline = "top";
+        ctx.fillText("shipped rho = " + spec.markRho, PX(spec.markRho) - 5, box.y + padT + 2);
+      }
+    }
+
+    // the series
+    ctx.strokeStyle = cssVar("--accent2"); ctx.lineWidth = 2;
+    ctx.beginPath();
+    var started = false;
+    panel.values.forEach(function (v, i) {
+      if (!finite(v)) { started = false; return; }
+      if (started) ctx.lineTo(PX(rhos[i]), PY(v));
+      else { ctx.moveTo(PX(rhos[i]), PY(v)); started = true; }
+    });
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--accent2");
+    panel.values.forEach(function (v, i) {
+      if (!finite(v)) return;
+      ctx.beginPath(); ctx.arc(PX(rhos[i]), PY(v), small ? 2 : 2.8, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // panel label (facets) and axis titles
+    // Two lines: what the pairing IS on top, what it varied beneath it in muted type.
+    // One line would run to ~33 characters for the ACL panels ("acl.12  Dell'a (wrong)
+    // lambda x gamma_below") and overflow into the next facet at four columns.
+    if (panel.label) {
+      var sansFam = " ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.font = "600 " + (small ? "10px" : "11px") + sansFam;
+      ctx.fillStyle = cssVar("--ink");
+      ctx.fillText(panel.label, box.x + padL, box.y + padT - (panel.sub ? 19 : 6));
+      if (panel.sub) {
+        ctx.font = (small ? "9px" : "10px") + sansFam;
+        ctx.fillStyle = cssVar("--ink-muted");
+        ctx.fillText(panel.sub, box.x + padL, box.y + padT - 6);
+      }
+    }
+    ctx.font = SANS; ctx.fillStyle = cssVar("--ink-muted");
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(spec.xlabel, box.x + padL + pw / 2, box.y + padT + ph + 19);
+    if (!small) {
+      ctx.save();
+      ctx.translate(box.x + 12, box.y + padT + ph / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(spec.ylabel, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  function drawFigure(canvas, spec) {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.max(rect.width || 700, 460);
+    var facets = spec.panels.length > 1;
+    var cols = facets ? (w >= 760 ? 4 : 2) : 1;
+    var rows = Math.ceil(spec.panels.length / cols);
+    var ph = facets ? 164 : 250;   // +14 for the two-line facet label, so the plot area is unchanged
+    var h = rows * ph + (facets ? 10 : 0);
+    // Facets share one y scale, so the axis is named once for the whole figure in a left
+    // gutter rather than repeated on every panel (where there is no room for it anyway).
+    var gutter = facets ? 20 : 0;
+    canvas.style.height = h + "px";
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var dom = domainOf(spec);
+    var fw = (w - gutter) / cols;
+    spec.panels.forEach(function (p, i) {
+      var box = { x: gutter + (i % cols) * fw, y: Math.floor(i / cols) * ph, w: fw, h: ph };
+      drawPanel(ctx, box, spec, p, dom, facets);
+    });
+    if (facets) {
+      ctx.save();
+      ctx.font = SANS; ctx.fillStyle = cssVar("--ink-muted");
+      ctx.translate(12, h / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(spec.ylabel, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // Composites title, subtitle, the canvas and a provenance footer onto an opaque
+  // background at the canvas's own pixel ratio. A transparent PNG pasted into a light
+  // document with a dark-theme figure in it is unreadable, which is why the background is
+  // painted rather than left clear. No build date in the footer -- a figure outlives the
+  // page it came from and a stale date on it is worse than none.
+  function compose(canvas, spec) {
+    var dpr = window.devicePixelRatio || 1;
+    var cw = canvas.width / dpr, chh = canvas.height / dpr;
+    var pad = 14, titleH = 22, subH = spec.subtitle ? 16 : 0, footH = 16;
+    var W = cw + pad * 2, H = pad + titleH + subH + chh + footH + pad;
+    var out = document.createElement("canvas");
+    out.width = Math.round(W * dpr); out.height = Math.round(H * dpr);
+    var c = out.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = cssVar("--panel"); c.fillRect(0, 0, W, H);
+    var font = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    var y = pad;
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillStyle = cssVar("--ink"); c.font = "600 14px " + font;
+    c.fillText(spec.title, pad, y); y += titleH;
+    if (spec.subtitle) {
+      c.fillStyle = cssVar("--ink-muted"); c.font = "11px " + font;
+      c.fillText(spec.subtitle, pad, y); y += subH;
+    }
+    c.drawImage(canvas, 0, 0, canvas.width, canvas.height, pad, y, cw, chh);
+    c.fillStyle = cssVar("--ink-muted"); c.font = "9px " + font;
+    c.fillText(spec.foot, pad, H - pad - 9);
+    return out;
+  }
+
+  var resetTimer = {};
+  function flash(btn, cls, text) {
+    var label = btn.querySelector("span");
+    var was = btn.getAttribute("data-label") || label.textContent;
+    btn.setAttribute("data-label", was);
+    btn.classList.remove("is-done", "is-fail");
+    btn.classList.add(cls);
+    label.textContent = text;
+    clearTimeout(resetTimer[btn.id || was]);
+    resetTimer[btn.id || was] = setTimeout(function () {
+      btn.classList.remove("is-done", "is-fail");
+      label.textContent = was;
+    }, 2200);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", "");
+      ta.style.position = "fixed"; ta.style.top = "-1000px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy") ? resolve() : reject(new Error("execCommand refused")); }
+      catch (e) { reject(e); }
+      finally { document.body.removeChild(ta); }
+    });
+  }
+
+  function figureBlob(canvas, spec) {
+    return new Promise(function (resolve, reject) {
+      compose(canvas, spec).toBlob(function (b) { b ? resolve(b) : reject(new Error("toBlob returned null")); }, "image/png");
+    });
+  }
+
+  function wire() {
+    Object.keys(FIGS).forEach(function (id) {
+      var canvas = document.getElementById("fig-" + id);
+      if (canvas) drawFigure(canvas, FIGS[id]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".copy-btn[data-fig]"), function (btn) {
+      btn.addEventListener("click", function () {
+        var spec = FIGS[btn.getAttribute("data-fig")];
+        var canvas = document.getElementById("fig-" + btn.getAttribute("data-fig"));
+        if (!canvas || !canvas.width) { flash(btn, "is-fail", "Nothing drawn"); return; }
+        if (btn.getAttribute("data-act") === "save") {
+          figureBlob(canvas, spec).then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url; a.download = spec.file;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+            flash(btn, "is-done", "Saved");
+          }, function () { flash(btn, "is-fail", "Failed"); });
+          return;
+        }
+        // ClipboardItem is handed the PROMISE, not an awaited blob: Safari drops the user
+        // activation that authorises a clipboard write if you await anything first.
+        if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) {
+          flash(btn, "is-fail", "Use Download"); return;
+        }
+        try {
+          navigator.clipboard.write([new ClipboardItem({ "image/png": figureBlob(canvas, spec) })]).then(
+            function () { flash(btn, "is-done", "Copied"); },
+            function () { flash(btn, "is-fail", "Use Download"); });
+        } catch (e) { flash(btn, "is-fail", "Use Download"); }
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".copy-btn[data-tex]"), function (btn) {
+      btn.addEventListener("click", function () {
+        copyText(TEX[btn.getAttribute("data-tex")]).then(
+          function () { flash(btn, "is-done", "Copied"); },
+          function () { flash(btn, "is-fail", "Copy blocked"); });
+      });
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
+  window.addEventListener("resize", function () {
+    Object.keys(FIGS).forEach(function (id) {
+      var canvas = document.getElementById("fig-" + id);
+      if (canvas) drawFigure(canvas, FIGS[id]);
+    });
+  });
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+      Object.keys(FIGS).forEach(function (id) {
+        var canvas = document.getElementById("fig-" + id);
+        if (canvas) drawFigure(canvas, FIGS[id]);
+      });
+    });
+  }
+})();
+</script></body></html>
