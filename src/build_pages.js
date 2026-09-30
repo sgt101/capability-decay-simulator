@@ -84,6 +84,26 @@ const REPORTS = [
       + "distribution, crossed with freeze depth and duration and with each AI parameter "
       + "in turn.",
   },
+  {
+    src: path.join(paths.DOC, "entrant_report.html"), dest: "entrant_report.html",
+    title: "Entrant expertise",
+    manifest: "experiments.entrant.manifest.json",
+    // What this set varies is the distribution REPLACEMENTS are drawn from at turnover,
+    // not the t=0 population: engine.js keeps the two deliberately separate, since the
+    // starting population represents an already-running mixed-skill field while entrants
+    // arrive as genuine novices.
+    //
+    // The blurb says "not capped by what the people already there know", not "not inherited
+    // from them". Teaching CREATES expertise — the update reads Teach[j] as a value and
+    // debits nobody — so a conservation reading of it is wrong. What the taught and personal
+    // channels are is CEILINGED, at min(aptitude, Teach) and at the institution's founding
+    // average respectively. The entrant draw answers to neither, which is the property that
+    // makes it the floor of the equilibrium distribution and the reason for this set.
+    blurb: "What happens when the people replacing leavers arrive better or worse prepared. "
+      + "Varies the mean, spread and lower bound of the distribution new arrivals are drawn "
+      + "from at turnover — the one input to the model not capped by what the people already "
+      + "there know — against each AI parameter in turn.",
+  },
 ];
 
 // Hand-written, self-contained pages committed to doc/. A different shape again from

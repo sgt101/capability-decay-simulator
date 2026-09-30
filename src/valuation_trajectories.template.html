@@ -502,9 +502,13 @@ function drawCaption() {
           ? " (the AI does not touch the learning of anyone above its level). "
           : " (the same learning penalty applied above the AI as below). ");
   }
-  txt += "Top-left panel, the mildest penalty";
-  txt += pub.variant === "published" ? " under Dell'Acqua as published" : "";
-  txt += ": the cheapest and dearest valuations end the horizon at "
+  // Names the panel the numbers actually came from, rather than describing a position in
+  // the grid. cfgOf("published") is not necessarily the top-left panel — the grid's layout
+  // depends on which variants a run produced — and "the mildest penalty" was a claim about
+  // the ORDERING of the panels that nothing here established.
+  txt += "<b>" + esc(VARIANT_LABEL[pub.variant] || pub.variant) + "</b>, learning penalty "
+    + TRAJ.stromberg.statedPercent[0].toFixed(2) + "%: the cheapest and dearest valuations end the "
+    + "horizon at "
     + pct(seriesOf(pub, gb0, Math.min(a.lo, b ? b.lo : a.lo))[last]) + " and "
     + pct(seriesOf(pub, gb0, Math.max(a.hi, b ? b.hi : a.hi))[last]) + ". ";
 

@@ -27,11 +27,14 @@ a{color:var(--accent)}
   crossed with the two AI parameters that act on agents below the AI's level.</p>
 
   <h2>Rationale</h2>
-  <p>Entrant draws are the only mechanism in the model that introduces expertise not
-  derived from an agent already present. Every other agent moves toward its institution's
-  teaching level or decays away from it, so the entrant distribution sets the lower
-  boundary of the equilibrium distribution. Its parameters have not previously been swept
-  against the AI channels.</p>
+  <p>Entrant draws are the model's only unbounded source of expertise. Taught learning
+  creates expertise rather than moving it: nothing is debited from the people doing the
+  teaching. But it is capped at what the learner's institution can teach,
+  <code>min(aptitude, Teach)</code>, so it cannot lift a field above its own seniors.
+  Personal learning carries a ceiling too, the institution's <em>founding</em> average, and
+  runs about two orders of magnitude slower than the taught channel. The entrant draw
+  answers to neither ceiling, which is what makes it the lower boundary of the equilibrium
+  distribution. Its parameters have not previously been swept against the AI channels.</p>
 
   <h2>Parameters varied</h2>
   <table>

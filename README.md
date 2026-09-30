@@ -9,6 +9,10 @@
 An Agent-based model of institutions and humans where reliance on AI erodes the
 real expertise (`E`) behind their output over time.
 
+Summary: we're in real trouble unless we adapt to what AI does to people's learning, which we might - naturally - or we might be able to by intervening. Also it's possible that in unleveraged systems it might not hit so hard, but for leveraged systems like finance (where if you are good at managing money you get more money to manage) and academia (where if you are famous your ideas get more airtime and you become more famous) then these effects seem likely to be more corrosive.
+
+But -- it depends on the scale of leverage.
+
 You will need to download this repository and then you do the following:
 
 - See [simulator.html](https://sgt101.github.io/capability-decay-simulator/simulator.html) for the interactive visualizer.
@@ -20,6 +24,8 @@ You will need to download this repository and then you do the following:
   See [machine_generated.md](machine_generated.md) for an (mostly AI) generated set of more detailed instructions for setting up and running batch experiements.
 
 - alternatively access precanned result reports from [index.html](https://sgt101.github.io/capability-decay-simulator/index.html)
+
+- here is a [paper](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7446859) that describes what is implemented and the results as understood so far. It is a draft and I am revising it a lot, but I would love any comments that anyone has.
 
 Running the batchs takes about 1hr 40 on a MBP-5 with 48GB ram, and you will need a few GB of disk free as the results files are quite big.
 
@@ -44,6 +50,7 @@ As far as I am aware no one has done the following:
 
 - Constructed a simulator of a human knowledge insitution that includes dynamics that capture the breaks and amplifications on learning and capability that AI plausibly creates.
 - Implemented it using the data that is provided by the empirical studies that are available for measured impacts on expertise acquisition and capability amplification/negation
+- Calibrated vs real data on the Financial System including an analysis on decision leverage as per the current economics literature, and the structural set up of the system as an insitution.
 - Run the simulation to generate results showing long term impacts over a number of scenarios
 - Analysed the results to provide information and outcomes for policy makers and prudential officers at insitutions.
 
@@ -89,7 +96,7 @@ The data that run_experiment.sh and run_structure_experiments.sh produce is stor
 
 ## Results & Recommedations.
 
-A paper providing a write up of the results is included in this repository: [doc\main.pdf](doc\main.pdf).
+A paper providing a write up of the results is available: [paper](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7446859).
 
 [^†]: I would like to thank and acknowledge Andrew Sutton, Martin Rusch, and other colleagues and collaborators in the "Chapter 2 working group" for their identification of elements of the model in Figure 1, and the discussions and feedback that they provided as the model and the other thinking and scholarship behind this work was developed. Thanks folks!
 

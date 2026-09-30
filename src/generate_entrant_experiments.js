@@ -5,10 +5,18 @@
 //   node src/generate_entrant_experiments.js
 //
 // WHY THIS SET. Everything else in the study varies what happens to people once they are
-// in the field. This varies who ARRIVES. It matters because the entrant distribution is
-// the only source of new expertise the model has: everyone else is either climbing toward
-// their institution's teaching level or decaying away from it, so where entrants start
-// sets the bottom of the ladder that the whole equilibrium rests on.
+// in the field. This varies who ARRIVES. It matters because the entrant draw is the model's
+// only UNBOUNDED source of expertise, which is a narrower claim than the one this comment
+// used to make ("the only source of new expertise") and the accurate one:
+//
+//   taught learning    creates expertise and debits nobody — Teach[j] is read as a value,
+//                      not moved between two people — but is capped at
+//                      min(aptitude, Teach[j]), so it cannot lift a field above its seniors.
+//   personal learning  also creates, also capped: by startEbar[j], the institution's
+//                      FOUNDING average. Runs ~2 orders of magnitude below the taught rate.
+//   entrant draws      answer to neither ceiling. Drawn from a parameter, not from anyone.
+//
+// So where entrants start sets the bottom of the ladder the whole equilibrium rests on.
 //
 // The pairing is deliberate. gamma_below is the channel AI crowds out ENTRANT learning
 // through, and lambda decides who counts as below the AI at all — so both act on exactly
@@ -177,11 +185,14 @@ manifest.notesPage = {
   crossed with the two AI parameters that act on agents below the AI's level.</p>
 
   <h2>Rationale</h2>
-  <p>Entrant draws are the only mechanism in the model that introduces expertise not
-  derived from an agent already present. Every other agent moves toward its institution's
-  teaching level or decays away from it, so the entrant distribution sets the lower
-  boundary of the equilibrium distribution. Its parameters have not previously been swept
-  against the AI channels.</p>
+  <p>Entrant draws are the model's only unbounded source of expertise. Taught learning
+  creates expertise rather than moving it: nothing is debited from the people doing the
+  teaching. But it is capped at what the learner's institution can teach,
+  <code>min(aptitude, Teach)</code>, so it cannot lift a field above its own seniors.
+  Personal learning carries a ceiling too, the institution's <em>founding</em> average, and
+  runs about two orders of magnitude slower than the taught channel. The entrant draw
+  answers to neither ceiling, which is what makes it the lower boundary of the equilibrium
+  distribution. Its parameters have not previously been swept against the AI channels.</p>
 
   <h2>Parameters varied</h2>
   <table>
